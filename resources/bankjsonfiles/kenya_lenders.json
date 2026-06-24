@@ -1,0 +1,984 @@
+{
+    "lenders": [
+        {
+            "name": "KCB Bank Kenya",
+            "type": "Commercial Bank",
+            "website": "https://ke.kcbgroup.com/",
+            "business_portal": "https://ke.kcbgroup.com/for-your-biashara",
+            "shariah": false,
+            "tags": [
+                "SME loans",
+                "working capital",
+                "asset finance"
+            ],
+            "notes": "SME \u2018For Your Biashara\u2019 portal",
+            "last_checked": "2025-10-04T00:00:00Z",
+            "status": "unknown",
+            "business_portal_status": "ok",
+            "business_portal_last_checked": "2025-10-08T19:15:09.270410Z",
+            "website_status": "ok",
+            "website_last_checked": "2025-10-08T19:15:12.759149Z"
+        },
+        {
+            "name": "Equity Bank Kenya",
+            "type": "Commercial Bank",
+            "website": "https://equitygroupholdings.com/ke/",
+            "business_portal": "https://www.equitybank.com/business/lending/",
+            "shariah": false,
+            "tags": [
+                "SME",
+                "working capital",
+                "asset finance"
+            ],
+            "notes": "Business lending overview",
+            "last_checked": "2025-10-04T00:00:00Z",
+            "status": "unknown",
+            "business_portal_status": "broken",
+            "business_portal_last_checked": "2025-10-08T19:15:13.701476Z",
+            "website_status": "ok",
+            "website_last_checked": "2025-10-08T19:15:14.495597Z"
+        },
+        {
+            "name": "Co-operative Bank of Kenya",
+            "type": "Commercial Bank",
+            "website": "https://www.co-opbank.co.ke/",
+            "business_portal": "https://www.co-opbank.co.ke/business/financing/",
+            "shariah": false,
+            "tags": [
+                "SME",
+                "overdraft",
+                "asset finance"
+            ],
+            "notes": "Business financing",
+            "last_checked": "2025-10-04T00:00:00Z",
+            "status": "unknown",
+            "business_portal_status": "ok",
+            "business_portal_last_checked": "2025-10-08T19:15:16.950576Z",
+            "website_status": "ok",
+            "website_last_checked": "2025-10-08T19:15:18.914641Z"
+        },
+        {
+            "name": "ABSA Bank Kenya",
+            "type": "Commercial Bank",
+            "website": "https://www.absabank.co.ke/",
+            "business_portal": "https://www.absabank.co.ke/business/borrow/",
+            "shariah": false,
+            "tags": [
+                "SME",
+                "overdraft",
+                "term loans"
+            ],
+            "notes": "Borrow for Business",
+            "last_checked": "2025-10-04T00:00:00Z",
+            "status": "unknown",
+            "business_portal_status": "broken",
+            "business_portal_last_checked": "2025-10-08T19:15:20.230863Z",
+            "website_status": "ok",
+            "website_last_checked": "2025-10-08T19:15:21.217837Z"
+        },
+        {
+            "name": "Standard Chartered Bank Kenya",
+            "type": "Commercial Bank",
+            "website": "https://www.sc.com/ke/",
+            "business_portal": "https://www.sc.com/ke/business-loans-and-working-capital/",
+            "shariah": false,
+            "tags": [
+                "working capital",
+                "term loans",
+                "mortgage",
+                "trade"
+            ],
+            "notes": "Business loans & working capital",
+            "last_checked": "2025-10-04T00:00:00Z",
+            "status": "unknown",
+            "business_portal_status": "ok",
+            "business_portal_last_checked": "2025-10-08T19:15:22.334289Z",
+            "website_status": "ok",
+            "website_last_checked": "2025-10-08T19:15:23.450574Z"
+        },
+        {
+            "name": "Stanbic Bank Kenya",
+            "type": "Commercial Bank",
+            "website": "https://www.stanbicbank.co.ke/",
+            "business_portal": "https://www.stanbicbank.co.ke/kenya/business/products-and-services/Borrow-for-your-needs",
+            "shariah": false,
+            "tags": [
+                "SME loans",
+                "overdraft",
+                "invoice discounting"
+            ],
+            "notes": "Borrow for your business",
+            "last_checked": "2025-10-04T00:00:00Z",
+            "status": "unknown",
+            "business_portal_status": "ok",
+            "business_portal_last_checked": "2025-10-08T19:15:24.537455Z",
+            "website_status": "ok",
+            "website_last_checked": "2025-10-08T19:15:25.696103Z"
+        },
+        {
+            "name": "NCBA Bank Kenya",
+            "type": "Commercial Bank",
+            "website": "https://ke.ncbagroup.com/",
+            "business_portal": "https://ke.ncbagroup.com/business/borrow/",
+            "shariah": false,
+            "tags": [
+                "working capital",
+                "asset finance"
+            ],
+            "notes": "Business borrow portal",
+            "last_checked": "2025-10-04T00:00:00Z",
+            "status": "unknown",
+            "business_portal_status": "broken",
+            "business_portal_last_checked": "2025-10-08T19:15:33.705019Z",
+            "website_status": "broken",
+            "website_last_checked": "2025-10-08T19:15:41.710030Z"
+        },
+        {
+            "name": "I&M Bank Kenya",
+            "type": "Commercial Bank",
+            "website": "https://www.imbankgroup.com/ke/",
+            "business_portal": "https://www.imbankgroup.com/ke/business/loans/business-loans/",
+            "shariah": false,
+            "tags": [
+                "term loans",
+                "asset finance",
+                "trade"
+            ],
+            "notes": "Business Loans overview",
+            "last_checked": "2025-10-04T00:00:00Z",
+            "status": "unknown",
+            "business_portal_status": "broken",
+            "business_portal_last_checked": "2025-10-08T19:15:44.672926Z",
+            "website_status": "broken",
+            "website_last_checked": "2025-10-08T19:15:45.345127Z"
+        },
+        {
+            "name": "Diamond Trust Bank (DTB) Kenya",
+            "type": "Commercial Bank",
+            "website": "https://dtbk.dtbafrica.com/",
+            "business_portal": "https://dtbk.dtbafrica.com/business/loans-and-advances/",
+            "shariah": false,
+            "tags": [
+                "loans",
+                "overdraft",
+                "trade"
+            ],
+            "notes": "Business loans & advances",
+            "last_checked": "2025-10-04T00:00:00Z",
+            "status": "unknown",
+            "business_portal_status": "broken",
+            "business_portal_last_checked": "2025-10-08T19:15:48.015051Z",
+            "website_status": "ok",
+            "website_last_checked": "2025-10-08T19:15:49.592505Z"
+        },
+        {
+            "name": "Access Bank Kenya",
+            "type": "Commercial Bank",
+            "website": "https://kenya.accessbankplc.com/",
+            "business_portal": "https://kenya.accessbankplc.com/business",
+            "shariah": false,
+            "tags": [
+                "instant business loan",
+                "overdraft"
+            ],
+            "notes": "Emerging Business & SME products",
+            "last_checked": "2025-10-04T00:00:00Z",
+            "status": "unknown",
+            "business_portal_status": "ok",
+            "business_portal_last_checked": "2025-10-08T19:15:52.203129Z",
+            "website_status": "ok",
+            "website_last_checked": "2025-10-08T19:15:53.786138Z"
+        },
+        {
+            "name": "SBM Bank Kenya",
+            "type": "Commercial Bank",
+            "website": "https://www.sbmbank.co.ke/",
+            "business_portal": "https://www.sbmbank.co.ke/solutions-business",
+            "shariah": false,
+            "tags": [
+                "MSME loan",
+                "overdraft",
+                "term loans",
+                "asset finance"
+            ],
+            "notes": "Solutions for business",
+            "last_checked": "2025-10-04T00:00:00Z",
+            "status": "unknown",
+            "business_portal_status": "ok",
+            "business_portal_last_checked": "2025-10-08T19:15:55.619797Z",
+            "website_status": "broken",
+            "website_last_checked": "2025-10-08T19:15:56.423050Z"
+        },
+        {
+            "name": "Prime Bank Kenya",
+            "type": "Commercial Bank",
+            "website": "https://www.primebank.co.ke/",
+            "business_portal": "https://www.primebank.co.ke/corporate/lending-solutions/business-loans/",
+            "shariah": false,
+            "tags": [
+                "business loans",
+                "asset finance"
+            ],
+            "notes": "Corporate lending solutions",
+            "last_checked": "2025-10-04T00:00:00Z",
+            "status": "unknown",
+            "business_portal_status": "ok",
+            "business_portal_last_checked": "2025-10-08T19:15:59.104801Z",
+            "website_status": "ok",
+            "website_last_checked": "2025-10-08T19:16:01.297820Z"
+        },
+        {
+            "name": "Bank of Baroda (Kenya) Ltd",
+            "type": "Commercial Bank",
+            "website": "https://www.bankofbarodakenya.co.ke/",
+            "business_portal": "https://www.bankofbarodakenya.co.ke/corporate-banking/loans-advances/corporate-sme-loans",
+            "shariah": false,
+            "tags": [
+                "SME loans",
+                "corporate loans"
+            ],
+            "notes": "Corporate/SME loans",
+            "last_checked": "2025-10-04T00:00:00Z",
+            "status": "unknown",
+            "business_portal_status": "broken",
+            "business_portal_last_checked": "2025-10-08T19:16:09.308759Z",
+            "website_status": "broken",
+            "website_last_checked": "2025-10-08T19:16:17.326447Z"
+        },
+        {
+            "name": "Bank of Africa Kenya",
+            "type": "Commercial Bank",
+            "website": "https://boakenya.com/",
+            "business_portal": "https://boakenya.com/business/credit/",
+            "shariah": false,
+            "tags": [
+                "credit",
+                "trade"
+            ],
+            "notes": "Business credit overview",
+            "last_checked": "2025-10-04T00:00:00Z",
+            "status": "unknown",
+            "business_portal_status": "broken",
+            "business_portal_last_checked": "2025-10-08T19:16:20.772941Z",
+            "website_status": "ok",
+            "website_last_checked": "2025-10-08T19:16:24.683953Z"
+        },
+        {
+            "name": "Ecobank Kenya",
+            "type": "Commercial Bank",
+            "website": "https://ecobank.com/ke/",
+            "business_portal": "https://ecobank.com/commercial-banking/small-medium-enterprise",
+            "shariah": false,
+            "tags": [
+                "SME",
+                "lending",
+                "funding"
+            ],
+            "notes": "SME lending & funding",
+            "last_checked": "2025-10-04T00:00:00Z",
+            "status": "unknown",
+            "business_portal_status": "broken",
+            "business_portal_last_checked": "2025-10-08T19:16:25.371165Z",
+            "website_status": "broken",
+            "website_last_checked": "2025-10-08T19:16:26.091299Z"
+        },
+        {
+            "name": "Citibank N.A. Kenya",
+            "type": "Commercial Bank",
+            "website": "https://www.citigroup.com/global/about-us/global-presence/kenya",
+            "business_portal": "https://www.citigroup.com/rcs/citigpa/akpublic/storage/public/trade_loans_kenya.pdf",
+            "shariah": false,
+            "tags": [
+                "trade loans",
+                "institutional clients"
+            ],
+            "notes": "Corporate/Institutional trade loans fact sheet",
+            "last_checked": "2025-10-04T00:00:00Z",
+            "status": "unknown",
+            "business_portal_status": "ok",
+            "business_portal_last_checked": "2025-10-08T19:16:30.483599Z",
+            "website_status": "ok",
+            "website_last_checked": "2025-10-08T19:16:32.568028Z"
+        },
+        {
+            "name": "Guaranty Trust Bank (Kenya)",
+            "type": "Commercial Bank",
+            "website": "https://www.gtbank.co.ke/",
+            "business_portal": "https://www.gtbank.co.ke/business-banking/corporate-banking",
+            "shariah": false,
+            "tags": [
+                "corporate",
+                "overdraft",
+                "term loans"
+            ],
+            "notes": "Corporate banking overview",
+            "last_checked": "2025-10-04T00:00:00Z",
+            "status": "unknown",
+            "business_portal_status": "broken",
+            "business_portal_last_checked": "2025-10-08T19:16:33.579341Z",
+            "website_status": "broken",
+            "website_last_checked": "2025-10-08T19:16:34.296999Z"
+        },
+        {
+            "name": "Victoria Commercial Bank",
+            "type": "Commercial Bank",
+            "website": "https://www.victoriabank.co.ke/",
+            "business_portal": "https://www.victoriabank.co.ke/products/lending",
+            "shariah": false,
+            "tags": [
+                "overdraft",
+                "term loans",
+                "hire purchase",
+                "trade"
+            ],
+            "notes": "Lending products",
+            "last_checked": "2025-10-04T00:00:00Z",
+            "status": "unknown",
+            "business_portal_status": "ok",
+            "business_portal_last_checked": "2025-10-08T19:16:36.271601Z",
+            "website_status": "ok",
+            "website_last_checked": "2025-10-08T19:16:37.797879Z"
+        },
+        {
+            "name": "Guardian Bank",
+            "type": "Commercial Bank",
+            "website": "https://guardian-bank.com/",
+            "business_portal": "https://guardian-bank.com/business-banking/#business-loans",
+            "shariah": false,
+            "tags": [
+                "business loans",
+                "overdraft"
+            ],
+            "notes": "Business loans (site)",
+            "last_checked": "2025-10-04T00:00:00Z",
+            "status": "unknown",
+            "business_portal_status": "broken",
+            "business_portal_last_checked": "2025-10-08T19:16:41.958700Z",
+            "website_status": "ok",
+            "website_last_checked": "2025-10-08T19:16:43.918230Z"
+        },
+        {
+            "name": "Habib Bank AG Zurich Kenya",
+            "type": "Commercial Bank",
+            "website": "https://habibbank.com/ke/",
+            "business_portal": "https://habibbank.com/ke/our-services/business/lending/",
+            "shariah": false,
+            "tags": [
+                "lending",
+                "trade"
+            ],
+            "notes": "Business lending overview",
+            "last_checked": "2025-10-04T00:00:00Z",
+            "status": "unknown",
+            "business_portal_status": "ok",
+            "business_portal_last_checked": "2025-10-08T19:16:47.198538Z",
+            "website_status": "ok",
+            "website_last_checked": "2025-10-08T19:16:50.870185Z"
+        },
+        {
+            "name": "Bank of India Kenya",
+            "type": "Commercial Bank",
+            "website": "https://boikenya.com/",
+            "business_portal": "https://boikenya.com/loans-advances",
+            "shariah": false,
+            "tags": [
+                "loans",
+                "advances"
+            ],
+            "notes": "Loans & advances",
+            "last_checked": "2025-10-04T00:00:00Z",
+            "status": "unknown",
+            "business_portal_status": "ok",
+            "business_portal_last_checked": "2025-10-08T19:16:52.504772Z",
+            "website_status": "ok",
+            "website_last_checked": "2025-10-08T19:16:53.962841Z"
+        },
+        {
+            "name": "M Oriental Bank",
+            "type": "Commercial Bank",
+            "website": "https://www.moriental.co.ke/",
+            "business_portal": "https://www.moriental.co.ke/overdrafts-and-term-loans/",
+            "shariah": false,
+            "tags": [
+                "overdraft",
+                "term loans",
+                "asset finance"
+            ],
+            "notes": "Corporate overdrafts & term loans",
+            "last_checked": "2025-10-04T00:00:00Z",
+            "status": "unknown",
+            "business_portal_status": "ok",
+            "business_portal_last_checked": "2025-10-08T19:16:55.457932Z",
+            "website_status": "ok",
+            "website_last_checked": "2025-10-08T19:16:57.028382Z"
+        },
+        {
+            "name": "Middle East Bank Kenya",
+            "type": "Commercial Bank",
+            "website": "https://mebkenya.com/",
+            "business_portal": "https://mebkenya.com/products-services/Business-Banking/Credit-Facilities",
+            "shariah": false,
+            "tags": [
+                "credit facilities",
+                "trade finance"
+            ],
+            "notes": "Business credit facilities",
+            "last_checked": "2025-10-04T00:00:00Z",
+            "status": "unknown",
+            "business_portal_status": "broken",
+            "business_portal_last_checked": "2025-10-08T19:17:02.742881Z",
+            "website_status": "ok",
+            "website_last_checked": "2025-10-08T19:17:06.064538Z"
+        },
+        {
+            "name": "CIB Kenya (Commercial International Bank)",
+            "type": "Commercial Bank",
+            "website": "https://cibke.com/",
+            "business_portal": "https://cibke.com/loans/",
+            "shariah": false,
+            "tags": [
+                "Tayari loan",
+                "IPF",
+                "asset finance",
+                "supply chain"
+            ],
+            "notes": "Loans page",
+            "last_checked": "2025-10-04T00:00:00Z",
+            "status": "unknown",
+            "business_portal_status": "ok",
+            "business_portal_last_checked": "2025-10-08T19:17:07.815478Z",
+            "website_status": "ok",
+            "website_last_checked": "2025-10-08T19:17:09.603737Z"
+        },
+        {
+            "name": "Credit Bank",
+            "type": "Commercial Bank",
+            "website": "https://creditbank.co.ke/",
+            "business_portal": "https://creditbank.co.ke/business-lending-solutions/",
+            "shariah": false,
+            "tags": [
+                "term loans",
+                "overdraft",
+                "asset finance"
+            ],
+            "notes": "Business lending solutions",
+            "last_checked": "2025-10-04T00:00:00Z",
+            "status": "unknown",
+            "business_portal_status": "ok",
+            "business_portal_last_checked": "2025-10-08T19:17:12.479563Z",
+            "website_status": "ok",
+            "website_last_checked": "2025-10-08T19:17:15.114971Z"
+        },
+        {
+            "name": "Consolidated Bank of Kenya",
+            "type": "Commercial Bank",
+            "website": "https://consolidated-bank.com/",
+            "business_portal": "https://consolidated-bank.com/business/credit-facilities/",
+            "shariah": false,
+            "tags": [
+                "SME loans",
+                "overdraft"
+            ],
+            "notes": "Business credit facilities",
+            "last_checked": "2025-10-04T00:00:00Z",
+            "status": "unknown",
+            "business_portal_status": "broken",
+            "business_portal_last_checked": "2025-10-08T19:17:16.418445Z",
+            "website_status": "ok",
+            "website_last_checked": "2025-10-08T19:17:17.953799Z"
+        },
+        {
+            "name": "Family Bank",
+            "type": "Commercial Bank",
+            "website": "https://familybank.co.ke/",
+            "business_portal": "https://familybank.co.ke/business/loans/",
+            "shariah": false,
+            "tags": [
+                "SME loans",
+                "overdraft",
+                "asset finance"
+            ],
+            "notes": "Business loans overview",
+            "last_checked": "2025-10-04T00:00:00Z",
+            "status": "unknown",
+            "business_portal_status": "broken",
+            "business_portal_last_checked": "2025-10-08T19:17:19.062011Z",
+            "website_status": "ok",
+            "website_last_checked": "2025-10-08T19:17:21.446823Z"
+        },
+        {
+            "name": "National Bank of Kenya",
+            "type": "Commercial Bank",
+            "website": "https://nbk.co.ke/",
+            "business_portal": "https://nbk.co.ke/business/borrow/",
+            "shariah": false,
+            "tags": [
+                "working capital",
+                "asset finance",
+                "overdraft"
+            ],
+            "notes": "Borrow for business",
+            "last_checked": "2025-10-04T00:00:00Z",
+            "status": "unknown",
+            "business_portal_status": "broken",
+            "business_portal_last_checked": "2025-10-08T19:17:21.545652Z",
+            "website_status": "broken",
+            "website_last_checked": "2025-10-08T19:17:21.547025Z"
+        },
+        {
+            "name": "Sidian Bank",
+            "type": "Commercial Bank",
+            "website": "https://www.sidianbank.co.ke/",
+            "business_portal": "https://www.sidianbank.co.ke/business-banking/loans-and-advances/",
+            "shariah": false,
+            "tags": [
+                "SME loans",
+                "overdraft",
+                "trade"
+            ],
+            "notes": "Loans & advances",
+            "last_checked": "2025-10-04T00:00:00Z",
+            "status": "unknown",
+            "business_portal_status": "broken",
+            "business_portal_last_checked": "2025-10-08T19:17:31.487837Z",
+            "website_status": "ok",
+            "website_last_checked": "2025-10-08T19:17:38.102665Z"
+        },
+        {
+            "name": "SBM (Mauritius) Kenya Subsidiary",
+            "type": "Commercial Bank",
+            "website": "https://www.sbmbank.co.ke/",
+            "business_portal": "https://www.sbmbank.co.ke/for-your-business/unsecured-msme-loan",
+            "shariah": false,
+            "tags": [
+                "MSME loan"
+            ],
+            "notes": "Unsecured MSME loan",
+            "last_checked": "2025-10-04T00:00:00Z",
+            "status": "unknown",
+            "business_portal_status": "ok",
+            "business_portal_last_checked": "2025-10-08T19:17:41.043593Z",
+            "website_status": "broken",
+            "website_last_checked": "2025-10-08T19:17:41.692289Z"
+        },
+        {
+            "name": "ABC Bank (African Banking Corporation)",
+            "type": "Commercial Bank",
+            "website": "https://www.abcthebank.com/",
+            "business_portal": "https://www.abcthebank.com/term-loans/",
+            "shariah": false,
+            "tags": [
+                "term loans",
+                "overdraft",
+                "asset finance"
+            ],
+            "notes": "Term loans & business credit",
+            "last_checked": "2025-10-04T00:00:00Z",
+            "status": "unknown",
+            "business_portal_status": "ok",
+            "business_portal_last_checked": "2025-10-08T19:17:43.537361Z",
+            "website_status": "ok",
+            "website_last_checked": "2025-10-08T19:17:45.794352Z"
+        },
+        {
+            "name": "Kingdom Bank",
+            "type": "Commercial Bank",
+            "website": "https://www.kingdombankltd.co.ke/",
+            "business_portal": "https://www.kingdombankltd.co.ke/borrow/unsecured-business-loan/",
+            "shariah": false,
+            "tags": [
+                "unsecured business loan",
+                "trade finance"
+            ],
+            "notes": "Unsecured business loan",
+            "last_checked": "2025-10-04T00:00:00Z",
+            "status": "unknown",
+            "business_portal_status": "ok",
+            "business_portal_last_checked": "2025-10-08T19:17:46.532643Z",
+            "website_status": "ok",
+            "website_last_checked": "2025-10-08T19:17:47.236509Z"
+        },
+        {
+            "name": "HF Group (HFC)",
+            "type": "Mortgage Finance Institution",
+            "website": "https://www.hfgroup.co.ke/",
+            "business_portal": "https://www.hfgroup.co.ke/business-banking/credit-facilities/",
+            "shariah": false,
+            "tags": [
+                "business loans",
+                "asset finance"
+            ],
+            "notes": "HFC business credit",
+            "last_checked": "2025-10-04T00:00:00Z",
+            "status": "unknown",
+            "business_portal_status": "ok",
+            "business_portal_last_checked": "2025-10-08T19:17:49.032317Z",
+            "website_status": "ok",
+            "website_last_checked": "2025-10-08T19:17:50.053755Z"
+        },
+        {
+            "name": "SBM Bank Kenya - Asset Finance",
+            "type": "Commercial Bank",
+            "website": "https://www.sbmbank.co.ke/",
+            "business_portal": "https://www.sbmbank.co.ke/for-your-business/investment/asset-finance",
+            "shariah": false,
+            "tags": [
+                "asset finance"
+            ],
+            "notes": "Asset finance page",
+            "last_checked": "2025-10-04T00:00:00Z",
+            "status": "unknown",
+            "business_portal_status": "ok",
+            "business_portal_last_checked": "2025-10-08T19:17:52.000018Z",
+            "website_status": "broken",
+            "website_last_checked": "2025-10-08T19:17:52.772880Z"
+        },
+        {
+            "name": "NCBA - Asset Finance",
+            "type": "Commercial Bank",
+            "website": "https://ke.ncbagroup.com/",
+            "business_portal": "https://ke.ncbagroup.com/business/borrow/asset-finance/",
+            "shariah": false,
+            "tags": [
+                "asset finance"
+            ],
+            "notes": "Asset finance page",
+            "last_checked": "2025-10-04T00:00:00Z",
+            "status": "unknown",
+            "business_portal_status": "broken",
+            "business_portal_last_checked": "2025-10-08T19:18:00.785156Z",
+            "website_status": "broken",
+            "website_last_checked": "2025-10-08T19:18:08.804667Z"
+        },
+        {
+            "name": "Gulf African Bank",
+            "type": "Commercial Bank",
+            "website": "https://gulfafricanbank.com/",
+            "business_portal": "https://gulfafricanbank.com/sme/",
+            "shariah": true,
+            "tags": [
+                "Shariah",
+                "SME financing",
+                "asset based"
+            ],
+            "notes": "SME Shariah financing",
+            "last_checked": "2025-10-04T00:00:00Z",
+            "status": "unknown",
+            "business_portal_status": "ok",
+            "business_portal_last_checked": "2025-10-08T19:18:10.821138Z",
+            "website_status": "ok",
+            "website_last_checked": "2025-10-08T19:18:12.133193Z"
+        },
+        {
+            "name": "DIB Bank Kenya (Dubai Islamic Bank)",
+            "type": "Commercial Bank",
+            "website": "https://www.dibkenya.co.ke/",
+            "business_portal": "https://www.dibkenya.co.ke/business-banking/",
+            "shariah": true,
+            "tags": [
+                "Shariah",
+                "asset based financing"
+            ],
+            "notes": "Business banking (Shariah)",
+            "last_checked": "2025-10-04T00:00:00Z",
+            "status": "unknown",
+            "business_portal_status": "ok",
+            "business_portal_last_checked": "2025-10-08T19:18:14.165627Z",
+            "website_status": "ok",
+            "website_last_checked": "2025-10-08T19:18:16.644544Z"
+        },
+        {
+            "name": "First Community Bank (FCB)",
+            "type": "Commercial Bank",
+            "website": "https://www.firstcommunitybank.co.ke/",
+            "business_portal": "https://www.firstcommunitybank.co.ke/business-banking/",
+            "shariah": true,
+            "tags": [
+                "Shariah",
+                "business financing"
+            ],
+            "notes": "Business banking (Shariah)",
+            "last_checked": "2025-10-04T00:00:00Z",
+            "status": "unknown",
+            "business_portal_status": "broken",
+            "business_portal_last_checked": "2025-10-08T19:18:16.971652Z",
+            "website_status": "broken",
+            "website_last_checked": "2025-10-08T19:18:16.973417Z"
+        },
+        {
+            "name": "CBA? (Merged into NCBA)",
+            "type": "Note",
+            "website": "https://ke.ncbagroup.com/",
+            "business_portal": "https://ke.ncbagroup.com/",
+            "shariah": false,
+            "tags": [
+                "merger note"
+            ],
+            "notes": "CBA merged with NIC to form NCBA",
+            "last_checked": "2025-10-04T00:00:00Z",
+            "status": "unknown",
+            "business_portal_status": "broken",
+            "business_portal_last_checked": "2025-10-08T19:18:24.983385Z",
+            "website_status": "broken",
+            "website_last_checked": "2025-10-08T19:18:33.000617Z"
+        },
+        {
+            "name": "SBM - Term Loans",
+            "type": "Commercial Bank",
+            "website": "https://www.sbmbank.co.ke/",
+            "business_portal": "https://www.sbmbank.co.ke/for-your-business/structured-term-loans",
+            "shariah": false,
+            "tags": [
+                "term loans"
+            ],
+            "notes": "Structured term loans",
+            "last_checked": "2025-10-04T00:00:00Z",
+            "status": "unknown",
+            "business_portal_status": "ok",
+            "business_portal_last_checked": "2025-10-08T19:18:35.382278Z",
+            "website_status": "broken",
+            "website_last_checked": "2025-10-08T19:18:37.040294Z"
+        },
+        {
+            "name": "Caritas Microfinance Bank",
+            "type": "Microfinance Bank",
+            "website": "https://www.caritas-mfb.co.ke/",
+            "business_portal": "https://www.caritas-mfb.co.ke/loans/",
+            "shariah": false,
+            "tags": [
+                "microenterprise",
+                "SME"
+            ],
+            "notes": "CBK licensed MFB",
+            "last_checked": "2025-10-04T00:00:00Z",
+            "status": "unknown",
+            "business_portal_status": "broken",
+            "business_portal_last_checked": "2025-10-08T19:18:41.002647Z",
+            "website_status": "ok",
+            "website_last_checked": "2025-10-08T19:18:44.026640Z"
+        },
+        {
+            "name": "Branch Microfinance Bank",
+            "type": "Microfinance Bank",
+            "website": "https://branch.co.ke/",
+            "business_portal": "https://branch.co.ke/",
+            "shariah": false,
+            "tags": [
+                "digital MSME"
+            ],
+            "notes": "Formerly Century MFB; digital lender (MFB)",
+            "last_checked": "2025-10-04T00:00:00Z",
+            "status": "unknown",
+            "business_portal_status": "ok",
+            "business_portal_last_checked": "2025-10-08T19:18:46.078074Z",
+            "website_status": "ok",
+            "website_last_checked": "2025-10-08T19:18:47.229947Z"
+        },
+        {
+            "name": "Choice Microfinance Bank",
+            "type": "Microfinance Bank",
+            "website": "https://www.choicemfb.com/",
+            "business_portal": "https://www.choicemfb.com/products/",
+            "shariah": false,
+            "tags": [
+                "MSME loans"
+            ],
+            "notes": "MFB products",
+            "last_checked": "2025-10-04T00:00:00Z",
+            "status": "unknown",
+            "business_portal_status": "ok",
+            "business_portal_last_checked": "2025-10-08T19:18:48.887760Z",
+            "website_status": "ok",
+            "website_last_checked": "2025-10-08T19:18:50.315286Z"
+        },
+        {
+            "name": "Daraja Microfinance Bank",
+            "type": "Microfinance Bank",
+            "website": "https://www.darajabank.co.ke/",
+            "business_portal": "https://www.darajabank.co.ke/loans/",
+            "shariah": false,
+            "tags": [
+                "MSME"
+            ],
+            "notes": "MFB loans",
+            "last_checked": "2025-10-04T00:00:00Z",
+            "status": "unknown",
+            "business_portal_status": "broken",
+            "business_portal_last_checked": "2025-10-08T19:18:52.610863Z",
+            "website_status": "broken",
+            "website_last_checked": "2025-10-08T19:18:54.605033Z"
+        },
+        {
+            "name": "Faulu Microfinance Bank",
+            "type": "Microfinance Bank",
+            "website": "https://www.faulukenya.com/",
+            "business_portal": "https://www.faulukenya.com/our-products/loans/",
+            "shariah": false,
+            "tags": [
+                "MSME",
+                "group"
+            ],
+            "notes": "Faulu loans",
+            "last_checked": "2025-10-04T00:00:00Z",
+            "status": "unknown",
+            "business_portal_status": "broken",
+            "business_portal_last_checked": "2025-10-08T19:18:55.595997Z",
+            "website_status": "broken",
+            "website_last_checked": "2025-10-08T19:18:56.115258Z"
+        },
+        {
+            "name": "Kenya Women Microfinance Bank (KWFT)",
+            "type": "Microfinance Bank",
+            "website": "https://www.kwftbank.com/",
+            "business_portal": "https://www.kwftbank.com/our-products/credit/",
+            "shariah": false,
+            "tags": [
+                "women MSME"
+            ],
+            "notes": "KWFT credit",
+            "last_checked": "2025-10-04T00:00:00Z",
+            "status": "unknown",
+            "business_portal_status": "ok",
+            "business_portal_last_checked": "2025-10-08T19:18:56.837116Z",
+            "website_status": "ok",
+            "website_last_checked": "2025-10-08T19:18:57.435776Z"
+        },
+        {
+            "name": "Rafiki Microfinance Bank",
+            "type": "Microfinance Bank",
+            "website": "https://www.rafiki.co.ke/",
+            "business_portal": "https://www.rafiki.co.ke/our-products/loans/",
+            "shariah": false,
+            "tags": [
+                "MSME"
+            ],
+            "notes": "Rafiki loans",
+            "last_checked": "2025-10-04T00:00:00Z",
+            "status": "unknown",
+            "business_portal_status": "broken",
+            "business_portal_last_checked": "2025-10-08T19:19:05.453065Z",
+            "website_status": "broken",
+            "website_last_checked": "2025-10-08T19:19:13.465068Z"
+        },
+        {
+            "name": "LOLC Kenya Microfinance Bank",
+            "type": "Microfinance Bank",
+            "website": "https://www.lolckenya.co.ke/",
+            "business_portal": "https://www.lolckenya.co.ke/loans/",
+            "shariah": false,
+            "tags": [
+                "SME"
+            ],
+            "notes": "LOLC loans",
+            "last_checked": "2025-10-04T00:00:00Z",
+            "status": "unknown",
+            "business_portal_status": "broken",
+            "business_portal_last_checked": "2025-10-08T19:19:21.473691Z",
+            "website_status": "broken",
+            "website_last_checked": "2025-10-08T19:19:29.482379Z"
+        },
+        {
+            "name": "SMEP Microfinance Bank",
+            "type": "Microfinance Bank",
+            "website": "https://www.smep.co.ke/",
+            "business_portal": "https://www.smep.co.ke/loans/",
+            "shariah": false,
+            "tags": [
+                "MSME"
+            ],
+            "notes": "SMEP loans",
+            "last_checked": "2025-10-04T00:00:00Z",
+            "status": "unknown",
+            "business_portal_status": "broken",
+            "business_portal_last_checked": "2025-10-08T19:19:30.325509Z",
+            "website_status": "ok",
+            "website_last_checked": "2025-10-08T19:19:31.693598Z"
+        },
+        {
+            "name": "Sumac Microfinance Bank",
+            "type": "Microfinance Bank",
+            "website": "https://sumacmicrofinancebank.co.ke/",
+            "business_portal": "https://sumacmicrofinancebank.co.ke/loans/",
+            "shariah": false,
+            "tags": [
+                "SME"
+            ],
+            "notes": "Sumac loans",
+            "last_checked": "2025-10-04T00:00:00Z",
+            "status": "unknown",
+            "business_portal_status": "ok",
+            "business_portal_last_checked": "2025-10-08T19:19:35.172411Z",
+            "website_status": "ok",
+            "website_last_checked": "2025-10-08T19:19:37.265196Z"
+        },
+        {
+            "name": "U & I Microfinance Bank",
+            "type": "Microfinance Bank",
+            "website": "https://www.uni-microfinance.co.ke/",
+            "business_portal": "https://www.uni-microfinance.co.ke/loans/",
+            "shariah": false,
+            "tags": [
+                "MSME"
+            ],
+            "notes": "U&I loans",
+            "last_checked": "2025-10-04T00:00:00Z",
+            "status": "unknown",
+            "business_portal_status": "ok",
+            "business_portal_last_checked": "2025-10-08T19:19:39.135687Z",
+            "website_status": "ok",
+            "website_last_checked": "2025-10-08T19:19:41.065556Z"
+        },
+        {
+            "name": "Salaam Microfinance Bank",
+            "type": "Microfinance Bank",
+            "website": "https://salaammfbank.co.ke/",
+            "business_portal": "https://salaammfbank.co.ke/our-products/",
+            "shariah": true,
+            "tags": [
+                "Shariah",
+                "MSME"
+            ],
+            "notes": "Shariah-compliant MFB",
+            "last_checked": "2025-10-04T00:00:00Z",
+            "status": "unknown",
+            "business_portal_status": "broken",
+            "business_portal_last_checked": "2025-10-08T19:19:42.625845Z",
+            "website_status": "ok",
+            "website_last_checked": "2025-10-08T19:19:46.746664Z"
+        },
+        {
+            "name": "On It Microfinance Bank",
+            "type": "Microfinance Bank",
+            "website": "https://onitbank.com/",
+            "business_portal": "https://onitbank.com/",
+            "shariah": false,
+            "tags": [
+                "MSME"
+            ],
+            "notes": "On It MFB",
+            "last_checked": "2025-10-04T00:00:00Z",
+            "status": "unknown",
+            "business_portal_status": "broken",
+            "business_portal_last_checked": "2025-10-08T19:19:47.805033Z",
+            "website_status": "broken",
+            "website_last_checked": "2025-10-08T19:19:48.925174Z"
+        },
+        {
+            "name": "Muungano Microfinance Bank",
+            "type": "Microfinance Bank",
+            "website": "https://muunganomfbank.co.ke/",
+            "business_portal": "https://muunganomfbank.co.ke/loans/",
+            "shariah": false,
+            "tags": [
+                "MSME"
+            ],
+            "notes": "Muungano loans",
+            "last_checked": "2025-10-04T00:00:00Z",
+            "status": "unknown",
+            "business_portal_status": "broken",
+            "business_portal_last_checked": "2025-10-08T19:19:54.540845Z",
+            "website_status": "ok",
+            "website_last_checked": "2025-10-08T19:20:01.224868Z"
+        }
+    ]
+}

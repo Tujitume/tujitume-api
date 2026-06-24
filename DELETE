@@ -1,0 +1,11 @@
+      PID    PPID    PGID     WINPID   TTY         UID    STIME COMMAND
+     1722    1721    1722      10180  pty2      197609 21:07:02 /usr/bin/bash
+     1721       1    1721       2248  ?         197609 21:07:02 /usr/bin/mintty
+     1661    1660    1661      12792  pty1      197609 21:05:34 /usr/bin/bash
+     1783    1722    1783       7228  pty2      197609 21:12:57 /usr/bin/PS
+     1633       1    1633      13072  ?         197609 21:05:19 /usr/bin/mintty
+     1660       1    1660      12820  ?         197609 21:05:34 /usr/bin/mintty
+     1686    1661    1686      12236  pty1      197609 21:05:37 /usr/bin/bash
+     1634    1633    1634       1532  pty0      197609 21:05:19 /usr/bin/bash
+     1694    1686    1686       5164  pty1      197609 21:05:40 /c/nvm4w/nodejs/node
+     1659    1634    1659       5228  pty0      197609 21:05:29 /usr/bin/winpty

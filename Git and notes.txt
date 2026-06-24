@@ -1,0 +1,26 @@
+-NOTES
+ -CICD Pipeline, appspec.yml do auto push AWS regardless tests, deploy.yml should be used.
+ -
+
+-GIT
+git add . && git commit -m "updated" && git push -u origin master
+sudo chown -R www-data public
+sudo systemctl restart apache2.service
+
+1. Create new repository
+2. from code directory's cmd, git init
+3. git status
+4. git add .
+4. git commit -m "Desc"
+ git branch -M branchName
+6. git remote add origin <url>
+7. git push -u origin main
+
+if fatal error: run this - git config http.postBuffer 524288000 then command again
+
+for ignore
+create a .gitignore file
+then inside write file names to be ignored ex: .env
+
+** master to main
+git branch -m master main

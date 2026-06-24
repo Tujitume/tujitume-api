@@ -1,0 +1,16 @@
+# Events:
+# ApplicationStop, BeforeInstall, AfterInstall, ApplicationStart, ValidateService
+# https://docs.aws.amazon.com/codedeploy/latest/APIReference/API_LifecycleEvent.html
+version: 0.0
+os: linux
+files:
+  - source: /
+    destination: /var/www/test.jitume
+hooks:
+  AfterInstall:
+    - location: ./scripts/after-install.sh
+      runas: ubuntu
+
+#BeforeInstall
+#AfterInstall
+file_exists_behavior: OVERWRITE

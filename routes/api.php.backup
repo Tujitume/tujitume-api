@@ -1,0 +1,605 @@
+<?php
+
+
+use App\Http\Controllers\Account\AccountController;
+use App\Http\Controllers\Account\UserController;
+use App\Http\Controllers\Account\WalletController;
+use App\Http\Controllers\Account\WithdrawController;
+use App\Http\Controllers\AuthController;
+use App\Http\Controllers\Business\BidsEmailController;
+use App\Http\Controllers\Business\BusinessController;
+use App\Http\Controllers\Business\MidMilestoneController;
+use App\Http\Controllers\Business\MilestoneController;
+use App\Http\Controllers\Business\MilestonePMController;
+use App\Http\Controllers\Business\PreReleaseRmepController;
+use App\Http\Controllers\Business\ResolutionController;
+use App\Http\Controllers\Business\SubscriptionController;
+use App\Http\Controllers\Capital\CapitalController;
+use App\Http\Controllers\CheckoutMpesaController;
+use App\Http\Controllers\CheckoutStripeController;
+use App\Http\Controllers\Grant\DealroomController;
+use App\Http\Controllers\Grant\GrantController;
+use App\Http\Controllers\Grant\GrantDealRoomController;
+use App\Http\Controllers\Grant\GrantDisbursementController;
+use App\Http\Controllers\Grant\GrantMilestoneController;
+use App\Http\Controllers\Grant\GrantServiceController;
+use App\Http\Controllers\Grant\GrantSupplierController;
+use App\Http\Controllers\Grant\GrantWalletController;
+use App\Http\Controllers\Grant\MilestoneVerificationController;
+use App\Http\Controllers\Misc\AiController;
+use App\Http\Controllers\Misc\AnalyticsController;
+use App\Http\Controllers\Misc\EventController;
+use App\Http\Controllers\Misc\KenyaLoansController;
+use App\Http\Controllers\Misc\LikeController;
+use App\Http\Controllers\Misc\MatchController;
+use App\Http\Controllers\Misc\MessageController;
+use App\Http\Controllers\Misc\ScheduleMeetingController;
+use App\Http\Controllers\Misc\WatchlistController;
+use App\Http\Controllers\PagesController;
+use App\Http\Controllers\ServiceController;
+use App\Http\Controllers\User\DeviceController;
+use App\Http\Controllers\User\SessionController;
+use App\Http\Controllers\User\SocialController;
+use Illuminate\Support\Facades\Route;
+
+// Third Party Callback Routes
+Route::post('/lipr-callback', [CheckoutMpesaController::class,'callback']);
+Route::post('/stripe-callback', [CheckoutStripeController::class, 'callback']);
+
+Route::get('/locations/{query}', [UserController::class,'locations']);
+Route::get('/get-conversion-rate/{base}', [WalletController::class,'conversion_rate']);
+Route::get('all-events', [EventController::class, 'browse']);
+Route::get('/home/grants', [GrantController::class, 'index']);
+
+Route::get('grant/reject-invitation/{email}', [GrantController::class, 'reject_invitation'])
+    ->name('reject.invitation')
+    ->middleware('signed');
+Route::get('/home/capital-offers', [CapitalController::class, 'index']);
+
+//P R O T E C T E D    R O U T E S
+Route::middleware(['auth:sanctum', 'extend-token', 'throttle:api'])->group(function() {
+
+    // 2FA & Account Routes
+    Route::get('/me/sessions', [SessionController::class,'index']);
+    Route::delete('/me/sessions/{id}', [SessionController::class,'destroy']);
+    Route::delete('/me/sessions', [SessionController::class,'destroyAllExceptCurrent']);
+    Route::get('/me/devices', [DeviceController::class,'index']);
+    Route::patch('/me/devices/{device}', [DeviceController::class,'update']);
+    Route::delete('/me/devices/{device}', [DeviceController::class,'destroy']);
+
+    Route::get('logout',[AuthController::class,'logout']);
+    Route::get('logout-all',[AuthController::class,'logoutAll']);
+    Route::get('account/delete/{id}', [AccountController::class, 'destroy']);
+    Route::post('/lipr-onboard', [WalletController::class,'lipr_onboarding']);
+
+    Route::post('/lipr-subscription-initiate', [AccountController::class,'lipr_subscription_initiate']);
+    Route::post('/lipr-subscription', [AccountController::class,'lipr_subscription']);
+    // 2FA Routes
+
+    Route::post('serviceBook', [ServiceController::class, 'serviceBook'])->name('serviceBook');
+    Route::get('rebook_service/{id}', [ServiceController::class, 'rebook_service'])->name('rebook_service');
+    Route::post('serviceMsg', [ServiceController::class, 'serviceMsg'])->name('serviceMsg');
+    Route::post('serviceReply', [ServiceController::class, 'serviceReply'])->name('serviceReply');
+
+    //Download Routes
+    Route::get('equipments/{id}', [PagesController::class, 'equipments'])->name('equipment');
+    Route::get('invest/{listing_id}/{id}/{value}/{amount}/{type}', [PagesController::class, 'invest'])->name('equipments');
+    Route::get('download_business/{id}', [PagesController::class, 'download_business'])->name('download_business');
+    Route::get('download_statement/{id}', [PagesController::class, 'download_statement'])->name('download_statement');
+    Route::get('download_milestoneDoc/{id}/{mile_id}', [BusinessController::class, 'download_milestone_doc'])->name('download_milestoneDoc');
+    Route::get('download_milestoneDocS/{id}/{mile_id}', [ServiceController::class, 'download_milestone_doc'])->name('download_milestoneDocS');
+    Route::get('download_bids_doc/{id}', [BusinessController::class, 'download_bids_doc'])->name('download_bids_doc');
+
+    // Review & Rating
+    Route::get('ratingListing/{id}/{rating}/{text}', [BusinessController::class, 'ratingListing'])->name('ratingListing');
+    Route::get('ratingService/{id}/{rating}/{text}', [ServiceController::class, 'ratingService'])->name('ratingService');
+    Route::get('unlockBySubs/{id}/{sub_id}/{plan}', [BusinessController::class, 'unlockBySubs'])->name('unlockBySubs');
+
+    //B I D S
+    Route::post('bidCommitsEQP', [BidsEmailController::class, 'bidCommitsEQP'])->name('bidCommitsEQP');
+    Route::post('bookingAccepted', [BidsEmailController::class, 'bookingAccepted'])->name('bookingAccepted');
+    Route::post('bookingRejected', [BidsEmailController::class, 'bookingRejected'])->name('bookingRejected');
+    Route::get('FindProjectManagers/{bid_id}', [BusinessController::class, 'FindProjectManagers'])->name('FindProjectManagers');
+    Route::get('releaseEquipment/{b_owner_id}/{manager_id}/{bid_id}', [BidsEmailController::class, 'releaseEquipment'])->name('releaseEquipment');
+    Route::post('raise-dispute', [BusinessController::class, 'raiseDispute']);
+
+    Route::get('isSubscribed/{id}', [BusinessController::class, 'isSubscribed'])->name('isSubscribed');
+    Route::post('bidsAccepted', [BidsEmailController::class, 'bidsAccepted'])->name('bidsAccepted');
+
+
+    //});
+
+    // P A Y M E N T  R O U T E S
+    //Unlock small fee
+    Route::post('/stripe.post.coversation', [CheckoutStripeController::class, 'UnlockListing'])->name('stripe.post.coversation');
+    Route::post('bidCommits', [CheckoutStripeController::class, 'bidCommitPayment'])->name('bidCommits');
+    Route::post('bidCommitsAwaiting', [CheckoutStripeController::class, 'bidAwaitingPayment']);
+    Route::post('milestoneService', [CheckoutStripeController::class, 'PayServiceFee'])->name('milestoneService.post');
+    Route::post('milestone/rmepFundsCommit', [CheckoutStripeController::class, 'rmepFundsCommit'])->name('rmepFundsCommit');
+
+    //Stripe-Connect
+    Route::get('/connect/{id}', [WalletController::class, 'connect'])->name('connect.stripe');
+    Route::get('/saveStripe/{token}', [WalletController::class, 'saveStripe'])->name('return.stripe');
+    Route::get('/checkAuth', [AuthController::class,'checkAuth']);
+
+    // L I P R
+    Route::post('/lipr-status-bids', [CheckoutMpesaController::class,'status_bids']);
+    Route::post('/lipr-status-bidsAwaiting', [CheckoutMpesaController::class,'status_bidsAwaiting']);
+    Route::post('/lipr-status-service', [CheckoutMpesaController::class,'status_service']);
+    Route::post('/lipr-status-smallFee', [CheckoutMpesaController::class,'status_smallFee']);
+    Route::post('/lipr-status-grant', [CheckoutMpesaController::class,'grantDisbursement']);
+    Route::post('/lipr-status-grant-bulk', [CheckoutMpesaController::class,'grant_milestone_bulk']);
+    Route::post('/lipr-status-capital', [CheckoutMpesaController::class,'capitalDisbursement']);
+    Route::post('/lipr/initiate-payment', [CheckoutMpesaController::class,'initiate_payment']);
+
+    //Wallet Routes & Deposit
+    Route::get('/wallet-balances', [WalletController::class,'wallet_balances']);
+    Route::post('/stripe/deposit', [WalletController::class,'stripe_deposit']);
+
+    Route::post('/lipr/deposit', [WalletController::class,'lipr_deposit']);
+    Route::post('/lipr/deposit-status', [WalletController::class,'lipr_deposit_status']);
+
+
+    //Withdraw
+    Route::post('/stripe/withdraw', [WithdrawController::class,'stripe_withdraw']);
+
+    Route::post('/lipr/initiate-withdraw', [WithdrawController::class,'mobile_initiate_withdraw']);
+    Route::post('/lipr/withdraw-status', [WithdrawController::class,'mobile_withdraw_status']);
+    Route::post('/lipr/paybill-initiate-withdraw', [WithdrawController::class,'paybill_initiate_withdraw']);
+    Route::post('/lipr/paybill-withdraw-status', [WithdrawController::class,'paybill_withdraw_status']);
+    Route::post('/lipr/till-initiate-withdraw', [WithdrawController::class,'till_initiate_withdraw']);
+    Route::post('/lipr/till-withdraw-status', [WithdrawController::class,'till_withdraw_status']);
+
+    #Route::post('/bank/initiate-withdraw', [WalletController::class,'bank_initiate_withdraw']);
+    Route::get('/transactions', [AccountController::class,'transactions']);
+    Route::get('/withdraw-history', [AccountController::class,'withdraws']);
+    // P A Y M E N T  R O U T E S  E N D S
+
+
+    // M I S C
+    Route::get('/partiesInfo/{listing_id}', [AuthController::class,'partiesInfo']);
+    Route::get('/partiesServiceMile/{rep_mile_id}', [AuthController::class,'PartiesServiceMile']);
+    Route::get('/stripeSubscribe/{amount}/{plan}/{days}/{range}/{inv}', [SubscriptionController::class, 'stripeSubscribeGet'])->name('stripeSubscribe');
+    Route::get('/stripeSubscribeSuccess', [SubscriptionController::class, 'stripeSubscribeSuccess'])->name('stripeSubscribeSuccess');
+
+
+
+    // B U S I N E S S    P R O T E C T E D
+    Route::prefix('/business')->group(function(){
+
+    Route::post('update-profile', [PagesController::class, 'update_profile'])->name('update-profile');
+    Route::post('bulk-import', [BusinessController::class, 'bulk_import']);
+
+    Route::post('create-listing', [BusinessController::class, 'save_listing'])->name('create-listing');
+    Route::get('/bBQhdsfE_WWe4Q-_f7ieh7Hdhf1E_', [BusinessController::class, 'home'])->name('business');
+    Route::get('bBQhdsfE_WWe4Q-_f7ieh7Hdhf3E_', [BusinessController::class, 'listings'])->name('listings');
+    Route::post('add_eqp', [BusinessController::class, 'add_eqp'])->name('add_eqp');
+    Route::post('up_listing', [BusinessController::class, 'up_listing'])->name('up_listing');
+    Route::get('delete_listing/{id}', [BusinessController::class, 'delete_listing'])->name('delete_listing');
+    Route::get('business_bids', [BusinessController::class, 'business_bids'])->name('business_bids');
+    Route::get('confirmed_bids', [BusinessController::class, 'confirmed_bids'])->name('confirmed_bids');
+    Route::get('bBQhdsfE_WWe4Q-_f7ieh7Hdhf5E_', [BusinessController::class, 'my_bids'])->name('my_bids');
+    Route::get('remove_bids/{id}', [BidsEmailController::class, 'remove_bids'])->name('remove_bids');
+    Route::get('remove_active_bids/{id}', [BidsEmailController::class, 'remove_active_bids'])->name('remove_active_bids');
+
+    Route::get('askInvestorToVerify/{bid_id}', [BusinessController::class, 'askInvestorToVerify']);
+    Route::get('requestOwnerToVerify/{bid_id}', [BusinessController::class, 'requestOwnerToVerify']);
+    Route::get('markAsVerified/{bid_id}', [BusinessController::class, 'markAsVerified']);
+    Route::get('assetEquip/download/{id}/{type}', [BusinessController::class, 'assetEquip_download'])->name('assetEquip/download');
+
+    //Account Data & Subscription
+    Route::get('account', [AccountController::class, 'account_wallet'])->name('account');
+    Route::get('getCurrSubscription', [SubscriptionController::class, 'getCurrSubscription']);
+    Route::get('cancelSubscription/{id}', [SubscriptionController::class, 'cancelSubscription']);
+    Route::get('renewSubscription/{stripe_sub_id}', [SubscriptionController::class, 'renewSubscription']);
+    Route::get('fetchUser/{id}', [AuthController::class, 'fetchUser']);
+    Route::get('bidInfo/{id}', [BidsEmailController::class, 'bid_info']);
+    Route::get('withdraw_investment/{id}', [BidsEmailController::class, 'withdraw_investment']);
+    Route::post('deactivate', [BusinessController::class, 'deactivate']);
+
+    //MILESTONES
+    Route::get('add_milestones', [BusinessController::class, 'add_milestones'])->name('add_milestones');
+    Route::get('activate_milestone/{id}', [BusinessController::class, 'activate_listing'])->name('activate_milestone');
+    Route::post('save_milestone', [BusinessController::class, 'save_milestone'])->name('save_milestone');
+    Route::get('delete_milestone/{id}', [BusinessController::class, 'delete_milestone'])->name('delete_milestone');
+
+
+    Route::get('bBQhdsfE_WWe4Q-_f7ieh7Hdhf7E_-{id}', [BusinessController::class, 'milestones'])->name('milestones');
+    Route::get('bBQhdsfE_WWe4Q-_f7ieh7Hdhf_E_', [BusinessController::class, 'applyForShow'])->name('applyForShow');
+    Route::get('/notifications', [BusinessController::class, 'notifications']); //->middleware('throttle:120,1');
+    Route::get('/notifSetRead', [BusinessController::class, 'notifSetRead']);
+
+    //Dashboard -- Service ROUTES
+    Route::get('bBQhdsfE_WWe4Q-_f7ieh7Hdhf8F_', [ServiceController::class, 'services'])->name('services');
+    Route::get('bBQhdsfE_WWe4Q-_f7ieh7Hdhf2F_', [ServiceController::class, 'add_listing'])->name('add-services');
+    Route::post('create-service', [ServiceController::class, 'save_listing'])->name('create-service');
+    // --- MILESTONE
+    Route::get('add_s_milestones', [ServiceController::class, 'add_milestones'])->name('add_s_milestones');
+    Route::get('bBQhdsfE_WWe4Q-_f7ieh7Hdhf4F_-{id}', [ServiceController::class, 'milestones'])->name('s_milestones');
+    Route::get('findMilestones/{s_id}/{booker_id}', [ServiceController::class, 'findMilestones'])->name('findMilestones');
+
+    Route::post('save_s_milestone', [ServiceController::class, 'save_milestone'])->name('save_s_milestone');
+    Route::post('up_milestones', [ServiceController::class, 'up_milestone'])->name('up_s_milestones');
+    Route::get('delete_s_milestone/{id}', [ServiceController::class, 'delete_milestone'])->name('delete_s_milestone');
+    Route::post('mile_s_status', [ServiceController::class, 'mile_status'])->name('mile_s_status');
+    // --- MILESTONE
+    Route::get('service_booking', [ServiceController::class, 'service_booking'])->name('service_booking');
+    Route::get('my_booking', [ServiceController::class, 'my_booking'])->name('my_booking');
+    Route::get('bBQhdsfE_WWe4Q-_f7ieh7Hdhf6F__', [ServiceController::class, 'booker_milestones'])->name('booker-milestones');
+    Route::get('getBookers/{s_id}', [ServiceController::class, 'getBookers'])->name('getBookers');
+    Route::get('service_messages/{from}', [ServiceController::class, 'service_messages'])->name('service-messages');
+    Route::get('service_messages_count/{from}', [ServiceController::class, 'service_messages_count']);
+
+
+    Route::get('/dashhome/{query}', [BusinessController::class, 'home']);
+    Route::get('bBQhdsfE_WWe4Q-_f7ieh7Hdhf8F_', [ServiceController::class, 'listings'])->name('services');
+    Route::post('up_service', [ServiceController::class, 'up_listing'])->name('up_service');
+    Route::get('delete_service/{id}', [ServiceController::class, 'delete_service'])->name('delete_service');
+
+    });
+
+    // B U S I N E S S  /  S E R V I C E S   P R O T E C T E D   ENDS
+
+
+    // D E A L - R O O M
+    Route::prefix('/deal-room')->group(function (){
+        Route::get('businesses', [DealroomController::class, 'businesses']);
+        Route::get('business/{businessId}/stats', [DealroomController::class, 'business_stats']);
+        Route::get('business/{businessId}/participants', [DealroomController::class, 'participants']);
+        Route::get('milestone/{milestoneId}/communications', [DealroomController::class, 'communications']);
+        Route::post('milestone/communications', [DealroomController::class, 'communications_store']);
+    });
+
+    // M I L E S T O N E S
+    Route::get('milestones', [MilestoneController::class, 'all_milestones']);
+
+    Route::prefix('/milestones')->group(function (){
+
+        Route::get('{listing_id}', [MilestoneController::class, 'index']);
+
+        Route::get('{id}/pre-release-requests', [PreReleaseRmepController::class, 'getPreReleaseRequests']);
+        Route::get('{id}/investor/pre-release-requests', [PreReleaseRmepController::class, 'getInvestorPreReleaseRequests']);
+        Route::get('{requestId}/pre-release-docs', [PreReleaseRmepController::class, 'getPreReleaseDocs']);
+
+        Route::post('{id}/pre-release-requests', [PreReleaseRmepController::class, 'createPreReleaseRequest']);
+        Route::post('{requestId}/pre-release-docs', [PreReleaseRmepController::class, 'uploadPreReleaseDocs']);
+        Route::post('{requestId}/pre-release-votes', [PreReleaseRmepController::class, 'investorReview']);
+        Route::post('set-status', [MilestoneController::class, 'mile_status']);
+
+        //Mid-Milestone
+        Route::get('{milestoneId}/mid-milestones', [MidMilestoneController::class, 'index']);
+        Route::post('mid-milestones', [MidMilestoneController::class, 'store']);
+        Route::post('{id}/mid-milestones-docs', [MidMilestoneController::class, 'uploadDocuments']); // BO uploads extra docs
+        Route::post('mid-milestones/vote', [MidMilestoneController::class, 'vote_store']);
+        Route::post('{id}/pm-review', [MidMilestoneController::class, 'pmAuditReview']); // PM performs audit -> pass/partial/fail
+
+        //Mid-Milestone Pm Audit
+        Route::get('audits/{type}', [MilestonePMController::class, 'audits']);
+        Route::post('audit-request', [MilestonePMController::class, 'audit_request']);
+        Route::post('audits/{auditId}/review', [MilestonePMController::class, 'audit_review']);
+        Route::post('mid-milestones/audits', [MilestonePMController::class, 'audit_store']);
+
+        //Candidates
+        Route::get('mid-milestones/{id}/pm-candidates', [MilestonePMController::class, 'mid_pm_candidates']);
+        Route::get('pre-release/{milestone_id}/pm-candidates', [MilestonePMController::class, 'pr_pm_candidates']);
+        Route::get('final/{milestone_id}/pm-candidates', [MilestonePMController::class, 'final_pm_candidates']);
+
+        //Votes
+        Route::post('mid-milestones/pm-vote', [MilestonePMController::class, 'mid_pm_vote']);
+        Route::post('pre-release/pm-vote', [MilestonePMController::class, 'pr_pm_vote']);
+        Route::post('final/pm-vote', [MilestonePMController::class, 'final_pm_vote']);
+
+
+
+        //Milestone - Investor
+        Route::get('investor/investments', [MilestoneController::class, 'getInvestments']);
+
+        //rmpes
+        Route::get('{milestoneId}/rmeps', [MilestoneController::class, 'rmeps']);
+        Route::post('rmeps', [MilestoneController::class, 'rmep_store']);
+        Route::post('rmeps/votes', [MilestoneController::class, 'vote_store']);
+
+        //final approval
+        Route::post('final-approval/document', [MilestoneController::class, 'final_proof_store']);
+        Route::get('{milestoneId}/final-approval/document', [MilestoneController::class, 'final_proof_get']);
+        Route::post('final-approval/votes', [MilestoneController::class, 'final_approval_vote']);
+
+        //DOCUMENTS DOWNLOAD also Handled from Frontend
+        //Route::get('pre-release/{id}/download/document', [MilestoneController::class, 'pr_document_dld']);
+        //Route::get('rmeps/{id}/download/document', [MilestoneController::class, 'rmep_document_dld']);
+        //Route::get('{id}/download/document', [MilestoneController::class, 'documents']);
+
+        Route::get('{id}/documents', [MilestoneController::class, 'documents']);
+
+        // Non Compliance
+        Route::get('{id}/non-compliances', [ResolutionController::class, 'non_compliances']);
+        Route::post('non-compliance/votes', [ResolutionController::class, 'nc_vote_store']);
+        Route::post('non-compliance/response-upload', [ResolutionController::class, 'nc_response_store']);
+    });
+
+
+    Route::prefix('/services')->group(function(){
+        Route::post('deactivate', [ServiceController::class, 'deactivate']);
+        Route::post('activate', [ServiceController::class, 'activate']);
+    });
+
+
+
+    //   B-G-C  R O U T E S
+    // m e s s a g e s
+    Route::post('serviceReply', [ServiceController::class, 'serviceReply'])->name('serviceReply');
+
+    // m e e t i n g s
+    Route::get('meetings', [ScheduleMeetingController::class, 'meetings']);
+    Route::post('create-meeting', [ScheduleMeetingController::class, 'create_meeting']);
+    Route::post('cancel-meeting', [ScheduleMeetingController::class, 'cancel_meeting']);
+    Route::get('clients-list', [ScheduleMeetingController::class, 'clients_list']);
+    Route::get('schedules', [ScheduleMeetingController::class, 'schedules']);
+    Route::get('client-schedules/{client_id}', [ScheduleMeetingController::class, 'client_schedules']);
+    Route::post('create-schedule', [ScheduleMeetingController::class, 'create_schedule']);
+    Route::post('delete-schedule/{id}', [ScheduleMeetingController::class, 'delete_schedule']);
+    Route::get('RoleBasedUsers',[AuthController::class,'RoleBasedUsers']);
+    Route::apiResource('watchlists',WatchlistController::class);
+    Route::apiResource('messages',MessageController::class);
+    Route::post('messages/mark-read', [MessageController::class, 'markAsRead']);
+
+    Route::get('likes', [LikeController::class, 'index']);
+    Route::post('like-toggle', [LikeController::class, 'toggle']);
+    Route::post('notifications/clear', [LikeController::class, 'clear_notification']);
+    Route::post('notifications/update', [LikeController::class, 'update_notification']);
+    //   A P I/  R O U T E S  E N D S
+
+
+
+    // G R A N T S    P R O T E C T E D
+
+    Route::prefix('/grant')->middleware(['grant'])->group(function(){
+       //Grant
+        Route::get('grants', [GrantController::class, 'index']);
+        Route::get('public-grants', [GrantController::class, 'public_grants']);
+        Route::get('get_grant/{id}', [GrantController::class, 'get_grant']);
+        Route::get('pitches/{grant_id}', [GrantController::class, 'pitches']);
+        Route::get('pitch/{id}', [GrantController::class, 'pitch_details']);
+        Route::get('my_pitches', [GrantController::class, 'mypitches']);
+        Route::get('visibility/{grant_id}', [GrantController::class, 'visibility']);
+        Route::get('delete-grant/{id}', [GrantController::class, 'destroy']);
+
+        Route::get('fund-release-request/{pitch_id}', [GrantController::class, 'fund_request']);
+        Route::get('analytics', [AnalyticsController::class, 'index']);
+        Route::get('grantWritingServices', [GrantServiceController::class, 'grantWritingServices']);
+        Route::get('store-watchlist/{pitch_id}', [GrantController::class, 'store_watchlist']);
+        Route::get('get-watchlist', [GrantController::class, 'get_watchlist']);
+
+        Route::post('create-grant', [GrantController::class, 'store']);
+        Route::post('grants/{grant}', [GrantController::class, 'update']);
+
+        Route::post('/{grant}/applications',[GrantController::class,'store_application']);
+        Route::post('applications/{pitch}/accept', [GrantController::class, 'accept']);
+        Route::post('applications/{pitch}/reject', [GrantController::class, 'reject']);
+
+
+        Route::post('grant-milestone', [CheckoutStripeController::class, 'grantDisbursement']);
+        Route::post('grant-milestone-release-bulk', [GrantController::class, 'release_fst_milestone']);
+        Route::post('match-score/{grant_id}', [MatchController::class, 'score']);
+
+        Route::post('update-profile', [GrantController::class, 'update_profile']);
+        Route::post('update-user',[GrantController::class,'update_user']);
+
+        Route::post('delete-user',[GrantController::class,'delete_user']);
+        Route::post('delete/role-user',[GrantController::class,'delete_roleUser']);
+
+        Route::get('accept-invitation',[GrantController::class,'update_user']);
+
+        # *** Grant New Routes
+        Route::get('{grant}/wallets', [GrantWalletController::class, 'show']);
+        Route::post('wallets/{wallet}/deposit', [GrantWalletController::class, 'deposit']);
+        Route::post('wallets/{wallet}/deposit-status', [GrantWalletController::class, 'deposit_status']);
+
+        Route::apiResource('applications/{application}/milestones', GrantMilestoneController::class)->shallow();
+        Route::apiResource('milestones/{milestone}/suppliers', GrantSupplierController::class)->shallow();
+
+        Route::post('milestones/{milestone}/budget-items', [GrantSupplierController::class, 'budget_item_store']);
+        Route::post('applications/{application}/award', [GrantMilestoneController::class, 'award']);
+
+        Route::apiResource('milestones/{milestone}/verifications', MilestoneVerificationController::class)->shallow();
+        // Grant owner decision actions MPRV (approve / reject / audit)
+        Route::patch('verifications/{verification}/approve', [MilestoneVerificationController::class, 'approve']);
+        Route::patch('verifications/{verification}/reject', [MilestoneVerificationController::class, 'reject']);
+        Route::patch('verifications/{verification}/request-audit', [MilestoneVerificationController::class, 'requestAudit']);
+
+
+        Route::apiResource('milestones/{milestone}/disbursements', GrantDisbursementController::class)->shallow();
+        // Payment status actions
+        Route::patch('disbursements/{disbursement}/mark-completed', [GrantDisbursementController::class, 'markCompleted']);
+        Route::patch('disbursements/{disbursement}/mark-failed', [GrantDisbursementController::class, 'markFailed']);
+        Route::patch('disbursements/{disbursement}/reverse', [GrantDisbursementController::class, 'reverse']);
+
+        Route::apiResource('milestones/{milestone}/deal-room', GrantDealRoomController::class)
+            ->shallow();
+
+
+        # Completion submissions for milestone
+        Route::post('milestones/{milestone}/completions', [MilestoneVerificationController::class, 'store_completion']);
+        Route::get('milestones/{milestone}/completions', [MilestoneVerificationController::class, 'index_completions']);
+        Route::patch('completions/{completion}/approve', [MilestoneVerificationController::class, 'approve_completion']);
+        Route::patch('completions/{completion}/reject', [MilestoneVerificationController::class, 'reject_completion']);
+
+        // New ends
+
+    });
+
+    Route::prefix('/capital')->middleware(['capital'])->group(function(){
+       //Capital
+       Route::post('create-capital-offer', [CapitalController::class, 'store']);
+       Route::post('investment-application',[CapitalController::class,'store_application']);
+       Route::get('capital-offers', [CapitalController::class, 'index']);
+       Route::get('pitches/{capital_id}', [CapitalController::class, 'pitches']);
+       Route::get('pitch/{id}', [CapitalController::class, 'pitch_details']);
+       Route::get('get_capital/{id}', [CapitalController::class, 'get_capital']);
+       Route::get('my_pitches', [CapitalController::class, 'mypitches']);
+       Route::post('update-capital', [CapitalController::class, 'update']);
+       Route::get('visibility/{capital_id}', [CapitalController::class, 'visibility']);
+       Route::get('delete-capital/{id}', [CapitalController::class, 'destroy']);
+       Route::get('accept/{pitch_id}', [CapitalController::class, 'accept']);
+       Route::get('reject/{pitch_id}', [CapitalController::class, 'reject']);
+       Route::get('fund-release-request/{pitch_id}', [CapitalController::class, 'fund_request']);
+       Route::post('match-score/{capital_id}', [MatchController::class, 'score_capital']);
+       Route::post('capital-milestone', [CheckoutStripeController::class, 'capitalDisbursement']);
+       Route::get('terms-agreements/{pitch_id}', [CapitalController::class, 'terms_agreements']);
+       Route::post('terms-agreements', [CapitalController::class, 'terms_agreements_store']);
+       Route::post('terms-agreements/update', [CapitalController::class, 'terms_agreements_update']);
+       Route::get('analytics', [AnalyticsController::class, 'index_capital']);
+
+
+       Route::get('grant-writing-services', [GrantServiceController::class, 'grantWritingServices']);
+       Route::get('pitch-coaching-services', [GrantServiceController::class, 'pitchCoachingServices']);
+       Route::get('store-watchlist/{pitch_id}', [CapitalController::class, 'store_watchlist']);
+       Route::get('get-watchlist', [CapitalController::class, 'get_watchlist']);
+       Route::post('update-profile', [CapitalController::class, 'update_profile']);
+       Route::post('delete-user',[CapitalController::class,'delete_user']);
+       Route::post('delete/role-user',[CapitalController::class,'delete_roleUser']);
+       Route::post('update-user',[CapitalController::class,'update_user']);
+
+    });
+
+    Route::prefix('/loans')->group(function(){
+        Route::get('kenya-business-loans', [KenyaLoansController::class, 'pageBanks']);
+        Route::get('kenya-business-loans/saccos', [KenyaLoansController::class, 'pageSaccosCurated']);
+        Route::get('kenya-business-loans/live', [KenyaLoansController::class, 'pageSaccosLive']);
+    });
+
+    // E v e n t s
+        Route::resource('events', EventController::class);
+        Route::post('event-update', [EventController::class, 'update']);
+        Route::post('event-deactivate', [EventController::class, 'deactivate']);
+        Route::post('event-activate', [EventController::class, 'activate']);
+    // G R A N T S    P R O T E C T E D   ENDS
+
+    // A I  R O U T E S
+    Route::prefix('/ai')->group(function(){
+        //Grant
+        Route::get('investor/listings', [AiController::class, 'index']);
+        Route::get('investor/services',[AiController::class,'index_s']);
+        Route::get('business/{business_id}/services',[AiController::class,'index_ls']);
+        Route::get('capital/market_analysis',[AiController::class,'capital_market_analysis']);
+    });
+    // A I  R O U T E S  E N D S
+
+    //Duplicate Routes with Auth
+    Route::get('listing_auth/{id}', [PagesController::class,'listing'])->name('listing_auth');
+    Route::get('searchResultsAuth/{ids}', [PagesController::class,'searchResults'])->name('searchResultsAuth');
+
+    Route::get('serviceResultsAuth/{ids}', [PagesController::class, 'serviceResultsAuth']);
+    Route::get('getMilestonesS_Auth/{id}', [ServiceController::class, 'getMilestones'])->name('getMilestonesS');
+    Route::get('getMilestonesAuth/{id}', [BusinessController::class ,'getMilestones'])->name('getMilestones');
+    Route::get('latBusinessAuth', [PagesController::class,'latBusiness'])->name('latBusiness');
+    Route::get('latServicesAuth', [PagesController::class, 'latServices'])->name('latServices');
+    Route::get('categoryResultsAuth/{catName}', [PagesController::class, 'categoryResults'])->name('categoryResults');
+    //Duplicate Routes with Auth
+
+    Route::get('checkDispute/{id}/{type}', [BusinessController::class ,'checkDispute']);
+    Route::post('submitReport', [PagesController::class, 'submitReport']);
+
+
+});
+//A L L    P R O T E C T E D    R O U T E S   ENDS
+
+
+    // L A N D I N G   &   S E A R C H   Public ROUTES
+    Route::middleware('throttle:public')->group(function () {
+        Route::get('latBusiness', [PagesController::class, 'latBusiness'])->name('latBusiness');
+        Route::get('latServices', [PagesController::class, 'latServices'])->name('latServices');
+
+        Route::get('listing/{id}', [PagesController::class,'listing'])->name('listing');
+        Route::get('searchResults/{ids}', [PagesController::class, 'searchResults'])->name('searchResults');
+        Route::get('ServiceResults/{ids}', [PagesController::class, 'ServiceResults'])->name('ServiceResults');
+        Route::get('categoryResults/{catName}', [PagesController::class, 'categoryResults'])->name('categoryResults');
+
+        Route::get('categoryCount', [PagesController::class, 'categoryCount'])->name('categoryCount');
+
+        Route::get('getMilestones/{id}', [BusinessController::class, 'getMilestones'])->name('getMilestones');
+        Route::get('getMilestonesS/{id}', [ServiceController::class, 'getMilestones'])->name('getMilestonesS');
+
+        Route::post('search', [PagesController::class, 'search'])->name('search');
+        Route::post('searchService', [PagesController::class, 'searchService'])->name('searchService');
+
+        Route::get('priceFilter/{min}/{max}/{ids}', [PagesController::class, 'priceFilter'])->name('priceFilter');
+        Route::get('priceFilterS/{min}/{max}/{ids}', [PagesController::class, 'priceFilterS'])->name('priceFilterS');
+        Route::get('priceFilter_amount/{min}/{max}/{ids}', [PagesController::class, 'priceFilter_amount'])->name('priceFilter_amount');
+
+        // A I   P U B L I C   R O U T E S
+        Route::prefix('/ai')->group(function(){
+            //Suggestions Tab
+            Route::get('listing/{listing_id}/suggestions', [AiController::class,'listing_suggestions']);
+            Route::get('service/{service_id}/suggestions', [AiController::class,'service_suggestions']);
+            Route::get('grant/{grant_id}/suggestions', [AiController::class,'grant_suggestions']);
+            Route::get('capital/{capital_id}/suggestions', [AiController::class,'capital_suggestions']);
+
+        });
+        // A I  R O U T E S  E N D S
+
+    });
+
+    Route::get('JitumeSubscribeEmail/{email}', [PagesController::class, 'JitumeSubscribeEmail']);
+    Route::get('CancelAssetBid/{id}/{action}',[BidsEmailController::class,'CancelAssetBid']);
+    Route::get('CancelEquipmentRelease/{id}/{action}',[BidsEmailController::class,'CancelEquipmentRelease']);
+    Route::get('CancelBookingConfirm/{id}/{action}',[BidsEmailController::class,'CancelBookingConfirm']);
+    Route::get('categories', [PagesController::class, 'categories']);
+    Route::get('grant/get_grant/{id}', [GrantController::class, 'get_grant']);
+    Route::get('capital/get_capital/{id}', [CapitalController::class, 'get_capital']);
+
+    //Email Click Routes
+    Route::get('emailVerify/{email}/{code}',[AuthController::class,'emailVerify']);
+    Route::get('agreeToMileS/{s_id}/{booker_id}', [BidsEmailController::class, 'agreeToMileS'])->name('agreeToMileS');
+    Route::get('agreeToProgressWithMilestone/{bidId}', [BidsEmailController::class, 'agreeToProgressWithMilestone']);
+    Route::get('agreeToNextmile/{bidId}', [BidsEmailController::class, 'agreeToNextmile'])->name('agreeToNextmile');
+    Route::get('emailExists/{email}',[AuthController::class,'emailExists']);
+    Route::get('reviewMilestoneS/{s_id}/{booker_id}', [ServiceController::class, 'reviewMilestoneS']);
+
+
+    //SOCIAL
+    Route::get('social_login',function (){ return view('social_types'); })->name('social_login');
+    Route::get('/google', function (){
+    return Socialite::driver('google')->stateless()->redirect(); })->name('login.google');
+    Route::get('google/callback',[SocialController::class, 'google']);
+
+    Route::get('/facebook', function () {
+    return Socialite::driver('facebook')->stateless()->redirect(); })->name('login.facebook');
+    Route::get('facebook/callback', [SocialController::class, 'facebook']);
+    Route::get('skip', [PagesController::class, 'skip'])->name('skip');
+
+    //TERMS
+    Route::get('terms', function (){return view('terms');} )->name('terms');
+    Route::get('privacy-policy', function (){return view('privacy-policy');} )->name('privacy-policy');
+    Route::post('ApplyForShow', [SocialController::class, 'ApplyForShow'])->name('ApplyForShow');
+
+    // Terms & Privacy
+     Route::get('terms', function(){ return view('policy.terms'); } )->name('terms');
+     Route::get('policy', function(){ return view('policy.privacy_policy'); } )->name('policy');
+
+    //EXTRA ROUTES
+    Route::get('{/anypath}', [PagesController::class, 'home'])->where('path', '.*');
+    Route::get('profile/{id}', [PagesController::class, 'profile']);
+    Route::post('profile/edit/{id}', [PagesController::class, 'updateProfile']);
+    Route::post('resetPassword', [AuthController::class, 'reset_password']);
+
+    Route::get('/clear', function() {
+        \Artisan::call('config:cache');
+        \Artisan::call('view:clear');
+        \Artisan::call('route:clear');
+        \Artisan::call('cache:clear');
+        dd("Cache is cleared");
+
+    });
+    //EXTRA ROUTES
+
+    //Login Routes
+    //For Login add to request X-Device-UUID: abc123
+
+    //Route::post('login',[AuthController::class,'login'])->name('login')->middleware('throttle:6,1');
+    Route::post('auth/verify-device', [AuthController::class,'verifyDevice']);//->middleware('throttle:10,1');
+    Route::post('login',[AuthController::class,'login'])->name('login');
+    Route::post('register', [AuthController::class,'register'])->name('register');
+
+
+

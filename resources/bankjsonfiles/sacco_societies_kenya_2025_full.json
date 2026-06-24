@@ -1,0 +1,481 @@
+[
+    {
+        "name": "Mwalimu National Sacco Society Ltd",
+        "last_checked": "2025-10-04T00:00:00Z",
+        "county_code": 47,
+        "lat": -1.286389,
+        "lng": 36.817223,
+        "postal": "P.O. Box 62641 \u2013 00200, Nairobi",
+        "physical": "Hill Lane, Nairobi City",
+        "County": "Nairobi"
+    },
+    {
+        "name": "Kenya National Police DT Sacco Society Ltd",
+        "last_checked": "2025-10-04T00:00:00Z",
+        "county_code": 47,
+        "lat": -1.286389,
+        "lng": 36.817223,
+        "postal": "P.O Box 51042 \u2013 00200, Nairobi",
+        "physical": "Kenya Police Sacco Plaza, Ngara Road, Nairobi",
+        "County": "Nairobi"
+    },
+    {
+        "name": "Stima DT Sacco Society Ltd",
+        "last_checked": "2025-10-04T00:00:00Z",
+        "county_code": 47,
+        "lat": -1.286389,
+        "lng": 36.817223,
+        "postal": "P.O Box 75629 \u2013 00200, Nairobi",
+        "physical": "Stima Sacco Plaza, Mushembi Road, Parklands, Nairobi",
+        "County": "Nairobi"
+    },
+    {
+        "name": "Harambee DT Sacco Society Ltd",
+        "last_checked": "2025-10-04T00:00:00Z",
+        "county_code": 47,
+        "lat": -1.286389,
+        "lng": 36.817223,
+        "postal": "P.O Box 47815 \u2013 00100, Nairobi",
+        "physical": "Harambee Sacco Plaza, Haile Selassie Avenue, Nairobi",
+        "County": "Nairobi"
+    },
+    {
+        "name": "Kimisitu Sacco Society Ltd",
+        "last_checked": "2025-10-04T00:00:00Z",
+        "county_code": 47,
+        "lat": -1.286389,
+        "lng": 36.817223,
+        "postal": "P.O. Box 10454\u201300200, Nbi",
+        "physical": "AEA Plaza, Valley Road, Nairobi",
+        "County": "Nairobi"
+    },
+    {
+        "name": "Afya Sacco Society Ltd",
+        "last_checked": "2025-10-04T00:00:00Z",
+        "county_code": 47,
+        "lat": -1.286389,
+        "lng": 36.817223,
+        "postal": "P.O Box 11607 \u2013 00400, Nairobi.",
+        "physical": "Afya Centre, Tom Mboya Street, Nairobi",
+        "County": "Nairobi"
+    },
+    {
+        "name": "Hazina Sacco Society Ltd",
+        "last_checked": "2025-10-04T00:00:00Z",
+        "county_code": 47,
+        "lat": -1.286389,
+        "lng": 36.817223,
+        "postal": "P.O Box 59877 \u2013 00200, Nairobi",
+        "physical": "Hazina Sacco Place, Ngong Road, Nairobi",
+        "County": "Nairobi"
+    },
+    {
+        "name": "Unaitas Sacco Society Ltd",
+        "last_checked": "2025-10-04T00:00:00Z",
+        "county_code": 22,
+        "lat": -1.17,
+        "lng": 36.835556,
+        "postal": "P.O Box 38721 \u2013 00100, Nairobi",
+        "physical": "Cardinal Otunga Plaza, Nairobi",
+        "County": "Nairobi"
+    },
+    {
+        "name": "Imarisha Sacco Society Ltd",
+        "last_checked": "2025-10-04T00:00:00Z",
+        "county_code": 32,
+        "lat": -0.303099,
+        "lng": 36.080025,
+        "postal": "P.O. Box 682 \u2013 20200, Kericho",
+        "County": "Kericho"
+    },
+    {
+        "name": "Nyati Sacco Society Ltd",
+        "last_checked": "2025-10-04T00:00:00Z",
+        "county_code": 47,
+        "lat": -1.286389,
+        "lng": 36.817223,
+        "postal": "P.O Box 7601 \u2013 00200, Nairobi",
+        "physical": "Odyssey Plaza, Mukoma Road, Nairobi",
+        "County": "Nairobi"
+    },
+    {
+        "name": "The  Kenya  Bankers  Sacco  Society Ltd.",
+        "last_checked": "2025-10-04T00:00:00Z",
+        "county_code": 47,
+        "lat": -1.286389,
+        "lng": 36.817223,
+        "postal": "P.O. Box 73236 \u2013 00200, Nairobi",
+        "physical": "The Kenya Bankers Sacco Centre, 3rd Ngong Ave., Nairobi",
+        "County": "Nairobi"
+    },
+    {
+        "name": "Sheria Sacco Society Ltd",
+        "last_checked": "2025-10-04T00:00:00Z",
+        "county_code": 47,
+        "lat": -1.286389,
+        "lng": 36.817223,
+        "postal": "P.O. Box 34390 \u2013 00100, Nairobi",
+        "physical": "Matumbato Close, Nairobi",
+        "County": "Nairobi"
+    },
+    {
+        "name": "Waumini Sacco Society Ltd",
+        "last_checked": "2025-10-04T00:00:00Z",
+        "county_code": 47,
+        "lat": -1.286389,
+        "lng": 36.817223,
+        "postal": "P.O Box 66121 \u2013 00800, Nairobi",
+        "physical": "Applewood Adams 2nd Floor, Ngong Road, Nairobi",
+        "County": "Nairobi"
+    },
+    {
+        "name": "NSSF Sacco Society Ltd",
+        "last_checked": "2025-10-04T00:00:00Z",
+        "county_code": 47,
+        "lat": -1.286389,
+        "lng": 36.817223,
+        "postal": "P.O Box 43338 \u2013 00100, Nairobi",
+        "physical": "Social Security House, Bishops Road, Nairobi",
+        "County": "Nairobi"
+    },
+    {
+        "name": "Balozi Regulated Non-WDT-Sacco",
+        "last_checked": "2025-10-04T00:00:00Z",
+        "county_code": 47,
+        "lat": -1.286389,
+        "lng": 36.817223,
+        "postal": "P.O Box 11539 - 00400, Muthai-\nga",
+        "physical": "Golf View Suites Muthaiga Off Wambui Road, Nairobi",
+        "County": "Nairobi"
+    },
+    {
+        "name": "Mhasibu DT Sacco Society Ltd",
+        "last_checked": "2025-10-04T00:00:00Z",
+        "county_code": 47,
+        "lat": -1.286389,
+        "lng": 36.817223,
+        "postal": "P.O Box 31295 - 00600, Nairobi",
+        "physical": "Absa Towers, Market Street, Nairobi",
+        "County": "Nairobi"
+    },
+    {
+        "name": "Apstar DT Sacco Society Ltd",
+        "last_checked": "2025-10-04T00:00:00Z",
+        "county_code": 47,
+        "lat": -1.286389,
+        "lng": 36.817223,
+        "postal": "P.O Box 44071 \u2013 00100, Nairobi",
+        "physical": "Ukulima Cooperative House, Haile Selassie Avenue, Nairobi",
+        "County": "Nairobi"
+    },
+    {
+        "name": "Qona Sacco Society Ltd",
+        "last_checked": "2025-10-04T00:00:00Z",
+        "county_code": 47,
+        "lat": -1.286389,
+        "lng": 36.817223,
+        "postal": "P.O Box 6682 \u2013 00800, Nairobi",
+        "physical": "Safaricom Care Centre, Waiyaki Way, Westlands, Nairobi",
+        "County": "Nairobi"
+    },
+    {
+        "name": "United Nations DT Sacco Society Ltd",
+        "last_checked": "2025-10-04T00:00:00Z",
+        "county_code": 47,
+        "lat": -1.286389,
+        "lng": 36.817223,
+        "postal": "P.O Box 2210 \u2013 00621, Nairobi",
+        "physical": "United Nations Complex, United Nations Avenue, Nairobi",
+        "County": "Nairobi"
+    },
+    {
+        "name": "Mentor Sacco Society Ltd",
+        "last_checked": "2025-10-04T00:00:00Z",
+        "county_code": 21,
+        "lat": -0.7183,
+        "lng": 37.13,
+        "postal": "P.O Box 789 \u2013 10200, Murang\u2019a",
+        "physical": "Mentor Plaza, Uhuru Road, Murang\u2019a",
+        "County": "Murang\u2019a"
+    },
+    {
+        "name": "Tower Sacco Society Ltd",
+        "last_checked": "2025-10-04T00:00:00Z",
+        "county_code": 18,
+        "lat": -0.18,
+        "lng": 36.37,
+        "postal": "P.O Box 259 \u2013 20303, Ol\u2019Kalou",
+        "physical": "Tower Sacco Fosa Building, Ol\u2019kalou Township",
+        "County": "Nyandarua"
+    },
+    {
+        "name": "United Women Regulated Non-WDT- Sacco",
+        "last_checked": "2025-10-04T00:00:00Z",
+        "county_code": 47,
+        "lat": -1.286389,
+        "lng": 36.817223,
+        "postal": "P.O Box 3228 - 00100, Nairobi",
+        "physical": "Green House Mall, Adams Arcade, Nairobi",
+        "County": "Nairobi"
+    },
+    {
+        "name": "Imarika Sacco Society Ltd",
+        "last_checked": "2025-10-04T00:00:00Z",
+        "county_code": 3,
+        "lat": -3.5107,
+        "lng": 39.909326,
+        "postal": "P.O Box 712 \u2013 80108, Kilifi",
+        "physical": "Imarika Plaza, Kenyatta Road, Kilifi",
+        "County": "Kilifi"
+    },
+    {
+        "name": "Biblia Regulated Non-WDT-Sacco",
+        "last_checked": "2025-10-04T00:00:00Z",
+        "county_code": 47,
+        "lat": -1.286389,
+        "lng": 36.817223,
+        "postal": "P.O Box 7041 - 00300, Nairobi",
+        "physical": "Kamirembe Place, Ring Road Kilimani, Nairobi",
+        "County": "Nairobi"
+    },
+    {
+        "name": "Egerton University Sacco Society Ltd",
+        "last_checked": "2025-10-04T00:00:00Z",
+        "county_code": 32,
+        "lat": -0.303099,
+        "lng": 36.080025,
+        "postal": "P.O Box 178 \u2013 20115 Egerton",
+        "physical": "Egerton  Sacco  Plaza,  Egerton  University,  Njoro Township",
+        "County": "Nakuru"
+    },
+    {
+        "name": "Yetu Sacco Society Ltd",
+        "last_checked": "2025-10-04T00:00:00Z",
+        "county_code": 17,
+        "lat": -1.803333,
+        "lng": 37.62,
+        "postal": "P.O Box 511 \u2013 60202, Nkubu",
+        "physical": "Yetu Sacco Building, Nkubu Town, Meru",
+        "County": "Meru"
+    },
+    {
+        "name": "Elimu Sacco Society Ltd",
+        "last_checked": "2025-10-04T00:00:00Z",
+        "county_code": 47,
+        "lat": -1.286389,
+        "lng": 36.817223,
+        "postal": "P.O Box10073 \u2013 00100,\nNairobi",
+        "physical": "Mubiru Road, Nairobi",
+        "County": "Nairobi"
+    },
+    {
+        "name": "Amica Sacco Society Ltd",
+        "last_checked": "2025-10-04T00:00:00Z",
+        "county_code": 19,
+        "lat": -0.42,
+        "lng": 36.95,
+        "postal": "P.O Box 816 \u2013 10200, Murang'a",
+        "physical": "Mugama Union Building \u2013 Uhuru Road, Murang\u2019a",
+        "County": "Murang\u2019a"
+    },
+    {
+        "name": "Kenpipe Sacco Society Ltd",
+        "last_checked": "2025-10-04T00:00:00Z",
+        "county_code": 16,
+        "lat": -1.516667,
+        "lng": 37.266667,
+        "postal": "P.O Box 314 \u2013 00507, Nairobi",
+        "physical": "Kenpipe Plaza, Sekoni Road, Nairobi",
+        "County": "Nairobi"
+    },
+    {
+        "name": "Bandari Sacco Society Ltd",
+        "last_checked": "2025-10-04T00:00:00Z",
+        "county_code": 1,
+        "lat": -4.043477,
+        "lng": 39.668206,
+        "postal": "P.O Box 95011 \u2013 80104, Mombasa",
+        "physical": "Moi Avenue, Mombasa",
+        "County": "Mombasa"
+    },
+    {
+        "name": "Kenya Medical Association",
+        "last_checked": "2025-10-04T00:00:00Z",
+        "county_code": 47,
+        "lat": -1.286389,
+        "lng": 36.817223,
+        "postal": "P.O Box 413 - 00202, Nairobi",
+        "physical": "KMA Centre, Upper Hill, Nairobi",
+        "County": "Nairobi"
+    },
+    {
+        "name": "Telepost Sacco Society Ltd",
+        "last_checked": "2025-10-04T00:00:00Z",
+        "county_code": 47,
+        "lat": -1.286389,
+        "lng": 36.817223,
+        "postal": "P.O Box 49557 \u2013 00100, Nairobi",
+        "physical": "City Square Post Office, Haile Selassie Avenue, Nairobi",
+        "County": "Nairobi"
+    },
+    {
+        "name": "Nafasi DT Sacco Society Ltd",
+        "last_checked": "2025-10-04T00:00:00Z",
+        "county_code": 47,
+        "lat": -1.286389,
+        "lng": 36.817223,
+        "postal": "P.O. Box 41426 \u2013 00100 Nairobi",
+        "physical": "NCPB Nairobi Silos Complex, Off Outering Road, Nairobi",
+        "County": "Nairobi"
+    },
+    {
+        "name": "Kanisa Regulated Non-WDT-Sacco",
+        "last_checked": "2025-10-04T00:00:00Z",
+        "county_code": 47,
+        "lat": -1.286389,
+        "lng": 36.817223,
+        "postal": "P.O Box 1225 - 00606, Nairobi",
+        "physical": "AACC Compound, Waiyaki Way, Westlands",
+        "County": "Nairobi"
+    },
+    {
+        "name": "Ports DT Sacco Society Ltd",
+        "last_checked": "2025-10-04T00:00:00Z",
+        "county_code": 1,
+        "lat": -4.043477,
+        "lng": 39.668206,
+        "postal": "P.OBox 95372\u201380104,Mombasa",
+        "physical": "Mombasa Port Sacco Plaza, Mwakilingo Road",
+        "County": "Mombasa"
+    },
+    {
+        "name": "Ukristo Na Ufanisi DT Sacco Society Ltd",
+        "last_checked": "2025-10-04T00:00:00Z",
+        "county_code": 47,
+        "lat": -1.286389,
+        "lng": 36.817223,
+        "postal": "P.O Box 872 \u2013 00605 Nairobi",
+        "physical": "ACK Emmanuel Church Riruta, Nairobi",
+        "County": "Nairobi"
+    },
+    {
+        "name": "Boresha Sacco Society Ltd",
+        "last_checked": "2025-10-04T00:00:00Z",
+        "county_code": 30,
+        "lat": 0.4667,
+        "lng": 35.9667,
+        "postal": "P.0 Box 80 \u2013 20103, Eldama Ravine",
+        "physical": "Teachers Plaza \u2013 Market Road, Eldama Ravine Town",
+        "County": "Baringo"
+    },
+    {
+        "name": "Qwetu Sacco Society Ltd",
+        "last_checked": "2025-10-04T00:00:00Z",
+        "county_code": 47,
+        "lat": -1.286389,
+        "lng": 36.817223,
+        "postal": "P.0 Box 1186 \u2013 80304, Voi",
+        "physical": "Qwetu Sacco Plaza, Voi Town",
+        "County": "Taita Taveta"
+    },
+    {
+        "name": "Chai Sacco Society Ltd",
+        "last_checked": "2025-10-04T00:00:00Z",
+        "county_code": 47,
+        "lat": -1.286389,
+        "lng": 36.817223,
+        "postal": "P.O Box 278 \u2013 00200, Nairobi",
+        "physical": "Chai House, Koinange Street, Nairobi",
+        "County": "Nairobi"
+    },
+    {
+        "name": "Nandi Farmers Sacco Society Ltd",
+        "last_checked": "2025-10-04T00:00:00Z",
+        "county_code": 29,
+        "lat": 0.1833,
+        "lng": 35.1,
+        "postal": "P.O Box 333 \u2013 30301, Nandi Hills",
+        "physical": "Nandi Hills Plaza, Market Street,",
+        "County": "Nandi"
+    },
+    {
+        "name": "Ndege Chai Sacco Society Ltd",
+        "last_checked": "2025-10-04T00:00:00Z",
+        "county_code": 35,
+        "lat": -0.3689,
+        "lng": 35.2831,
+        "postal": "P.O Box 857 \u2013 20200, Kericho",
+        "physical": "Ndege Chai House, Kericho \u2013 Nakuru Highway, Kericho",
+        "County": "Kericho"
+    },
+    {
+        "name": "Bunista Regulated Non-WDT-Sacco",
+        "last_checked": "2025-10-04T00:00:00Z",
+        "county_code": 41,
+        "lat": 0.0612,
+        "lng": 34.2881,
+        "postal": "P.O  Box  194  -  40601,  Bon-\ndo-Siaya",
+        "physical": "Jaramogi Oginga Odinga University Of Science And Tech- nology, Bondo Town",
+        "County": "Siaya"
+    },
+    {
+        "name": "Magadi Sacco Society Ltd",
+        "last_checked": "2025-10-04T00:00:00Z",
+        "county_code": 34,
+        "lat": -1.8531,
+        "lng": 36.7764,
+        "postal": "P.O. Box 13 \u2013 00205, Magadi",
+        "physical": "Pam View Building, Magadi Road, Magadi Soda, Kajiado",
+        "County": "Kajiado"
+    },
+    {
+        "name": "Lengo Sacco Society Ltd",
+        "last_checked": "2025-10-04T00:00:00Z",
+        "county_code": 3,
+        "lat": -3.5107,
+        "lng": 39.909326,
+        "postal": "P.O. Box  1005 \u2013 80200, Malindi",
+        "physical": "Standard Arcade \u2013 Mama Ngina Street, Malindi Town",
+        "County": "Kilifi"
+    },
+    {
+        "name": "Grain   Bulk   Regulated   Non-WDT- Sacco",
+        "last_checked": "2025-10-04T00:00:00Z",
+        "county_code": 1,
+        "lat": -4.043477,
+        "lng": 39.668206,
+        "postal": "P.O Box 80469 - 80100, Mom-\nbasa",
+        "physical": "Grain Bulk Terminal Office Building, Shimanzi, Mombasa",
+        "County": "Mombasa"
+    },
+    {
+        "name": "Siraji Sacco Society Ltd",
+        "last_checked": "2025-10-04T00:00:00Z",
+        "county_code": 11,
+        "lat": 0.3546,
+        "lng": 37.5822,
+        "postal": "P.O Box Private Bag",
+        "physical": "Siraji Sacco Plaza, Nanyuki \u2013 Meru Highway, Timau Town",
+        "County": "Meru"
+    },
+    {
+        "name": "Enea Sacco Society Ltd",
+        "last_checked": "2025-10-04T00:00:00Z",
+        "county_code": 19,
+        "lat": -0.42,
+        "lng": 36.95,
+        "postal": "P.O Box 1836 \u2013 10101 Karatina",
+        "physical": "Kiangararu House, Karatina \u2013 Nairobi Highway, Karatina Town",
+        "County": "Nyeri"
+    },
+    {
+        "name": "Ainabkoi Sacco Society Ltd",
+        "last_checked": "2025-10-04T00:00:00Z",
+        "county_code": 27,
+        "lat": 0.514277,
+        "lng": 35.269779,
+        "postal": "P.O Box 120-30101, Ainabkoi",
+        "physical": "Ainabkoi Farmers\u2019 Cooperative Society Land Eldoret, Naiberi, Tim- boroa Road",
+        "County": "Uasin Gishu"
+    }
+]

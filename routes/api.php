@@ -1,0 +1,89 @@
+<?php
+
+use App\Http\Controllers\CheckoutStripeController;
+use App\Http\Controllers\Mpesa\MpesaCallbackController;
+use App\Http\Controllers\Mpesa\MpesaPollingController;
+use Illuminate\Support\Facades\Route;
+
+/*
+|--------------------------------------------------------------------------
+| API Routes
+|--------------------------------------------------------------------------
+| Routes organized into modules for better maintainability
+*/
+
+// THIRD PARTY CALLBACKS (Public)
+// =============================================================
+Route::post('/lipr-callback', [MpesaPollingController::class,'callback']);
+Route::post('/stripe-callback', [CheckoutStripeController::class, 'callback']);
+
+
+//grants
+Route::post('/lipr-callback-grant-escrow', [MpesaCallbackController::class,'callbackGrantEscrow']);
+
+Route::post('/lipr-callback-grant-direct', [MpesaCallbackController::class,'callbackGrantDirectDisburse']);
+Route::post('/lipr-callback-grant-supplier', [MpesaCallbackController::class,'callbackForGrantSupplier']);
+
+// PUBLIC ROUTES (No Auth Required)
+// =============================================================
+require __DIR__ . '/api/public.php';
+
+// AUTHENTICATION ROUTES
+// =============================================================
+require __DIR__ . '/api/auth.php';
+
+// PROTECTED ROUTES (Auth Required)
+// =============================================================
+Route::middleware(['auth:sanctum', 'extend-token', 'throttle:api'])->group(function() {
+
+    // Account & Security
+    require __DIR__ . '/api/account.php';
+
+    // Business & Listings
+    require __DIR__ . '/api/business.php';
+
+    require __DIR__ . '/api/milestones.php';
+
+    require __DIR__ . '/api/dealroom.php';
+
+    // Services
+    require __DIR__ . '/api/services.php';
+
+    // Grants
+    require __DIR__ . '/api/grants.php';
+
+    // Capital
+    require __DIR__ . '/api/capital.php';
+
+    // Payments & Wallet
+    require __DIR__ . '/api/payments.php';
+
+    // Social & Communication
+    require __DIR__ . '/api/social.php';
+
+    // AI Routes
+    require __DIR__ . '/api/ai.php';
+
+    // Events
+    require __DIR__ . '/api/events.php';
+
+    // Misc/Utilities
+    require __DIR__ . '/api/misc.php';
+});
+
+// TERMS & PRIVACY (Public)
+// =============================================================
+Route::get('terms', function(){ return view('policy.terms'); })->name('terms');
+Route::get('policy', function(){ return view('policy.privacy_policy'); })->name('policy');
+
+// UTILITY ROUTES
+// =============================================================
+Route::get('/clear', function() {
+    \Artisan::call('config:cache'); \Artisan::call('view:clear');
+    \Artisan::call('route:clear');  \Artisan::call('cache:clear');
+    dd("Cache is cleared");
+});
+
+// CATCH-ALL ROUTE (Must be last)
+// =============================================================
+//Route::get('{/anypath}', [\App\Http\Controllers\PagesController::class, 'home'])->where('path', '.*');

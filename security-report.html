@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jitume Vue Security Issues Report</title>
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; margin: 20px; color: #333; }
+        .header { background: #f4f4f4; padding: 20px; border-left: 5px solid #dc3545; margin-bottom: 30px; }
+        .critical { background: #fff5f5; border: 1px solid #dc3545; padding: 15px; margin: 10px 0; border-radius: 5px; }
+        .file-issue { background: #f8f9fa; border-left: 3px solid #dc3545; padding: 10px; margin: 10px 0; }
+        .fix-code { background: #f8f9fa; border: 1px solid #ddd; padding: 10px; font-family: monospace; margin: 10px 0; border-radius: 3px; }
+        .checklist { background: #e8f5e8; border: 1px solid #28a745; padding: 15px; border-radius: 5px; }
+        h1 { color: #dc3545; }
+        h2 { color: #495057; border-bottom: 2px solid #dee2e6; padding-bottom: 5px; }
+        h3 { color: #6c757d; }
+        .risk-critical { color: #dc3545; font-weight: bold; }
+        .risk-high { color: #fd7e14; font-weight: bold; }
+        .page-break { page-break-before: always; }
+        ul { padding-left: 20px; }
+        li { margin: 5px 0; }
+        .summary-box { background: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; border-radius: 5px; margin: 20px 0; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🚨 Jitume Vue Frontend Security Issues Report</h1>
+        <p><strong>Generated:</strong> December 2024</p>
+        <p><strong>Project:</strong> Jitume Vue Application</p>
+        <p><strong>Scan Type:</strong> Full Security Review</p>
+        <p><strong>Total Issues Found:</strong> 30+ Critical Security Vulnerabilities</p>
+    </div>
+
+    <div class="summary-box">
+        <h2>📊 Executive Summary</h2>
+        <p>This report contains critical security vulnerabilities found in the Jitume Vue frontend application. All issues require immediate attention as they pose significant security risks including code injection, credential exposure, and package vulnerabilities.</p>
+        
+        <p><strong>Risk Level Distribution:</strong></p>
+        <ul>
+            <li><span class="risk-critical">🔴 Critical:</span> 28+ issues</li>
+            <li><span class="risk-high">🟡 High:</span> Multiple package vulnerabilities</li>
+            <li>🟢 Medium/Low: Additional code quality issues</li>
+        </ul>
+    </div>
+
+    <div class="critical">
+        <h2>🚨 CRITICAL ISSUES - IMMEDIATE ACTION REQUIRED</h2>
+        
+        <h3>1. Code Injection Vulnerabilities (CWE-94)</h3>
+        <p><span class="risk-critical">Risk Level: 🔴 CRITICAL</span><br>
+        <strong>Impact:</strong> Remote Code Execution, Data Breach, System Compromise</p>
+        
+        <h4>Affected Files:</h4>
+        
+        <div class="file-issue">
+            <strong>File:</strong> /React/src/components/Grants/screens/Capital-pitch/CapitalPitchWorkflow.jsx<br>
+            <strong>Lines:</strong> 80-86<br>
+            <strong>Issue:</strong> Unsanitized input passed to code execution methods<br>
+            <strong>Fix Required:</strong> Sanitize all user inputs before processing
+        </div>
+
+        <div class="file-issue">
+            <strong>File:</strong> /React/src/components/Grants/Utils/Modals/useCapitalApplication.jsx<br>
+            <strong>Lines:</strong> 80-81<br>
+            <strong>Issue:</strong> Dynamic code execution with user input<br>
+            <strong>Fix Required:</strong> Replace eval() or similar functions with safer alternatives
+        </div>
+
+        <div class="file-issue">
+            <strong>File:</strong> /React/src/components/Grants/components/Grantshome.jsx<br>
+            <strong>Lines:</strong> 436-441<br>
+            <strong>Issue:</strong> Code injection vulnerability in grant processing<br>
+            <strong>Fix Required:</strong> Implement input validation and sanitization
+        </div>
+
+        <div class="file-issue">
+            <strong>File:</strong> /React/src/components/Grants/Utils/Modals/callme.jsx<br>
+            <strong>Lines:</strong> 814-819, 907-916<br>
+            <strong>Issue:</strong> Multiple code injection points<br>
+            <strong>Fix Required:</strong> Replace dynamic code execution with static alternatives
+        </div>
+
+        <div class="file-issue">
+            <strong>File:</strong> /React/src/components/Grants/Utils/Modals/hooks/useUserActivity.js<br>
+            <strong>Lines:</strong> 16-23, 32-37<br>
+            <strong>Issue:</strong> User activity tracking with unsafe code execution<br>
+            <strong>Fix Required:</strong> Use safe JSON parsing and validation
+        </div>
+
+        <div class="file-issue">
+            <strong>File:</strong> /React/src/components/partials/Settings/components/DeleteAccount.jsx<br>
+            <strong>Lines:</strong> 60-72<br>
+            <strong>Issue:</strong> Account deletion with code injection risk<br>
+            <strong>Fix Required:</strong> Sanitize deletion parameters
+        </div>
+
+        <div class="file-issue">
+            <strong>File:</strong> /React/src/components/Grants/Utils/Modals/FormFields/FileUpload.jsx<br>
+            <strong>Lines:</strong> 11-15<br>
+            <strong>Issue:</strong> File upload with code execution vulnerability<br>
+            <strong>Fix Required:</strong> Validate file types and sanitize file names
+        </div>
+
+        <div class="file-issue">
+            <strong>File:</strong> /React/src/components/partials/listingResults.jsx<br>
+            <strong>Lines:</strong> 273-276<br>
+            <strong>Issue:</strong> Listing results with dynamic code execution<br>
+            <strong>Fix Required:</strong> Use template literals instead of eval()
+        </div>
+
+        <h4>Slider Documentation Files (Multiple Code Injection Issues):</h4>
+        <ul>
+            <li>/React/src/nouiSlider/documentation/slider-values/step-link.js (Lines: 3-4)</li>
+            <li>/React/slider/documentation/slider-options/keyboard-support-link.js (Lines: 2-3, 7-8)</li>
+            <li>/React/src/nouiSlider/documentation/slider-options/margin-link.js (Lines: 5-6, 7-8)</li>
+            <li>/React/slider/documentation/examples/formatting.js (Lines: 29-30)</li>
+            <li>/React/src/nouiSlider/documentation/behaviour-option/hover.js (Lines: 14-15)</li>
+            <li>/React/slider/documentation/more/update-setup.js (Lines: 15-16)</li>
+            <li>/React/src/nouiSlider/documentation/examples/skipstep-link.js (Lines: 6-7)</li>
+            <li>/React/slider/documentation/examples/date-event.js (Lines: 10-11)</li>
+            <li>/React/src/nouiSlider/documentation/slider-options/padding-link.js (Lines: 5-6)</li>
+            <li>/React/slider/documentation/slider-values/step-link.js (Lines: 3-4)</li>
+            <li>/React/src/nouiSlider/documentation/slider-options/direction-link.js (Lines: 3-4)</li>
+            <li>/React/src/nouiSlider/documentation/slider-options/keyboard-support-link.js (Lines: 2-3)</li>
+            <li>/React/slider/documentation/slider-values/snap-link.js (Lines: 6-7)</li>
+            <li>/React/slider/documentation/slider-values/range-link.js (Lines: 3-4)</li>
+        </ul>
+        <p><strong>Fix Required:</strong> Remove or secure all eval() calls in slider documentation</p>
+    </div>
+
+    <div class="page-break"></div>
+
+    <div class="critical">
+        <h3>2. Hardcoded Credentials (CWE-798)</h3>
+        <p><span class="risk-critical">Risk Level: 🔴 CRITICAL</span><br>
+        <strong>Impact:</strong> Unauthorized API Access, Data Breach, Service Abuse</p>
+        
+        <div class="file-issue">
+            <strong>File:</strong> /React/src/components/partials/messageAnalyzer.jsx<br>
+            <strong>Lines:</strong> 53-54<br>
+            <strong>Issue:</strong> Hardcoded API key exposed in source code<br>
+            <strong>Current Risk:</strong> API key can be extracted and misused<br>
+            <strong>Fix Required:</strong>
+            <div class="fix-code">
+// REMOVE THIS:
+const apiKey = "your-hardcoded-api-key-here";
+
+// REPLACE WITH:
+const apiKey = process.env.REACT_APP_API_KEY;
+            </div>
+        </div>
+
+        <div class="file-issue">
+            <strong>File:</strong> /resources/views/admin/layout/partials/footer-scripts.blade.php<br>
+            <strong>Lines:</strong> 36-37<br>
+            <strong>Issue:</strong> Hardcoded Google API key<br>
+            <strong>Current Risk:</strong> Google services can be abused<br>
+            <strong>Fix Required:</strong>
+            <div class="fix-code">
+// REMOVE THIS:
+&lt;script src="https://maps.googleapis.com/maps/api/js?key=YOUR_HARDCODED_KEY"&gt;&lt;/script&gt;
+
+// REPLACE WITH:
+&lt;script src="https://maps.googleapis.com/maps/api/js?key={{ env('GOOGLE_MAPS_API_KEY') }}"&gt;&lt;/script&gt;
+            </div>
+        </div>
+    </div>
+
+    <div class="critical">
+        <h3>3. Package Vulnerabilities (CWE-330)</h3>
+        <p><span class="risk-critical">Risk Level: 🔴 CRITICAL</span><br>
+        <strong>Impact:</strong> Security vulnerabilities in dependencies</p>
+        
+        <div class="file-issue">
+            <strong>File:</strong> /React/package-lock.json<br>
+            <strong>Lines:</strong> 4060-4061<br>
+            <strong>Issue:</strong> Vulnerable form-data package<br>
+            <strong>Vulnerability:</strong> HTTP Parameter Pollution (HPP)<br>
+            <strong>Affected Versions:</strong> < 2.5.4, 3.0.0 - 3.0.3, 4.0.0 - 4.0.3<br>
+            <strong>Fix Required:</strong>
+            <div class="fix-code">
+npm update form-data
+# or
+npm install form-data@latest
+            </div>
+        </div>
+    </div>
+
+    <div class="page-break"></div>
+
+    <h2>🛠️ DETAILED FIX INSTRUCTIONS</h2>
+
+    <h3>Step 1: Fix Hardcoded Credentials</h3>
+    <p><strong>1. Create Environment Variables:</strong></p>
+    <div class="fix-code">
+# In your .env file
+REACT_APP_API_KEY=your_actual_api_key_here
+GOOGLE_MAPS_API_KEY=your_google_maps_key_here
+    </div>
+
+    <p><strong>2. Update messageAnalyzer.jsx:</strong></p>
+    <div class="fix-code">
+// Replace hardcoded key with environment variable
+const apiKey = process.env.REACT_APP_API_KEY;
+
+if (!apiKey) {
+  console.error('API key not found in environment variables');
+  return;
+}
+    </div>
+
+    <p><strong>3. Update footer-scripts.blade.php:</strong></p>
+    <div class="fix-code">
+&lt;script src="https://maps.googleapis.com/maps/api/js?key={{ env('GOOGLE_MAPS_API_KEY') }}"&gt;&lt;/script&gt;
+    </div>
+
+    <h3>Step 2: Fix Code Injection Vulnerabilities</h3>
+    <p><strong>1. Replace eval() calls:</strong></p>
+    <div class="fix-code">
+// DANGEROUS - REMOVE:
+eval(userInput);
+
+// SAFE - USE INSTEAD:
+JSON.parse(userInput); // for JSON data
+// or use specific parsing functions
+    </div>
+
+    <p><strong>2. Sanitize User Inputs:</strong></p>
+    <div class="fix-code">
+import DOMPurify from 'dompurify';
+
+const sanitizeInput = (input) => {
+  return DOMPurify.sanitize(input);
+};
+    </div>
+
+    <p><strong>3. Validate File Uploads:</strong></p>
+    <div class="fix-code">
+const validateFile = (file) => {
+  const allowedTypes = ['image/jpeg', 'image/png', 'application/pdf'];
+  const maxSize = 5 * 1024 * 1024; // 5MB
+  
+  if (!allowedTypes.includes(file.type)) {
+    throw new Error('Invalid file type');
+  }
+  
+  if (file.size > maxSize) {
+    throw new Error('File too large');
+  }
+  
+  return true;
+};
+    </div>
+
+    <h3>Step 3: Update Vulnerable Packages</h3>
+    <div class="fix-code">
+npm audit
+npm audit fix
+npm update
+
+# Specific package updates:
+npm install form-data@latest
+npm install --save-dev @types/form-data@latest
+    </div>
+
+    <h3>Step 4: Implement Security Headers</h3>
+    <div class="fix-code">
+// In your main HTML file
+&lt;meta http-equiv="Content-Security-Policy" 
+      content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline';"&gt;
+    </div>
+
+    <h3>Step 5: Input Validation Functions</h3>
+    <div class="fix-code">
+// Create a utility file: utils/security.js
+export const validateInput = (input, type) => {
+  switch (type) {
+    case 'email':
+      return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input);
+    case 'phone':
+      return /^\+?[\d\s-()]+$/.test(input);
+    case 'alphanumeric':
+      return /^[a-zA-Z0-9\s]+$/.test(input);
+    default:
+      return input.length > 0;
+  }
+};
+
+export const sanitizeHtml = (html) => {
+  return DOMPurify.sanitize(html);
+};
+
+export const escapeHtml = (text) => {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+};
+    </div>
+
+    <div class="page-break"></div>
+
+    <div class="checklist">
+        <h2>📋 PRIORITY CHECKLIST</h2>
+        
+        <h3>Immediate Actions (Within 24 hours):</h3>
+        <ul>
+            <li>☐ Remove all hardcoded API keys</li>
+            <li>☐ Set up environment variables</li>
+            <li>☐ Update vulnerable packages</li>
+            <li>☐ Deploy with new credentials</li>
+        </ul>
+
+        <h3>Short Term (Within 1 week):</h3>
+        <ul>
+            <li>☐ Fix all code injection vulnerabilities</li>
+            <li>☐ Implement input validation</li>
+            <li>☐ Add security headers</li>
+            <li>☐ Test all fixes thoroughly</li>
+        </ul>
+
+        <h3>Long Term (Within 1 month):</h3>
+        <ul>
+            <li>☐ Security audit of entire codebase</li>
+            <li>☐ Implement automated security scanning</li>
+            <li>☐ Set up dependency vulnerability monitoring</li>
+            <li>☐ Create security guidelines for development team</li>
+        </ul>
+    </div>
+
+    <h2>🔧 RECOMMENDED SECURITY TOOLS</h2>
+    <div class="fix-code">
+# ESLint Security Plugin:
+npm install --save-dev eslint-plugin-security
+
+# DOMPurify for HTML Sanitization:
+npm install dompurify
+
+# Helmet.js for Security Headers:
+npm install helmet
+
+# npm audit for Dependency Scanning:
+npm audit
+npm audit fix
+    </div>
+
+    <h2>📞 SUPPORT & RESOURCES</h2>
+    <ul>
+        <li><strong>OWASP Top 10:</strong> https://owasp.org/www-project-top-ten/</li>
+        <li><strong>React Security Best Practices:</strong> https://reactjs.org/docs/dom-elements.html#dangerouslysetinnerhtml</li>
+        <li><strong>AWS Security Best Practices:</strong> https://aws.amazon.com/security/security-resources/</li>
+    </ul>
+
+    <div class="critical">
+        <h2>⚠️ IMPORTANT NOTICE</h2>
+        <p>These vulnerabilities pose serious security risks. Do not deploy to production until all critical issues are resolved. Consider conducting a penetration test after fixes are implemented.</p>
+        
+        <p><strong>Report Generated By:</strong> Amazon Q Code Review<br>
+        <strong>Next Review Recommended:</strong> After all fixes are implemented</p>
+        
+        <p><em>This report is confidential and should only be shared with authorized personnel.</em></p>
+    </div>
+</body>
+</html>
