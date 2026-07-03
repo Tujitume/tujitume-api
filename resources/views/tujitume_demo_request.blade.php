@@ -14,7 +14,7 @@
             <p style="margin:0.5rem 0;"><strong>Name:</strong> {{ $name }}</p>
             <p style="margin:0.5rem 0;"><strong>Organization:</strong> {{ $org }}</p>
             <p style="margin:0.5rem 0;"><strong>Email:</strong> {{ $email }}</p>
-            <p style="margin:0.5rem 0;"><strong>Request Type:</strong> {{ ucfirst($requestType) }}</p>
+            <p style="margin:0.5rem 0;"><strong>Request Type:</strong> {{ ucfirst($request_type) }}</p>
             <p style="margin:0.5rem 0;"><strong>Type:</strong> {{ ucfirst($type) }}</p>
             @if(!empty($notes))
                 <p style="margin:0.5rem 0;"><strong>Notes:</strong> {{ $notes }}</p>

@@ -135,6 +135,8 @@ class SupportController extends Controller
                     //config('mail.tujitume.contact_email') // ← send to tujitume internal email
                 );
 
+                return response()->json(['message' => 'Request submitted successfully.'], 200);
+
         }
         catch (ValidationException $e) {
             return response()->json([
