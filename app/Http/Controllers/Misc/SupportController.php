@@ -131,7 +131,7 @@ class SupportController extends Controller
                         'request_type' => $demoRequest->request_type,
                         'type'        => $demoRequest->type,
                         'notes'       => $demoRequest->name ?? null,
-                    ], 'tottenham266@gmail.com' //'stevemonitoring.gathirus@gmail.com'
+                    ], 'info@tujitume.com' //'stevemonitoring.gathirus@gmail.com'
                     //config('mail.tujitume.contact_email') // ← send to tujitume internal email
                 );
 
