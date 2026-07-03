@@ -80,6 +80,7 @@ Route::middleware('throttle:public')->group(function () {
 
 Route::get('JitumeSubscribeEmail/{email}', [SupportController::class, 'newsletterSubscribe']);
 Route::post('submitReport', [SupportController::class, 'reportListing']);
+Route::post('contact/request-demo', [SupportController::class, 'requestDemo']);
 
 Route::get('CancelAssetBid/{id}/{action}',[AssetBidsController::class,'CancelAssetBid']);
 Route::get('CancelEquipmentRelease/{id}/{action}',[AssetBidsController::class,'CancelAssetRelease']);

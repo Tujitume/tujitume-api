@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Misc;
 
 use App\Http\Controllers\Controller;
 use App\Models\Business\Listing;
+use App\Models\DemoRequest;
 use App\Models\Misc\Prospects;
 use App\Models\Misc\Reports;
 use App\Models\Services\Services;
@@ -11,6 +12,7 @@ use App\Service\Misc\ErrorLogService;
 use Exception;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Validation\ValidationException;
 
 class SupportController extends Controller
 {
@@ -96,6 +98,50 @@ class SupportController extends Controller
             foreach ($uploadedFiles as $file) {
                 if ($file && file_exists(public_path($file))) unlink(public_path($file));
             }
+            ErrorLogService::report($e, ['input' => $request->except(['password', 'token'])]);
+            return response()->json([
+                'message' => 'Something went wrong, please try again later.'
+            ], 500);
+        }
+    }
+
+    public function requestDemo(Request $request)
+    {
+        $validated = $request->validate([
+            'name' => 'required|string|max:150',
+            'org' => 'required|string|max:255',
+            'email' => 'required|email|max:191',
+
+            'request_type' => 'required|in:demo,meeting,trial,consultation',
+            'type' => 'required|in:grant,investment,capital,service,platform',
+
+            'notes' => 'nullable|string|max:5000',
+        ]);
+
+        try {
+            $demoRequest = DemoRequest::create($validated);
+
+                $this->emailService->send(
+                    'New Demo Request - ' . ucfirst($demoRequest->type),
+                    'tujitume_demo_request',
+                    [
+                        'name'        => $demoRequest->name,
+                        'org'         => $demoRequest->org,
+                        'email'       => $demoRequest->email,
+                        'request_type' => $demoRequest->request_type,
+                        'type'        => $demoRequest->type,
+                        'notes'       => $demoRequest->name ?? null,
+                    ], 'tottenham266@gmail.com' //'stevemonitoring.gathirus@gmail.com'
+                    //config('mail.tujitume.contact_email') // ← send to tujitume internal email
+                );
+
+        }
+        catch (ValidationException $e) {
+            return response()->json([
+                'message' => 'Validation error.', 'errors' => $e->errors(),
+            ], 422);
+        }
+        catch (Exception $e) {
             ErrorLogService::report($e, ['input' => $request->except(['password', 'token'])]);
             return response()->json([
                 'message' => 'Something went wrong, please try again later.'

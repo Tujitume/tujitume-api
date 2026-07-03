@@ -33,6 +33,11 @@ return [
     |
     */
 
+    'tujitume' => [
+        'contact_email' => 'info@tujitume.com',
+        'admin_email'   => 'admin@tujitume.com',
+    ],
+
     'mailers' => [
         'smtp' => [
             'transport' => 'smtp',
