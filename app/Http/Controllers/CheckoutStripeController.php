@@ -938,9 +938,9 @@ class CheckoutStripeController extends Controller
             $amountPayable = round($amount, 2);
             //round($amount + ( $amount* ($tujitume_fee/100) ),2); // 5%
 
-            if ($pitch->grant->available_amount < $amount) {
-                return response()->json(['message' => 'Insufficient available funds.'], 400);
-            }
+//            if ($pitch->grant->available_amount < $amount) {
+//                return response()->json(['message' => 'Insufficient available funds.'], 400);
+//            }
 
             //T r a n s f e r
             if($request->percent == 100){
