@@ -50,6 +50,10 @@ Route::post('/login-from-token', function (Request $request) {
     return response()->json(['message' => 'Logged in via token']);
 });
 
+Route::get('/it-works', function () {
+    return 'It works';
+});
+
 # PayStack  ROUTES for Test
 /*
     Route::get('/mpesaStk', [CheckoutMpesaController::class,'stk']);
