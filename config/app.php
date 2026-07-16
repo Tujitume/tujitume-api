@@ -18,9 +18,15 @@ return [
 
     'name' => env('APP_NAME', 'Laravel'),
 
+    //prod
     'app_url' => env('APP_URL', 'http://localhost:81/'),
     'api_url' => env('API_URL', 'http://127.0.0.1:8000/api/'),
     'api_base_url' => env('API_URL', 'http://127.0.0.1:8000/'),
+
+    //staging
+//    'app_url' => env('APP_URL', 'http://localhost:81/'),
+//    'api_url' => env('API_URL', 'http://127.0.0.1:8000/api/'),
+//    'api_base_url' => env('API_URL', 'http://127.0.0.1:8000/'),
 
     /*
     |--------------------------------------------------------------------------

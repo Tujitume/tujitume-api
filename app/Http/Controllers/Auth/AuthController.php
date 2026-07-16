@@ -16,6 +16,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Validation\Rule;
 use Mail;
 
 class AuthController extends Controller
@@ -302,6 +303,14 @@ class AuthController extends Controller
             //'user_type_id' => ['required', 'integer', 'in:1,2,3,4,5'],
             //Required Fields
             'mname' => ['nullable', 'string', 'max:255'],
+
+            'supplier_type' => [
+                'nullable',
+                'string',
+                Rule::in([
+                    'material_goods', 'business_service', 'labor',
+                ]),
+            ]
         ]);
 
         $userExists = User::where('email', $data['email'])->first();
@@ -319,6 +328,7 @@ class AuthController extends Controller
             'gender' => $request->gender,
             'dob' => $request->dob,
             'password' => bcrypt($data['password']),
+            'supplier_type' => $data['supplier_type'],
         ]);
 
         $token = $user->createToken('main')->plainTextToken;

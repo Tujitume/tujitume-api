@@ -189,6 +189,21 @@ class SupplierDirectoryController extends Controller
             // Create supplier
             $supplier = SupplierDirectory::create($validated);
 
+            //email
+            $this->emailService->send(
+                'You have been added as a Supplier on Tujitume',
+                'grants.grant.supplier_welcome',
+                [
+                    'recipientName'  => $validated['contact_person'] ?? $validated['legal_name'],
+                    'recipientEmail' => $validated['email'],
+                    'added_by'       => auth()->user()->fname . ' ' . auth()->user()->lname,
+                    'org_name'       => auth()->user()->fname.' Funders',
+                    'supplier_name'  => $validated['legal_name'],
+                ],
+                $validated['email']
+            );
+
+
             DB::commit();
 
             return response()->json([
