@@ -192,7 +192,7 @@ class SupplierDirectoryController extends Controller
             //email
             $this->emailService->send(
                 'You have been added as a Supplier on Tujitume',
-                'grants.grant.supplier_welcome',
+                'grants.supplier_welcome',
                 [
                     'recipientName'  => $validated['contact_person'] ?? $validated['legal_name'],
                     'recipientEmail' => $validated['email'],
