@@ -97,7 +97,6 @@ class SupplierDirectoryController extends Controller
                 'phone' => 'required|string|max:30',
                 'email' => 'required|email|max:191',
                 'supplier_type' => 'nullable|string|max:100',
-
                 // Payment Method
                 'payment_method' => 'required|in:mpesa_mobile,mpesa_lipr,mpesa_paybill,mpesa_till,bank_transfer,other',
 
@@ -199,6 +198,7 @@ class SupplierDirectoryController extends Controller
                     'added_by'       => auth()->user()->fname . ' ' . auth()->user()->lname,
                     'org_name'       => auth()->user()->fname.' Funders',
                     'supplier_name'  => $validated['legal_name'],
+                    'supplier_type'  => $validated['supplier_type'] ?? null,
                 ],
                 $validated['email']
             );

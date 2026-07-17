@@ -16,12 +16,13 @@
             <p style="margin:0.5rem 0;"><strong>Added By:</strong> {{ $added_by }}</p>
             <p style="margin:0.5rem 0;"><strong>Organization:</strong> {{ $org_name }}</p>
             <p style="margin:0.5rem 0;"><strong>Supplier Name:</strong> {{ $supplier_name }}</p>
+            <p style="margin:0.5rem 0;"><strong>Nominated Supplier Type:</strong> {{ $supplier_type ?? 'N/A' }}</p>
         </div>
 
         <p>Join Tujitume today to track your payments, manage your profile, and access more opportunities.</p>
 
         <div style="text-align:center;margin-top:2rem;">
-            <a href="{{ config('app.app_url') }}/auth/create/service"
+            <a href="{{ config('app.app_url') }}auth/create/service"
                style="background-color:#14532d;color:white;padding:0.75rem 1.5rem;border-radius:0.5rem;text-decoration:none;font-weight:500;font-size:1rem;">
                 Join Tujitume
             </a>
