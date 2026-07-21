@@ -170,6 +170,8 @@ class SupplierDirectoryController extends Controller
                 'address' => 'nullable|string',
             ]);
 
+            //check if $validated['email']
+
             if ($validated['payment_method'] === 'mpesa_lipr' && empty($validated['lipr_wallet'])) {
                 return response()->json([
                     'message' => 'lipr_wallet is required when payment method is mpesa_lipr.'

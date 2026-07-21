@@ -51,7 +51,7 @@ Route::post('/login-from-token', function (Request $request) {
 });
 
 Route::get('/it-works', function () {
-    return 'It works';
+    return 'Its working';
 });
 
 # PayStack  ROUTES for Test

@@ -263,13 +263,18 @@ class MpesaCallbackController extends Controller
             DB::transaction(function () use ($milestone, $supplier, $pitch, $payment, $amountKes, $referenceId) {
 
                 // Initiate supplier transfer
-                if ($supplier->payment_route == 'direct_to_supplier') {
+                if ($supplier->payment_route == 'direct_to_supplier')
+                {
                     $transfer = $this->disbursementService->disburse($milestone, $amountKes, 'checkout');
-                } elseif ($supplier->payment_route == 'direct_to_applicant') {
+                }
+                elseif ($supplier->payment_route == 'direct_to_applicant')
+                {
                     $transfer = $this->liprW2W->send(
                         $amountKes, $pitch->sme->lipr_wallet, $this->tujitume_lipr, $milestone
                     );
-                } else {
+                }
+                else
+                {
                     throw new \Exception("Unsupported payment route: {$supplier->payment_route}", 422);
                 }
 
