@@ -5,7 +5,7 @@ version: 0.0
 os: linux
 files:
   - source: /
-    destination: /var/www/test.jitume
+    destination: /var/www/tujitume/api-prod
 hooks:
   AfterInstall:
     - location: ./scripts/after-install.sh

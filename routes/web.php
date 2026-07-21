@@ -51,7 +51,7 @@ Route::post('/login-from-token', function (Request $request) {
 });
 
 Route::get('/it-works', function () {
-    return 'Its working';
+    return 'Its working CICD';
 });
 
 # PayStack  ROUTES for Test

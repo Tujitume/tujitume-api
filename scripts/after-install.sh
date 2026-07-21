@@ -4,7 +4,7 @@
 # Runs inside production server.
 
 # Project directory on server for your project.
-export WEB_DIR="/var/www/test.jitume"
+export WEB_DIR="/var/www/tujitume/api-prod"
 # Your server user. Used to fix permission issue & install our project dependcies
 
 # Change directory to project.
