@@ -1,25 +1,43 @@
 #!/bin/bash
-# Author Emad Zaamout | support@ahtcloud.com
+set -e
 
-# Runs inside production server.
+APP_DIR="/var/www/tujitume/api-prod"
 
-# Project directory on server for your project.
-export WEB_DIR="/var/www/tujitume/api-prod"
-# Your server user. Used to fix permission issue & install our project dependcies
+cd "$APP_DIR"
 
-# Change directory to project.
-cd $WEB_DIR
+echo "Fixing permissions..."
 
-# change user owner to ubuntu & fix storage permission issues.
-sudo chown -R ubuntu:ubuntu .
-sudo chown -R www-data storage
-sudo chmod -R u+x .
-sudo chmod g+w -R storage
-sudo chown -R www-data public
-sudo chown -R www-data React
-unlink bootstrap/cache/config.php
-#Restart WebSockets via Supervisor
-sudo supervisorctl restart laravel-websockets
+sudo chown -R www-data:www-data storage bootstrap/cache
+sudo chmod -R 775 storage bootstrap/cache
+
+echo "Clearing Laravel caches..."
+
+php artisan optimize:clear
+
+echo "Caching configuration..."
+
+php artisan config:cache
+php artisan route:cache
+php artisan view:cache
+
+echo "Running migrations..."
+
+php artisan migrate --force
+
+echo "Restarting queues..."
+
+php artisan queue:restart || true
+
+echo "Restarting WebSockets..."
+
+sudo supervisorctl restart laravel-websockets || true
+
+echo "Reloading Apache..."
+
+sudo systemctl reload apache2
+
+echo "Deployment complete."
+
 #Killing Screen & Create New NPM Screen
 #killall screen
 #screen -S serversession
