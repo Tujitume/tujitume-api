@@ -222,20 +222,20 @@ Route::prefix('/grant')->middleware(['grant'])->group(function(){
     // M&E Routes
     Route::prefix('monitoring')->group(function () {
         // Checkpoints
-        Route::get('applications/{app}/checkpoints',      [MEController::class, 'indexCheckpoints']);
-        Route::post('applications/{app}/checkpoints',     [MEController::class, 'storeCheckpoint']);
-        Route::patch('checkpoints/{checkpoint}',             [MEController::class, 'updateCheckpoint']);
-        Route::delete('checkpoints/{checkpoint}',            [MEController::class, 'deleteCheckpoint']);
+        Route::get('/applications/{app}/checkpoints',      [MEController::class, 'indexCheckpoints']);
+        Route::post('/applications/{app}/checkpoints',     [MEController::class, 'storeCheckpoint']);
+        Route::patch('/checkpoints/{checkpoint}',             [MEController::class, 'updateCheckpoint']);
+        Route::delete('/checkpoints/{checkpoint}',            [MEController::class, 'deleteCheckpoint']);
 
         // Submissions
-        Route::post('checkpoints/{checkpoint}/submit',       [MEController::class, 'submit']);
-        Route::post('submissions/{submission}/verify',       [MEController::class, 'verify']);
-        Route::post('submissions/{submission}/request-changes', [MEController::class, 'requestChanges']);
+        Route::post('/checkpoints/{checkpoint}/submit',       [MEController::class, 'submit']);
+        Route::post('/submissions/{submission}/verify',       [MEController::class, 'verify']);
+        Route::post('/submissions/{submission}/request-changes', [MEController::class, 'requestChanges']);
 
         // Site Visits
-        Route::post('checkpoints/{checkpoint}/site-visit/assign', [MEController::class, 'assignSiteVisit']);
-        Route::post('site-visits/{visit}/submit',            [MEController::class, 'submitSiteVisit']);
-        Route::get('site-visits/{visit}',                    [MEController::class, 'showSiteVisit']);
+        Route::post('/checkpoints/{checkpoint}/site-visit/assign', [MEController::class, 'assignSiteVisit']);
+        Route::post('/site-visits/{visit}/submit',            [MEController::class, 'submitSiteVisit']);
+        Route::get('/site-visits/{visit}',                    [MEController::class, 'showSiteVisit']);
     });
 
 });
