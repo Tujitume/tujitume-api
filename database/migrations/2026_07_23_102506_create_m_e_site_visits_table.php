@@ -13,6 +13,24 @@ return new class extends Migration
     {
         Schema::create('m_e_site_visits', function (Blueprint $table) {
             $table->id();
+            $table->foreignId('checkpoint_id')->constrained('me_checkpoints')->onDelete('cascade');
+            $table->foreignId('app_id')->constrained('grant_applications')->onDelete('cascade');
+            $table->foreignId('reviewer_id')->constrained('users')->onDelete('cascade');
+            $table->string('inspector')->nullable();
+            $table->date('start_date')->nullable();
+            $table->string('location')->nullable();
+            $table->decimal('gps_lat', 10, 7)->nullable();
+            $table->decimal('gps_lng', 10, 7)->nullable();
+            $table->text('objective')->nullable();
+            $table->json('kpi_targets')->nullable();        // [{kpi, target, actual}]
+            $table->json('data_collection_fields')->nullable();
+            $table->text('objectives_assessment')->nullable();
+            $table->text('observed_actions')->nullable();
+            $table->text('evidence_found')->nullable();
+            $table->text('risk_notes')->nullable();
+            $table->text('recommendation_notes')->nullable();
+            $table->text('visit_comments')->nullable();
+            $table->enum('status', ['scheduled', 'completed', 'cancelled'])->default('scheduled');
             $table->timestamps();
         });
     }

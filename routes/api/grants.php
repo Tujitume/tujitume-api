@@ -20,6 +20,7 @@ use App\Http\Controllers\Grant\GrantMilestoneController;
 use App\Http\Controllers\Grant\GrantServiceController;
 use App\Http\Controllers\Grant\GrantSupplierController;
 use App\Http\Controllers\Grant\GrantWalletController;
+use App\Http\Controllers\Grant\MEController;
 use App\Http\Controllers\Grant\MilestonePreAgreementController;
 use App\Http\Controllers\Grant\MilestoneVerificationController;
 use App\Http\Controllers\Grant\Rounds\ApplicationScoreController;
@@ -219,10 +220,10 @@ Route::prefix('/grant')->middleware(['grant'])->group(function(){
     Route::post('rounds/{round}/applications/auto-score', [ApplicationRoundProgressController::class, 'autoScoreApplications']);
 
     // M&E Routes
-    Route::prefix('me')->group(function () {
+    Route::prefix('monitoring')->group(function () {
         // Checkpoints
-        Route::get('applications/{app}/me/checkpoints',      [MEController::class, 'indexCheckpoints']);
-        Route::post('applications/{app}/me/checkpoints',     [MEController::class, 'storeCheckpoint']);
+        Route::get('applications/{app}/checkpoints',      [MEController::class, 'indexCheckpoints']);
+        Route::post('applications/{app}/checkpoints',     [MEController::class, 'storeCheckpoint']);
         Route::patch('checkpoints/{checkpoint}',             [MEController::class, 'updateCheckpoint']);
         Route::delete('checkpoints/{checkpoint}',            [MEController::class, 'deleteCheckpoint']);
 

@@ -13,6 +13,12 @@ return new class extends Migration
     {
         Schema::create('m_e_submission_files', function (Blueprint $table) {
             $table->id();
+            $table->foreignId('submission_id')->constrained('me_submissions')->onDelete('cascade');
+            $table->enum('file_type', ['document', 'photo_video', 'beneficiary_list', 'other']);
+            $table->string('file_path');
+            $table->string('original_filename')->nullable();
+            $table->bigInteger('file_size')->nullable();
+            $table->string('mime_type')->nullable();
             $table->timestamps();
         });
     }

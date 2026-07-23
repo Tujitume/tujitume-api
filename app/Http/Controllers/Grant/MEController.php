@@ -2,13 +2,14 @@
 
 namespace App\Http\Controllers\Grant;
 
-use App\Models\GrantApplication;
-use App\Models\MECheckpoint;
-use App\Models\MESubmission;
-use App\Models\MESubmissionFile;
-use App\Models\MESiteVisit;
-use App\Models\MESiteVisitFile;
-use App\Services\ErrorLogService;
+use App\Http\Controllers\Controller;
+use App\Models\Grants\GrantApplication;
+use App\Models\Grants\Monitoring\MECheckpoint;
+use App\Models\Grants\Monitoring\MESiteVisit;
+use App\Models\Grants\Monitoring\MESiteVisitFile;
+use App\Models\Grants\Monitoring\MESubmission;
+use App\Models\Grants\Monitoring\MESubmissionFile;
+use App\Service\Misc\ErrorLogService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
