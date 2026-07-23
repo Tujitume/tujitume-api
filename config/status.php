@@ -93,4 +93,16 @@ return [
         'passed'  => 'success',
         'failed'  => 'danger',
     ],
+    'me_checkpoint' => [
+        'pending'           => 'info',
+        'submitted'         => 'warning',
+        'verified'          => 'success',
+        'changes_requested' => 'danger',
+    ],
+
+    'me_site_visit' => [
+        'scheduled' => 'warning',
+        'completed' => 'success',
+        'cancelled' => 'danger',
+    ],
 ];
