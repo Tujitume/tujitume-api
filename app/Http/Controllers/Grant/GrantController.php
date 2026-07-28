@@ -830,7 +830,7 @@ class GrantController extends Controller
     public function update_profile(Request $request)
     {
         try{
-            $user = Auth::user();
+            $user = Auth::user()->load('grant_profile');
             $request->validate([
                 'fname' => 'required|string|max:255', // Org name
                 'interested_cats' => 'array', // Focus Sectors

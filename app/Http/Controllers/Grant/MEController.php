@@ -57,7 +57,7 @@ class MEController extends Controller
         try {
             $validated = $request->validate([
                 'checkpoint_name'          => 'required|string|max:255',
-                'type'                     => 'required|in:monitoring,reporting',
+                'type'                     => 'required|in:monitoring,reporting,meeting',
                 'due_date'                 => 'nullable|date',
                 'requirement'              => 'nullable|string',
                 'require_site_visit'       => 'boolean',

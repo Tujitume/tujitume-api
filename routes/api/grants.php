@@ -1,6 +1,6 @@
 <?php
 
-
+use Illuminate\Support\Facades\Route;
 /*
 |--------------------------------------------------------------------------
 | Grant Routes
@@ -20,6 +20,7 @@ use App\Http\Controllers\Grant\GrantMilestoneController;
 use App\Http\Controllers\Grant\GrantServiceController;
 use App\Http\Controllers\Grant\GrantSupplierController;
 use App\Http\Controllers\Grant\GrantWalletController;
+use App\Http\Controllers\Grant\MEAnalyticsController;
 use App\Http\Controllers\Grant\MEController;
 use App\Http\Controllers\Grant\MilestonePreAgreementController;
 use App\Http\Controllers\Grant\MilestoneVerificationController;
@@ -236,7 +237,12 @@ Route::prefix('/grant')->middleware(['grant'])->group(function(){
         Route::post('/checkpoints/{checkpoint}/site-visit/assign', [MEController::class, 'assignSiteVisit']);
         Route::post('/site-visits/{visit}/submit',            [MEController::class, 'submitSiteVisit']);
         Route::get('/site-visits/{visit}',                    [MEController::class, 'showSiteVisit']);
-    });
+        
+        // Analytics
+        Route::get('/applications/{app}/analytics/overview',    [MEAnalyticsController::class, 'meOverview']);
+        Route::get('/applications/{app}/analytics/impact',         [MEAnalyticsController::class, 'applicationImpact']);
+
+        });
 
 });
 
