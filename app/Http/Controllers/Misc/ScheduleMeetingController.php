@@ -76,7 +76,10 @@ class ScheduleMeetingController extends Controller
                 ,$linkForOrg,'meeting');
             //Notifications
 
-            return response()->json(['message' => 'Meeting created successfully.'], 200);
+            return response()->json([
+                'message' => 'Meeting created successfully.',
+                'data' => $meeting
+                ], 201);
         }
         catch (\Exception $e) {
             ErrorLogService::report($e, [
@@ -106,11 +109,6 @@ class ScheduleMeetingController extends Controller
             $today = Carbon::now();
             $meetings = Meeting::where('host_id',$user_id)->orWhere('client_id',$user_id)->latest()->get();
             foreach($meetings as $meeting){
-                if($meeting->host_id == $user_id){
-                    $meeting->is_host = true;
-                }
-                else $meeting->is_host = false;
-
                 $meetingDateTime = Carbon::parse("{$meeting->date} {$meeting->time}");
 
                 // check if meeting is in the past
@@ -119,6 +117,11 @@ class ScheduleMeetingController extends Controller
                         'status'   => 'expired',
                     ]);
                 }
+
+                if ($meeting->host_id == $user_id) {
+                    $meeting->is_host = true;
+                } 
+                else $meeting->is_host = false;
             }
 
 
