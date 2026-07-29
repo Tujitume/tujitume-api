@@ -10,8 +10,9 @@ hooks:
   AfterInstall:
     - location: ./scripts/after-install.sh
       runas: ubuntu
-  Cleanup:
-    - location: ./scripts/cleanup.sh
+  
+  ValidateService:
+    - location: scripts/cleanup.sh
       runas: ubuntu
 
 #BeforeInstall

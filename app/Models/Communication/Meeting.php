@@ -10,5 +10,4 @@ class Meeting extends Model
     use HasFactory;
     protected $guarded = [];
 
-    protected $appends = ['is_host'];
 }

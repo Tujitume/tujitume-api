@@ -1,3 +1,6 @@
+#!/bin/bash
+set -e
+
 echo "Cleaning old CodeDeploy revisions..."
 
 DEPLOY_ROOT="/opt/codedeploy-agent/deployment-root"

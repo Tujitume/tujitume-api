@@ -112,11 +112,7 @@ class ScheduleMeetingController extends Controller
                 $meetingDateTime = Carbon::parse("{$meeting->date} {$meeting->time}");
 
                 // check if meeting is in the past
-                if ($meetingDateTime->lt($today)) {
-                    $meeting->update([
-                        'status'   => 'expired',
-                    ]);
-                }
+       
 
                 if ($meeting->host_id == $user_id) {
                     $meeting->is_host = true;
