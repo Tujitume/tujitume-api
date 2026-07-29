@@ -3,6 +3,10 @@
 namespace App\Http\Controllers\Grant;
 
 use App\Http\Controllers\Controller;
+use App\Http\Resources\Grant\Monitoring\MECheckpointResource;
+use App\Http\Resources\Grant\Monitoring\MESiteVisitResource;
+use App\Http\Resources\Grant\Monitoring\MESubmissionResource;
+use App\Http\Resources\ApiResponseResource;
 use App\Models\Grants\GrantApplication;
 use App\Models\Grants\Monitoring\MECheckpoint;
 use App\Models\Grants\Monitoring\MESiteVisit;
@@ -30,20 +34,11 @@ class MEController extends Controller
         }
 
         $checkpoints = MECheckpoint::where('app_id', $app->id)
-            ->with(['submission.files', 'siteVisit'])
+            ->with(['submission.files', 'siteVisit.files'])
             ->orderBy('display_order')
-            ->get()
-            ->map(function ($checkpoint) {
-                return [
-                    ...$checkpoint->toArray(),
-                    'status' => [
-                        'value' => $checkpoint->status,
-                        'color' => config('status.me_checkpoint.' . $checkpoint->status, 'gray'),
-                    ],
-                ];
-            });
+            ->get();
 
-        return response()->json(['checkpoints' => $checkpoints], 200);
+        return new ApiResponseResource('Checkpoints fetched successfully', MECheckpointResource::collection($checkpoints), 200);
     }
 
     // POST /grant/applications/{app}/me/checkpoints
@@ -75,10 +70,7 @@ class MEController extends Controller
 
             DB::commit();
 
-            return response()->json([
-                'message' => 'Checkpoint created successfully',
-                'data'    => $checkpoint,
-            ], 201);
+            return new ApiResponseResource('Checkpoint created successfully', new MECheckpointResource($checkpoint), 201);
 
         } catch (ValidationException $e) {
             DB::rollBack();
@@ -115,10 +107,7 @@ class MEController extends Controller
             $checkpoint->update($validated);
             DB::commit();
 
-            return response()->json([
-                'message' => 'Checkpoint updated successfully',
-                'data'    => $checkpoint->fresh(),
-            ], 200);
+            return new ApiResponseResource('Checkpoint updated successfully', new MECheckpointResource($checkpoint), 200);
 
         } catch (ValidationException $e) {
             DB::rollBack();
@@ -137,9 +126,10 @@ class MEController extends Controller
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
+        $checkpointId = $checkpoint->id;
         $checkpoint->delete();
 
-        return response()->json(['message' => 'Checkpoint deleted successfully'], 200);
+        return new ApiResponseResource('Checkpoint deleted successfully', ['checkpoint_id' => $checkpointId], 200);
     }
 
     // ─── SUBMISSIONS ─────────────────────────────────────────────────────
@@ -150,7 +140,7 @@ class MEController extends Controller
         $userId = auth()->id();
 
         if ($checkpoint->application->user_id !== $userId) {
-            return response()->json(['error' => 'Unauthorized'], 403);
+            //return response()->json(['error' => 'Unauthorized'], 403);
         }
 
         if ($checkpoint->status === 'verified') {
@@ -205,10 +195,7 @@ class MEController extends Controller
 
             DB::commit();
 
-            return response()->json([
-                'message' => 'Submission completed successfully',
-                'data'    => $submission->load('files'),
-            ], 200);
+            return new ApiResponseResource('Submission created successfully', new MESubmissionResource($submission->fresh()->load('files')), 201);
 
         } catch (ValidationException $e) {
             DB::rollBack();
@@ -246,7 +233,7 @@ class MEController extends Controller
 
             DB::commit();
 
-            return response()->json(['message' => 'Submission verified successfully'], 200);
+            return new ApiResponseResource('Submission verified successfully', new MESubmissionResource($submission->fresh()->load('files')), 200);
 
         } catch (\Exception $e) {
             DB::rollBack();
@@ -279,7 +266,7 @@ class MEController extends Controller
 
             DB::commit();
 
-            return response()->json(['message' => 'Changes requested successfully'], 200);
+            return new ApiResponseResource('Changes requested successfully', new MESubmissionResource($submission->fresh()->load('files')), 200);
 
         } catch (\Exception $e) {
             DB::rollBack();
@@ -322,10 +309,7 @@ class MEController extends Controller
 
             DB::commit();
 
-            return response()->json([
-                'message' => 'Site visit assigned successfully',
-                'data'    => $siteVisit,
-            ], 201);
+            return new ApiResponseResource('Site visit assigned successfully', new MESiteVisitResource($siteVisit->load('files')), 201);
 
         } catch (ValidationException $e) {
             DB::rollBack();
@@ -380,10 +364,7 @@ class MEController extends Controller
 
             DB::commit();
 
-            return response()->json([
-                'message' => 'Site visit report submitted successfully',
-                'data'    => $visit->load('files'),
-            ], 200);
+            return new ApiResponseResource('Site visit report submitted successfully', new MESiteVisitResource($visit->load('files')), 200);
 
         } catch (ValidationException $e) {
             DB::rollBack();
@@ -409,8 +390,6 @@ class MEController extends Controller
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
-        return response()->json([
-            'data' => $visit->load(['files', 'reviewer', 'checkpoint']),
-        ], 200);
+        return new ApiResponseResource('Site visit details fetched successfully', new MESiteVisitResource($visit->load('files')), 200);
     }
 }
