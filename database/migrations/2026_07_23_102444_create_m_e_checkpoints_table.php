@@ -20,6 +20,8 @@ return new class extends Migration
             $table->date('due_date')->nullable();
             $table->text('requirement')->nullable();
             $table->boolean('require_site_visit')->default(false);
+            $table->boolean('meeting_required')->default(false);
+            $table->string('meeting_id')->nullable();
             $table->json('kpis_to_track')->nullable();
             $table->json('evidence_required')->nullable();
             $table->json('submission_fields')->nullable();

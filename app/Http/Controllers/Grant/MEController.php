@@ -56,6 +56,8 @@ class MEController extends Controller
                 'due_date'                 => 'nullable|date',
                 'requirement'              => 'nullable|string',
                 'require_site_visit'       => 'boolean',
+                'meeting_required'         => 'boolean',
+                'meeting_id'               => 'required_if:meeting_required,true|string|max:255',
                 'kpis_to_track'            => 'nullable|array',
                 'evidence_required'        => 'nullable|array',
                 'submission_fields'        => 'nullable|array',
