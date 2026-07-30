@@ -12,13 +12,13 @@ sudo chmod -R 775 storage bootstrap/cache
 
 echo "Clearing Laravel caches..."
 
-php artisan optimize:clear
+php artisan optimize:clear || true
 
 echo "Caching configuration..."
 
-php artisan config:cache
-php artisan route:cache
-php artisan view:cache
+php artisan config:cache || true
+php artisan route:cache || true
+php artisan view:cache || true
 
 echo "Running migrations..."
 

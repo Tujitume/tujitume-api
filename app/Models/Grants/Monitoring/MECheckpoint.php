@@ -11,7 +11,7 @@ class MECheckpoint extends Model
     use HasFactory;
     protected $fillable = [
         'app_id', 'grant_id', 'checkpoint_name', 'type', 'due_date',
-        'requirement', 'require_site_visit', 'kpis_to_track',
+        'requirement', 'require_site_visit', 'kpis_to_track','meeting_required', 'meeting_id',
         'evidence_required', 'submission_fields', 'custom_submission_fields',
         'status', 'display_order',
     ];
