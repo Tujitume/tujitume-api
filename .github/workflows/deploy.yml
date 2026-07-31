@@ -133,5 +133,5 @@ jobs:
             --application-name ${{ secrets.CODEDEPLOY_APP }} \
             --deployment-group-name ${{ secrets.CODEDEPLOY_GROUP }} \
             --deployment-config-name CodeDeployDefault.OneAtATime \
-            --ignore-application-stop-failures
+            --ignore-application-stop-failures  \
             --s3-location bucket=${{ secrets.S3_BUCKET }},key=backend-prod/backend-prod-${{ github.sha }}.zip,bundleType=zip
