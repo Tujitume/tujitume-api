@@ -49,6 +49,8 @@ Route::post('bookingAccepted', [BookingController::class, 'accept']);
 Route::post('bookingRejected', [BookingController::class, 'reject']);
 
 Route::get('FindProjectManagers/{bid_id}', [BusinessController::class, 'findProjectManagers']);
+Route::get('business/{business_id}/FindProjectManagers/', [BusinessController::class, 'findProjectManagersforBusiness']);
+
 
 Route::get('releaseEquipment/{b_owner_id}/{manager_id}/{bid_id}', [AssetBidsController::class, 'releaseEquipment']);
 

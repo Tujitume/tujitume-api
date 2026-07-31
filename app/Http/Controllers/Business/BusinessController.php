@@ -646,6 +646,24 @@ class BusinessController extends Controller
         }
     }
 
+    public function findProjectManagersforBusiness(int $businessId)
+    {
+        try {
+            $listing = Listing::findOrFail($businessId);
+            $services = $this->findNearestServices((float) $listing->lat, (float) $listing->lng, 100);
+
+            return response()->json([
+                'results' => $services,
+                'loc'     => true,
+                'lat' => (float) $listing->lat,
+                'lng' => (float) $listing->lng,
+            ], 200);
+        } catch (Exception $e) {
+            ErrorLogService::report($e, ['business_id' => $businessId]);
+            return response()->json(['message' => 'Something went wrong, please try again later.'], 500);
+        }
+    }
+
 
     // Private Helper
     private function findNearestServices($latitude, $longitude, $radius = 100)
