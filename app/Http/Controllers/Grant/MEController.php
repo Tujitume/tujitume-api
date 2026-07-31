@@ -38,8 +38,9 @@ class MEController extends Controller
             ->orderBy('display_order')
             ->get();
 
-        $business = $app->business()->select('location', 'lat', 'lng')->first();
+        $business = $app->business()->select('id','location', 'lat', 'lng')->first();
         $businessLocation = $business ? [
+            'id' => $business->id,
             'location' => $business->location,
             'lat' => $business->lat,
             'lng' => $business->lng,
