@@ -397,7 +397,7 @@ class MEController extends Controller
     }
 
     // GET /grant/me/site-visits/{visit}
-    public function showSiteVisits(MESiteVisit $visit)
+    public function showSiteVisit(MESiteVisit $visit)
     {
         $userId      = auth()->id();
         $application = $visit->checkpoint->application;
