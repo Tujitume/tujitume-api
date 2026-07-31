@@ -34,11 +34,25 @@ class MEController extends Controller
         }
 
         $checkpoints = MECheckpoint::where('app_id', $app->id)
-            ->with(['submission.files', 'siteVisit.files'])
+            ->with(['submission.files', 'siteVisit.files',])
             ->orderBy('display_order')
             ->get();
 
-        return new ApiResponseResource('Checkpoints fetched successfully', MECheckpointResource::collection($checkpoints), 200);
+        $business = $app->business()->select('location', 'lat', 'lng')->first();
+        $businessLocation = $business ? [
+            'location' => $business->location,
+            'lat' => $business->lat,
+            'lng' => $business->lng,
+        ] : null;
+
+        return new ApiResponseResource(
+            'Checkpoints fetched successfully',
+            [
+                'business_location' => $businessLocation,
+                'checkpoints' => MECheckpointResource::collection($checkpoints),
+            ],
+            200
+        );
     }
 
     // POST /grant/applications/{app}/me/checkpoints
@@ -55,14 +69,16 @@ class MEController extends Controller
                 'type'                     => 'required|in:monitoring,reporting,meeting',
                 'due_date'                 => 'nullable|date',
                 'requirement'              => 'nullable|string',
+                'checkpoint_description'   => 'nullable|string|max:500',
                 'require_site_visit'       => 'boolean',
                 'meeting_required'         => 'boolean',
                 'meeting_id'               => 'required_if:meeting_required,true|exists:meetings,id',
                 'kpis_to_track'            => 'nullable|array',
                 'evidence_required'        => 'nullable|array',
                 'submission_fields'        => 'nullable|array',
-                'custom_submission_fields' => 'nullable|array',
+                //'custom_submission_fields' => 'nullable|array',
                 'display_order'            => 'nullable|integer',
+                'should_notify_applicant'  => 'boolean|required_with:require_site_visit',
             ]);
 
             $validated['app_id']   = $app->id;
@@ -295,6 +311,8 @@ class MEController extends Controller
             $validated = $request->validate([
                 'reviewer_id' => 'required|exists:users,id',
                 'start_date'  => 'required|date',
+                'assign_type' => 'required|in:internal,external,third_party_audit',
+                'email'       => 'nullable|email|required_if:assign_type,external',
                 'location'    => 'nullable|string',
                 'inspector'   => 'nullable|string',
                 'objective'   => 'nullable|string',
@@ -379,7 +397,7 @@ class MEController extends Controller
     }
 
     // GET /grant/me/site-visits/{visit}
-    public function showSiteVisit(MESiteVisit $visit)
+    public function showSiteVisits(MESiteVisit $visit)
     {
         $userId      = auth()->id();
         $application = $visit->checkpoint->application;
@@ -393,5 +411,21 @@ class MEController extends Controller
         }
 
         return new ApiResponseResource('Site visit details fetched successfully', new MESiteVisitResource($visit->load('files')), 200);
+    }
+
+    public function SiteVisits(Request $request, $reviewer_id)
+    {
+        $userId = auth()->id();
+
+        if ($userId != $reviewer_id) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
+        $siteVisits = MESiteVisit::where('reviewer_id', $reviewer_id)
+            ->with(['checkpoint', 'checkpoint.application', 'files'])
+            ->orderBy('start_date', 'desc')
+            ->get();
+
+        return new ApiResponseResource('Site visits fetched successfully', MESiteVisitResource::collection($siteVisits), 200);
     }
 }

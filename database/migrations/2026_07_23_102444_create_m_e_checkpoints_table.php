@@ -19,6 +19,7 @@ return new class extends Migration
             $table->enum('type', ['monitoring', 'reporting']);
             $table->date('due_date')->nullable();
             $table->text('requirement')->nullable();
+            $table->text('checkpoint_description')->nullable();
             $table->boolean('require_site_visit')->default(false);
             $table->boolean('meeting_required')->default(false);
             $table->string('meeting_id')->nullable();
@@ -28,6 +29,7 @@ return new class extends Migration
             $table->json('custom_submission_fields')->nullable();
             $table->enum('status', ['pending', 'submitted', 'verified', 'changes_requested'])->default('pending');
             $table->integer('display_order')->default(0);
+            $table->boolean('should_notify_applicant')->default(false);
             $table->timestamps();
         });
     }

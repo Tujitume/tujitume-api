@@ -18,6 +18,8 @@ return new class extends Migration
             $table->foreignId('reviewer_id')->constrained('users')->onDelete('cascade');
             $table->string('inspector')->nullable();
             $table->date('start_date')->nullable();
+            $table->enum('assign_type', ['internal', 'external', 'third_party_audit'])->default('internal');
+            $table->string('email')->nullable();
             $table->string('location')->nullable();
             $table->decimal('gps_lat', 10, 7)->nullable();
             $table->decimal('gps_lng', 10, 7)->nullable();
