@@ -331,6 +331,7 @@ class MEController extends Controller
                 $validated
             );
 
+            // commit the transaction
             DB::commit();
 
             return new ApiResponseResource('Site visit assigned successfully', new MESiteVisitResource($siteVisit->load('files')), 201);
