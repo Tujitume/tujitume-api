@@ -12,7 +12,7 @@ class MESiteVisit extends Model
 
     protected $fillable = [
         'checkpoint_id', 'app_id', 'reviewer_id', 'inspector', 'start_date',
-        'location', 'gps_lat', 'gps_lng', 'objective', 'kpi_targets',
+        'location', 'gps_lat', 'gps_lng', 'objective', 'kpi_targets', 'assign_type', 'email',
         'data_collection_fields', 'objectives_assessment', 'observed_actions',
         'evidence_found', 'risk_notes', 'recommendation_notes', 'visit_comments', 'status',
     ];
