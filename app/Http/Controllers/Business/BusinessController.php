@@ -675,25 +675,22 @@ class BusinessController extends Controller
                            ) + sin( radians(?) ) *
                            sin( radians( lat ) ) )
                          ) AS distance", [$latitude, $longitude, $latitude])
+            ->with([
+            'owner:id,fname,lname,email,image'
+            ])
             ->where('category', '=', 'project_management')
             ->having("distance", "<", $radius)
             ->orderBy("distance",'asc')
             ->offset(0)
             ->limit(20)
-            ->get();
+            ->get()
+            ->each(
+                function ($listing) {
+                    if (strlen($listing->location) > 30) {
+                        $listing->location = substr($listing->location, 0, 30) . '...';
+                    };
+                });
 
-        foreach($listings as $list){
-            if(strlen($list->location) > 30){
-                $list->location = substr($list->location,0,30).'...';
-            }
-
-            $user = User::where('id', $list->user_id)->first();
-
-            if($user){
-                $list->manager = $user->fname.' '.$user->lname;
-                $list->contact = $user->email;
-            }
-        }
 
         return $listings;
     }
