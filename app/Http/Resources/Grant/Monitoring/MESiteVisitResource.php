@@ -33,7 +33,7 @@ class MESiteVisitResource extends JsonResource
             'status' => $this->status,
             'assign_type' => $this->assign_type,
             'email' => $this->email,
-            'reviewer' => $this->reviewer?->only(['id', 'name', 'email','image']),
+            'reviewer' => $this->reviewer?->only(['id', 'fname', 'lname', 'email','image']),
             'files' => MESiteVisitFileResource::collection($this->whenLoaded('files')),
         ];
     }
