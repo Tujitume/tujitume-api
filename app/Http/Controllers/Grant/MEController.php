@@ -368,9 +368,9 @@ class MEController extends Controller
     // POST /grant/me/site-visits/{visit}/submit
     public function submitSiteVisit(Request $request, MESiteVisit $visit)
     {
-        // if ($visit->reviewer_id !== auth()->id()) {
-        //     return response()->json(['error' => 'Unauthorized'], 403);
-        // }
+        if ($visit->reviewer_id !== auth()->id()) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
 
         DB::beginTransaction();
         try {
