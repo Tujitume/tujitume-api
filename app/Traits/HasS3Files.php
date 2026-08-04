@@ -21,9 +21,12 @@ trait HasS3Files
     {
         $array = parent::toArray();
 
+        // Only generate signed URLs for single model fetch, not collections
+        //if (!$this->exists) return $array;
+
         foreach ($this->privateFileFields() as $field) {
             $array[$field . '_url'] = $this->$field
-                ? Storage::disk('s3')->temporaryUrl($this->$field, now()->addMinutes(10))
+                ? Storage::disk('s3')->temporaryUrl($this->$field, now()->addMinutes(45))
                 : null;
         }
 

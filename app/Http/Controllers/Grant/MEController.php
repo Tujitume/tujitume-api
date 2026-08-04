@@ -159,7 +159,7 @@ class MEController extends Controller
         $userId = auth()->id();
 
         if ($checkpoint->application->user_id !== $userId) {
-            //return response()->json(['error' => 'Unauthorized'], 403);
+            return response()->json(['error' => 'Unauthorized'], 403);
         }
 
         if ($checkpoint->status === 'verified') {
@@ -169,18 +169,22 @@ class MEController extends Controller
         DB::beginTransaction();
         try {
             $validated = $request->validate([
-                'written_report'      => 'nullable|string',
-                'kpi_actual_values'   => 'nullable|array',
-                'beneficiary_list'    => 'nullable|array',
-                'custom_field_values' => 'nullable|array',
-                'files'               => 'nullable|array',
-                'files.*.file'        => 'required_with:files|file|max:20480',
-                'files.*.file_type'   => 'required_with:files|in:document,photo_video,beneficiary_list,other',
+                'written_report'            => 'nullable|string',
+                'kpi_actual_values'         => 'nullable|array',
+                'beneficiary_list'          => 'nullable|array',
+                'custom_field_values'       => 'nullable|array',
+                'files'                     => 'nullable|array',
+                'files.*.file'              => 'required_with:files|file|max:20480',
+                'files.*.file_type'         => 'required_with:files|in:document,photo_video,beneficiary_list,other',
+                'files.*.original_filename' => 'nullable|string',
             ]);
 
             // Create or update submission
             $submission = MESubmission::updateOrCreate(
-                ['checkpoint_id' => $checkpoint->id, 'app_id' => $checkpoint->app_id],
+                [
+                    'checkpoint_id' => $checkpoint->id,
+                    'app_id'        => $checkpoint->app_id,
+                ],
                 [
                     'submitted_by'        => $userId,
                     'written_report'      => $validated['written_report'] ?? null,
@@ -193,19 +197,31 @@ class MEController extends Controller
             );
 
             // Handle file uploads
-            if ($request->hasFile('files')) {
-                foreach ($request->file('files') as $index => $fileData) {
-                    $file     = $fileData['file'];
-                    $filePath = $this->fileUpload->saveFile($file, "files/grant/me/{$checkpoint->id}");
+            if ($request->has('files')) {
+                $files = collect($request->input('files'))
+                    ->map(function ($fileData, $index) use ($request, $submission, $checkpoint) {
+                        $file = $request->file("files.{$index}.file");
+                        if (!$file) return null;
 
-                    MESubmissionFile::create([
-                        'submission_id'     => $submission->id,
-                        'file_type'         => $fileData['file_type'],
-                        'file_path'         => $filePath,
-                        'original_filename' => $file->getClientOriginalName(),
-                        'file_size'         => $file->getSize(),
-                        'mime_type'         => $file->getMimeType(),
-                    ]);
+                        $filePath = $this->fileUpload->saveFile($file, "files/grant/me/{$checkpoint->id}");
+
+                        return [
+                            'submission_id'     => $submission->id,
+                            'file_type'         => $fileData['file_type'],
+                            'file_path'         => $filePath,
+                            'original_filename' => $file->getClientOriginalName(),
+                            'file_size'         => $file->getSize(),
+                            'mime_type'         => $file->getMimeType(),
+                            'created_at'        => now(),
+                            'updated_at'        => now(),
+                        ];
+                    })
+                    ->filter()
+                    ->values()
+                    ->toArray();
+
+                if (!empty($files)) {
+                    MESubmissionFile::insert($files);
                 }
             }
 
@@ -214,8 +230,11 @@ class MEController extends Controller
 
             DB::commit();
 
-            return new ApiResponseResource('Submission created successfully', new MESubmissionResource($submission->fresh()->load('files')), 201);
-
+            return new ApiResponseResource(
+                'Submission created successfully',
+                new MESubmissionResource($submission->fresh()->load('files')),
+                201
+            );
         } catch (ValidationException $e) {
             DB::rollBack();
             return response()->json(['message' => 'Validation failed.', 'errors' => $e->errors()], 422);
