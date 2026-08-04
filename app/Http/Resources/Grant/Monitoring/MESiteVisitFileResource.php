@@ -19,7 +19,7 @@ class MESiteVisitFileResource extends JsonResource
             'id' => $this->id,
             'file_path' => $this->file_path 
             ? Storage::disk('s3')->temporaryUrl($this->file_path, now()->addMinutes(45))
-                : null,,
+                : null,
             'original_filename' => $this->original_filename,
             'mime_type' => $this->mime_type,
             'created_at' => $this->created_at?->toISOString(),
