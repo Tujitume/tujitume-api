@@ -209,7 +209,7 @@ class MEController extends Controller
                             'submission_id'     => $submission->id,
                             'file_type'         => $fileData['file_type'],
                             'file_path'         => $filePath,
-                            'original_filename' => $file->getClientOriginalName(),
+                            'original_filename' => $fileData['original_filename'] ?? $fileData['file_type'] ?? $file->getClientOriginalName(),
                             'file_size'         => $file->getSize(),
                             'mime_type'         => $file->getMimeType(),
                             'created_at'        => now(),
