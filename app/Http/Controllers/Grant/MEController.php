@@ -16,6 +16,7 @@ use App\Models\Grants\Monitoring\MESubmissionFile;
 use App\Service\Misc\ErrorLogService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 
 class MEController extends Controller
@@ -305,6 +306,50 @@ class MEController extends Controller
             DB::commit();
 
             return new ApiResponseResource('Changes requested successfully', new MESubmissionResource($submission->fresh()->load('files')), 200);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            ErrorLogService::report($e, ['input' => request()->except(['password', 'token'])]);
+            return response()->json(['message' => 'Something went wrong, please try again later.'], 500);
+        }
+    }
+
+    // DELETE /grant/monitoring/checkpoints/{checkpoint}/submissions
+    public function deleteSubmissions(MECheckpoint $checkpoint)
+    {
+        if ($checkpoint->application->grant->user_id !== auth()->id()) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
+        DB::beginTransaction();
+        try {
+            // Get submissions for this checkpoint
+            $submissions = MESubmission::where('checkpoint_id', $checkpoint->id)->get();
+            $submissionIds = $submissions->pluck('id')->toArray();
+
+            if (!empty($submissionIds)) {
+                // Delete associated files from storage and DB
+                $files = MESubmissionFile::whereIn('submission_id', $submissionIds)->get();
+                foreach ($files as $file) {
+                    if ($file->file_path) {
+                        try {
+                            Storage::disk('s3')->delete($file->file_path);
+                        } catch (\Exception $e) {
+                            // continue even if delete fails for a path; we'll still remove DB records
+                        }
+                    }
+                }
+
+                MESubmissionFile::whereIn('submission_id', $submissionIds)->delete();
+                MESubmission::whereIn('id', $submissionIds)->delete();
+            }
+
+            // Reset checkpoint status to pending
+            $checkpoint->update(['status' => 'pending']);
+
+            DB::commit();
+
+            return new ApiResponseResource('Submissions deleted successfully', ['checkpoint_id' => $checkpoint->id], 200);
 
         } catch (\Exception $e) {
             DB::rollBack();

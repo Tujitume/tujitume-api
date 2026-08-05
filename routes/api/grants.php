@@ -233,6 +233,9 @@ Route::prefix('/grant')->middleware(['grant'])->group(function(){
         Route::post('/submissions/{submission}/verify',       [MEController::class, 'verify']);
         Route::post('/submissions/{submission}/request-changes', [MEController::class, 'requestChanges']);
 
+        Route::delete('/checkpoints/{checkpoint}/submissions', [MEController::class, 'deleteSubmissions']);
+
+        
         // Site Visits
         Route::post('/checkpoints/{checkpoint}/site-visit/assign', [MEController::class, 'assignSiteVisit']);
         Route::post('/site-visits/{visit}/submit',            [MEController::class, 'submitSiteVisit']);
