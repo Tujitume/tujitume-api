@@ -109,4 +109,19 @@ class User extends Authenticatable
         return $this->hasMany(GrantApplication::class,'user_id', 'id');
     }
 
+    public function settings()
+    {
+        return $this->hasOne(UserSetting::class);
+    }
+
+    // Helper to get settings with defaults
+    public function getSettings(): UserSetting
+    {
+        return $this->settings ?? new UserSetting([
+            'theme'  => 'default',
+            'mode'   => 'system',
+            'accent_color' => '#14532d',
+        ]);
+    }
+
 }

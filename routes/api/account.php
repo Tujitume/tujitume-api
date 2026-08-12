@@ -13,6 +13,7 @@ use App\Http\Controllers\Account\UserController;
 use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\Auth\DeviceController;
 use App\Http\Controllers\Auth\SessionController;
+use App\Http\Controllers\Account\UserSettingController;
 
 Route::get('/me/sessions', [SessionController::class,'index']);
 Route::delete('/me/sessions/{id}', [SessionController::class,'destroy']);
@@ -43,3 +44,9 @@ Route::get('/withdraw-history', [AccountController::class,'withdraws']);
 
 Route::get('profile/{id}', [UserController::class, 'profile']);
 Route::post('profile/edit/{id}', [UserController::class, 'updateProfile']);
+
+//Settings
+
+Route::get('user/settings',        [UserSettingController::class, 'show']);
+Route::patch('user/settings',      [UserSettingController::class, 'update']);
+Route::delete('user/settings/reset', [UserSettingController::class, 'reset']);
