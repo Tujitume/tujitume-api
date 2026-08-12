@@ -22,6 +22,7 @@ class ServiceCategorySeeder extends Seeder
             ['name' => 'Finance, Accounting & Tax', 'value' => 'finance_accounting_tax'],
             ['name' => 'Marketing', 'value' => 'marketing'],
             ['name' => 'Public Relations', 'value' => 'public_relations'],
+            ['name' => 'Business Coaching', 'value' => 'business_coaching'],
             ['name' => 'Other', 'value' => 'other'],
         ];
 

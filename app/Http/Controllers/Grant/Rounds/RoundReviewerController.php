@@ -12,6 +12,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use App\Service\Misc\ErrorLogService;
 use PhpOffice\PhpSpreadsheet\Calculation\MathTrig\Round;
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\URL;
 
 class RoundReviewerController extends Controller
 {
@@ -96,6 +98,7 @@ class RoundReviewerController extends Controller
             $validated = $request->validate([
                 'reviewer_type' => 'required|in:internal,external',
                 'user_id' => 'required_if:reviewer_type,internal|exists:users,id',
+                'name' => 'required_if:reviewer_type,external|string|max:255',
                 'email' => 'required_if:reviewer_type,external|email',
                 'max_apps_assigned' => 'nullable|integer|min:1',
                 'expertise_tags' => 'nullable|array',
@@ -105,6 +108,7 @@ class RoundReviewerController extends Controller
             if($request->reviewer_type == 'internal') {
 
                 $userId = $validated['user_id'];
+                $user = User::find($userId);
 
                 // Check if already assigned
                 $exists = $round->reviewers()->where('user_id', $userId)->exists();
@@ -120,31 +124,47 @@ class RoundReviewerController extends Controller
                     'max_apps_assigned' => $validated['max_apps_assigned'] ?? null,
                     'expertise_tags' => isset($validated['expertise_tags']) ? json_encode($validated['expertise_tags']) : null,
                 ]);
+
+                $user->update([
+                    'user_type_id' => 6, // internal reviewer
+                ]);
+
             }
             elseif ($request->reviewer_type == 'external') {
-                $data = [
-                    'role_id' => 10004, 'investor' => 2,
-                    'email' => $request->email,
-                    'fname' => $round->round_name . ' ' . 'Reviewer' ?? 'External Reviewer',
-                    'grant_owner_id' => $round->grant->user_id,
+                
+                $randomPassword = substr(bin2hex(random_bytes(5)), 0, rand(8, 10));
+                $user = User::create([
+                    'fname' => $validated['name'],
+                    'email' => $validated['email'],
+                    'password' => $randomPassword,
+                    'user_type_id' => 7, // external reviewer
+                ]);
+
+                $round->reviewers()->attach($user->id, [
+                    'reviewer_type' => 'external',
+                    'max_apps_assigned' => $validated['max_apps_assigned'] ?? null,
+                    'expertise_tags' => isset($validated['expertise_tags']) ? json_encode($validated['expertise_tags']) : null,
+                ]);
+
+                //send email to external reviewer with login credentials
+
+                $link = URL::signedRoute('reject.invitation', ['email' => $validated['email']]);
+
+                $info = [
+                    'email' => $validated['email'],
+                    'password' => $randomPassword,
+                    'o_email' => null,
+                    'link' => $link,
+                    'org' => 'Grant',
+                    'role' => null
                 ];
+                $user['to'] = $validated['email'];
+                $headers = "From: webmaster@Jitume.com";
 
-                $createReviewer = $regService->grantRoleUserRegister($data);
-
-                $responseData = $createReviewer->getData(true);
-
-                if($responseData['success']) {
-                    $userId = $responseData['user']['id'];
-
-                    $round->reviewers()->attach($userId, [
-                        'reviewer_type' => 'external',
-                        'max_apps_assigned' => $validated['max_apps_assigned'] ?? null,
-                        'expertise_tags' => isset($validated['expertise_tags']) ? json_encode($validated['expertise_tags']) : null,
-                    ]);
-                }
-                else{
-                    return $createReviewer;
-                }
+                Mail::send('create_password', $info, function ($msg) use ($user) {
+                    $msg->to($user['to']);
+                    $msg->subject('Grant Review Request');
+                });
             }
 
             DB::commit();

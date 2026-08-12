@@ -7,6 +7,7 @@ use App\Models\Capital\StartupPitches;
 use App\Models\Grants\Grant;
 use App\Models\Grants\GrantApplication;
 use Illuminate\Support\Facades\Auth;
+use App\Http\Resources\User\UserResource;
 
 
 class CalculateUserFunds
@@ -18,14 +19,14 @@ class CalculateUserFunds
         $role = $user->grant_profile?->role?->name ?? 'super-admin';
         $ownerId = ($role === 'editor' || $role === 'viewer') ? $user->grant_profile->grant_owner_id : $user->id;
 
-        $grants = Grant::where('user_id', $ownerId)->get();
-        $user = User::with('grant_profile')->find($ownerId);
+        $total_grant_amount = Grant::where('user_id', $ownerId)->sum('total_grant_amount');
+        $available_grant_amount = Grant::where('user_id', $ownerId)->sum('available_amount');
 
         return [
-            'user' => $user,
+            'user' => new UserResource($user),
             'role' => $role,
-            'total_funds' => $grants->sum('total_grant_amount'),
-            'available_funds' => $grants->sum('available_amount'),
+            'total_funds' => $total_grant_amount,
+            'available_funds' => $available_grant_amount,
         ];
     }
 
@@ -35,14 +36,14 @@ class CalculateUserFunds
         $role = $user->capital_profile->role?->name ?? 'super-admin';
         $ownerId = ($role === 'editor' || $role === 'viewer') ? $user->capital_profile->capital_owner_id : $user->id;
 
-        $offers = CapitalOffer::where('user_id', $ownerId)->get();
-        $user = User::with('capital_profile')->find($ownerId);
+        $total_capital_available = CapitalOffer::where('user_id', $ownerId)->sum('total_capital_available');
+        $available_amount = CapitalOffer::where('user_id', $ownerId)->sum('available_amount');
 
         return [
-            'user' => $user,
+            'user' => new UserResource($user),
             'role' => $role,
-            'total_funds' => $offers->sum('total_capital_available'),
-            'available_funds' => $offers->sum('available_amount'),
+            'total_funds' => $total_capital_available,
+            'available_funds' => $available_amount,
         ];
     }
 
@@ -78,7 +79,7 @@ class CalculateUserFunds
         $successRate = round((($successG + $successC) / 2), 2);
 
         return [
-            'user' => $user,
+            'user' => new UserResource($user),
             'total_funds' => $totalFunds,
             'available_funds' => $availableFunds,
             'success_rate' => $successRate,

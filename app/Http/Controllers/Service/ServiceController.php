@@ -58,6 +58,7 @@ class ServiceController extends Controller
                 'link'                  => 'nullable|string|url',
                 'price'                 => 'required|integer',
                 'category'              => 'required|string|max:155',
+                'sub_category'          => 'nullable|string|max:155',
                 'details'               => 'required|string|max:1000',
                 'location'              => 'required|string|max:300',
                 'lat'                   => 'nullable|string|max:100',

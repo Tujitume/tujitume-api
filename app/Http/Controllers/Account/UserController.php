@@ -79,22 +79,34 @@ class UserController extends Controller
 
         try{
             switch ($user->user_type_id){
+                case 1: // Investor
+                    //return $this->getInvestorDashboard($user);
+
                 case 2: // Grant
-                    return $funds->calculateGrantFunds($user);
+                    return response()->json($funds->calculateGrantFunds($user), 200);
 
                 case 3: // Capital
-                    return $funds->calculateCapitalFunds($user);
+                    return response()->json($funds->calculateCapitalFunds($user), 200);
 
-                case 4: // SME
-                    return $funds->calculateSMEFunds($user);
+                case 4: // Business - SME
+                    return response()->json($funds->calculateSMEFunds($user), 200);
+
+                case 5: // Service Provider
+                    //return $funds->calculateServiceProviderFunds($user);
+
+                case 6: // Internal Reviewer
+                    //return $this->getInternalReviewerDashboard($user);
+
+                case 7: // External Reviewer
+                    //return $this->getExternalReviewerDashboard($user);
 
                 default:
-                    return [
+                    return response()->json([
                         'user' => $user,
-                        'role' => '',
+                        'role' => 'N/A',
                         'total_funds' => 0,
                         'available_funds' => 0,
-                    ];
+                    ], 200);
             }
         }
         catch (\Exception $e) {

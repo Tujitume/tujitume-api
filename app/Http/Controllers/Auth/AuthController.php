@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\LoginRequest;
 use App\Http\Requests\RegisterRequest;
 use App\Models\Auth\User;
+use App\Http\Resources\User\UserResource;
 
 use App\Models\EmailVerificationCode;
 use App\Service\Account\DeviceVerificationService;
@@ -132,7 +133,7 @@ class AuthController extends Controller
         }
 
         return response()->json([
-            'user' => $user,
+            'user' => new UserResource($user),
             'token' => $token,
             'auth' => Auth::check()
         ]);

@@ -7,6 +7,7 @@ use App\Http\Controllers\Misc\MessageController;
 use App\Http\Controllers\Service\BookingController;
 use App\Http\Controllers\Service\ServiceController;
 use App\Http\Controllers\Service\ServiceMilestoneController;
+use App\Http\Controllers\Service\ServiceOfferController;
 
 Route::prefix('/business')->group(function() {
 
@@ -36,6 +37,20 @@ Route::prefix('/business')->group(function() {
 Route::get('ratingService/{id}/{rating}/{text}', [ServiceController::class, 'serviceRating'])->name('ratingService');
 
 Route::prefix('/services')->group(function(){
+
     Route::post('deactivate', [ServiceController::class, 'deactivate']);
     Route::post('activate', [ServiceController::class, 'activate']);
+
+    // Offers
+    Route::post('{service}/offer',                [ServiceOfferController::class, 'store']);
+    Route::post('offers/{offer}/accept',          [ServiceOfferController::class, 'accept']);
+    Route::post('offers/{offer}/reject',          [ServiceOfferController::class, 'reject']);
+    //Route::post('offers/{offer}/counter',       [ServiceOfferController::class, 'counter']); Route::post('offers/{offer}/accept-counter',  [ServiceOfferController::class, 'acceptCounter']);
+    Route::get('{service}/offers',                [ServiceOfferController::class, 'index']);
+    Route::get('my-offers',                       [ServiceOfferController::class, 'myOffers']);
+
+    // Delivery
+    Route::post('bookings/{booking}/deliver',         [ServiceOfferController::class, 'deliver']);
+    Route::post('bookings/{booking}/accept-delivery', [ServiceOfferController::class, 'acceptDelivery']);
+    Route::post('bookings/{booking}/reject-delivery', [ServiceOfferController::class, 'rejectDelivery']);
 });
