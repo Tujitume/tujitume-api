@@ -71,8 +71,8 @@ return new class extends Migration
 
             // Funding progression
             $table->boolean('is_funded')->default(false);
-            $table->boolean('mid_milestone_started ')->default(false);
-            $table->boolean('final_approval_started ')->default(false);
+            $table->boolean('mid_milestone_started')->default(false);
+            $table->boolean('final_approval_started')->default(false);
             $table->boolean('pre_release_notified')->default(false);
 
             // RMEP verifications counts
