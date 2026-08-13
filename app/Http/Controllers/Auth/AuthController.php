@@ -220,7 +220,6 @@ class AuthController extends Controller
             $data = $request->validate([
                 //Required Fields
                 'fname' => ['required', 'string', 'max:255'],
-                //'lname' => ['required', 'string', 'max:255'],
                 'email' => ['required', 'email', 'max:255'],
                 'password' => ['required', 'string', 'min:8'],
                 // Arrays (casted in model)

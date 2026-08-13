@@ -162,6 +162,22 @@ class GrantNotificationService
                 'link'          => $this->link('dashboard.entrepreneur.grantsApplication'),
             ],
 
+            'round.reviewer_invited_internal' => [
+                'title'         => 'Round Review Invitation',
+                'message'       => "You have been invited to review applications for {$data['grant_title']}",
+                'email_subject' => 'You\'ve Been Invited to Review Grant Applications',
+                'email_view'    => $this->view_base . 'reviewer_invited_internal',
+                'link'          => $this->link('dashboard.grantOrg.applications'),
+            ],
+
+            'round.reviewer_invited_external' => [
+                'title'         => 'Round Review Invitation',
+                'message'       => "You have been invited to review applications for {$data['grant_title']}",
+                'email_subject' => 'You\'ve Been Invited to Review Grant Applications on Tujitume',
+                'email_view'    => $this->view_base . 'reviewer_invited_external',
+                'link'          => $this->link('dashboard.grantOrg.applications'),
+            ],
+
             // ── AWARD ────────────────────────────────────────────────────────
             'application.awarded' => [
                 'title'         => 'Grant Awarded! 🎉',

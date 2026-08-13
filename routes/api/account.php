@@ -14,6 +14,7 @@ use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\Auth\DeviceController;
 use App\Http\Controllers\Auth\SessionController;
 use App\Http\Controllers\Account\UserSettingController;
+use Illuminate\Support\Facades\DB;
 
 Route::get('/me/sessions', [SessionController::class,'index']);
 Route::delete('/me/sessions/{id}', [SessionController::class,'destroy']);
@@ -31,6 +32,11 @@ Route::get('account', [AccountController::class, 'account_wallet'])->name('accou
 // User Resource
 Route::get('users', [UserController::class, 'index']);
 Route::get('users/me', [UserController::class, 'me']);
+
+Route::get('users/types', function () {
+    $types = DB::table('user_types')->get();
+    return response()->json($types);
+});
 
 Route::get('users/{id}', [UserController::class, 'fetchUser'])
     ->where('id', '[0-9]+'); // only numeric IDs allowed

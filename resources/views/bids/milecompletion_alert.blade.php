@@ -38,7 +38,7 @@
                 "
             >
                 <img
-                    src="{{ $message->embed('https://tujitume.com/images/Email/EmailWhite.png')}}"
+                    src="{{ $message->embed(config('app.api_base_url') . 'images/Email/EmailWhite.png')}}"
                     alt="Company Logo"
                     class="h-12 w-auto mx-auto"
                     style="height: 3rem; width: auto; margin: 0 auto"
@@ -131,7 +131,7 @@
             >
                 <p>
                     <img
-                        src="{{ $message->embed('https://tujitume.com/images/Email/EmailVertDark.png')}}"
+                        src="{{ $message->embed(config('app.api_base_url') . 'images/Email/EmailVertDark.png')}}"
                         alt="Company Logo"
                         style="
                             height: 3rem;

@@ -177,6 +177,7 @@ Route::prefix('/grant')->middleware(['grant'])->group(function(){
 
 
     // Funding Setup & Supplier Directory
+    Route::get('supplier-directory/{supplierId}/assigned-milestones', [SupplierDirectoryController::class, 'assignedMilestones']);
     Route::apiResource('supplier-directory', SupplierDirectoryController::class);
     // Add supplier to milestone
     Route::post('milestones/{milestone}/assign-suppliers', [SupplierDirectoryController::class, 'assignToMilestone']);
@@ -251,5 +252,4 @@ Route::prefix('/grant')->middleware(['grant'])->group(function(){
         });
 
 });
-
 

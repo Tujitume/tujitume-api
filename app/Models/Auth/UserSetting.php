@@ -13,7 +13,7 @@ class UserSetting extends Model
         'mode',
         'accent_color',
         'bg_color',
-        'font_size',
+        'font_weight',
         'language',
         'currency',
         'timezone',

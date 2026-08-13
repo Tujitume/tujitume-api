@@ -38,7 +38,7 @@ class UserSettingController extends Controller
                 'mode'                => 'sometimes|in:light,dark,system',
                 'accent_color'        => 'sometimes|string|max:20',
                 'bg_color'            => 'sometimes|nullable|string|max:20',
-                'font_size'           => 'sometimes|in:small,medium,large',
+                'font_weight'         => 'sometimes|in:light,semi-bold,bold',
                 'language'            => 'sometimes|string|max:10',
                 'currency'            => 'sometimes|string|max:10',
                 'timezone'            => 'sometimes|string|max:10',

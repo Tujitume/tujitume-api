@@ -80,6 +80,34 @@ class SupplierDirectoryController extends Controller
     }
 
     /**
+     * List milestones assigned to a supplier owned by the authenticated grant user.
+     * GET /grant/supplier-directory/{supplierId}/assigned-milestones
+     */
+    public function assignedMilestones(Request $request, $supplierId)
+    {
+        try {
+            $supplier = SupplierDirectory::where('user_id', auth()->id())
+                ->findOrFail($supplierId);
+
+            $assignments = $supplier->milestoneAssignments()
+                ->with([
+                    'milestone.budgetItems',
+                    'milestone.application.grant',
+                    'milestone.application.business',
+                ])
+                ->latest()
+                ->paginate($request->integer('per_page', 20));
+
+            return response()->json($assignments, 200);
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json(['error' => 'Supplier not found'], 404);
+        } catch (\Exception $e) {
+            ErrorLogService::report($e);
+            return response()->json(['message' => 'Something went wrong'], 500);
+        }
+    }
+
+    /**
      * Create new supplier
      * POST /grant/supplier-directory
      */

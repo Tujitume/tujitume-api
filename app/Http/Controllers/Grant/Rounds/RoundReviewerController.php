@@ -104,11 +104,11 @@ class RoundReviewerController extends Controller
                 'expertise_tags' => 'nullable|array',
             ]);
 
-            $userId = null;
+            $userId = null; $randomPassword = null;
             if($request->reviewer_type == 'internal') {
 
                 $userId = $validated['user_id'];
-                $user = User::find($userId);
+                $user = User::with('grant_profile')->find($userId);
 
                 // Check if already assigned
                 $exists = $round->reviewers()->where('user_id', $userId)->exists();
@@ -125,9 +125,11 @@ class RoundReviewerController extends Controller
                     'expertise_tags' => isset($validated['expertise_tags']) ? json_encode($validated['expertise_tags']) : null,
                 ]);
 
-                $user->update([
-                    'user_type_id' => 6, // internal reviewer
-                ]);
+                //$user->update(['user_type_id' => 6, // internal reviewer]);
+                $user->grant_profile()->updateOrCreate(
+                    ['user_id' => $userId],
+                    ['role_id' => 10004] // internal reviewer
+                );
 
             }
             elseif ($request->reviewer_type == 'external') {
@@ -146,28 +148,22 @@ class RoundReviewerController extends Controller
                     'expertise_tags' => isset($validated['expertise_tags']) ? json_encode($validated['expertise_tags']) : null,
                 ]);
 
-                //send email to external reviewer with login credentials
-
-                $link = URL::signedRoute('reject.invitation', ['email' => $validated['email']]);
-
-                $info = [
-                    'email' => $validated['email'],
-                    'password' => $randomPassword,
-                    'o_email' => null,
-                    'link' => $link,
-                    'org' => 'Grant',
-                    'role' => null
-                ];
-                $user['to'] = $validated['email'];
-                $headers = "From: webmaster@Jitume.com";
-
-                Mail::send('create_password', $info, function ($msg) use ($user) {
-                    $msg->to($user['to']);
-                    $msg->subject('Grant Review Request');
-                });
             }
 
             DB::commit();
+
+            // Send notification to the reviewer
+            if ($request->reviewer_type == 'external') {
+                $this->grantNotification->send('round.reviewer_invited_external', [$user], [
+                    'grant_title'   => $round->grant->grant_title,
+                    'round_name'    => $round->round_name,
+                    'email'         => $validated['email'],
+                    'temp_password' => $randomPassword,
+                    'max_apps'      => $validated['max_apps_assigned'] ?? null,
+                    'expertise_tags' => $validated['expertise_tags'] ?? [],
+                    'grant_id'      => $round->grant_id,
+                ]);
+            }
 
             $this->grantNotification->send('round.scoring_assigned',
                 [User::find($userId) ?? null],

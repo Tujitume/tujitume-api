@@ -65,7 +65,7 @@
         <p>Please go to <a href="https://beta.tujitume.com">beta.tujitume.com</a> and complete registration as a business owner by clicking <strong>'Sign In'</strong>, then you can create your own business.</p>
         <p><a href="https://beta.tujitume.com?registerModal=open" class="button">Sign Up</a></p>
         <img
-            src="{{ $message->embed('https://tujitume.com/images/Email/register.png')}}"
+            src="{{ $message->embed(config('app.api_base_url') . 'images/Email/register.png')}}"
             alt="registration"
             class="image"
         />

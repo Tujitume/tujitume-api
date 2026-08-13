@@ -25,7 +25,7 @@
         "
     >
         <img
-            src="{{ $message->embed('https://tujitume.com/images/Email/EmailWhite.png')}}"
+            src="{{ $message->embed(config('app.api_base_url') . 'images/Email/EmailWhite.png')}}"
             alt="Company Logo"
             style="height: 3rem; width: auto; margin: 0 auto"
         />
@@ -48,7 +48,7 @@
 
     <div class="footer" style="margin-top: 2rem; color: gray; font-size: 12px;">
         <div style="display: flex; align-items: flex-start; margin-bottom: 1rem;">
-            <img src="{{ $message->embed('https://tujitume.com/images/Email/EmailVertDark.png')}}"
+            <img src="{{ $message->embed(config('app.api_base_url') . 'images/Email/EmailVertDark.png')}}"
                  alt="Company Logo"
                  style="height: 3rem; width: auto; margin-right: 1rem;">
             <div>

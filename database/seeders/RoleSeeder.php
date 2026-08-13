@@ -16,7 +16,7 @@ class RoleSeeder extends Seeder
             ['id' => 10001, 'name' => 'admin', 'access_types' =>  json_encode(['all'])],
             ['id' => 10002, 'name' => 'editor', 'access_types' => json_encode(['create','edit','view'])],
             ['id' => 10003, 'name' => 'viewer', 'access_types' => json_encode(['view'])],
-            ['id' => 10004, 'name' => 'reviewer', 'access_types' => json_encode(['review'])],
+            ['id' => 10004, 'name' => 'internal_reviewer', 'access_types' => json_encode(['review'])],
         ];
         Role::query()->insert($roles);
 

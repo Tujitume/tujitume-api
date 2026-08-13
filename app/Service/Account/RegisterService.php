@@ -237,7 +237,7 @@ class RegisterService
                 10001 => 'admin',
                 10002 => 'editor',
                 10003 => 'viewer',
-                10004 => 'reviewer'
+                10004 => 'internal_reviewer'
             ];
 
             $role_name = $roles[$data['role_id']] ?? 'unknown';

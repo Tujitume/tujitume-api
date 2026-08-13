@@ -18,7 +18,7 @@ return new class extends Migration
             $table->enum('mode', ['light', 'dark', 'system'])->default('system');
             $table->string('accent_color', 20)->default('#14532d'); // hex color
             $table->string('bg_color', 20)->nullable();
-            $table->string('font_size', 20)->default('medium'); // small, medium, large
+            $table->string('font_weight', 20)->default('light'); // bold, medium, large
             $table->enum('subscription_status', ['active', 'inactive'])->default('inactive');
             $table->enum('profile_visibility', ['public', 'private'])->default('public');
             $table->string('language', 10)->default('en');
