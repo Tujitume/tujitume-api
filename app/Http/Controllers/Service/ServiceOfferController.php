@@ -7,7 +7,7 @@ use Illuminate\Http\Request;
 
 class ServiceOfferController extends Controller
 {
-    // ─── Customer makes offer ────────────────────────────────────────
+    // â”€â”€â”€ Customer makes offer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // POST /services/{service}/offer
     public function store(Request $request, Services $service)
     {
@@ -83,7 +83,7 @@ class ServiceOfferController extends Controller
         }
     }
 
-    // ─── Owner accepts offer → creates flat booking (no milestones) ──
+    // â”€â”€â”€ Owner accepts offer â†’ creates flat booking (no milestones) â”€â”€
     // POST /services/offers/{offer}/accept
     public function accept(ServiceOffer $offer)
     {
@@ -101,8 +101,8 @@ class ServiceOfferController extends Controller
             $booker      = $offer->booker;
             $agreedPrice = $offer->counter_price ?? $offer->offered_price;
 
-            // Create flat booking — no milestones
-            $booking = ServiceBook::create([
+            // Create flat booking â€” no milestones
+            $booking = ServiceBooking::create([
                 'service_id'       => $service->id,
                 'booker_id'        => $offer->booker_id,
                 'service_owner_id' => $service->user_id,
@@ -155,7 +155,7 @@ class ServiceOfferController extends Controller
         }
     }
 
-    // ─── Owner rejects offer ─────────────────────────────────────────
+    // â”€â”€â”€ Owner rejects offer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // POST /services/offers/{offer}/reject
     public function reject(Request $request, ServiceOffer $offer)
     {
@@ -189,7 +189,7 @@ class ServiceOfferController extends Controller
         }
     }
 
-    // ─── Owner counters offer ────────────────────────────────────────
+    // â”€â”€â”€ Owner counters offer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // POST /services/offers/{offer}/counter
     public function counter(Request $request, ServiceOffer $offer)
     {
@@ -250,7 +250,7 @@ class ServiceOfferController extends Controller
         }
     }
 
-    // ─── Customer accepts counter offer ──────────────────────────────
+    // â”€â”€â”€ Customer accepts counter offer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // POST /services/offers/{offer}/accept-counter
     public function acceptCounter(Request $request, ServiceOffer $offer)
     {
@@ -272,9 +272,9 @@ class ServiceOfferController extends Controller
         return $this->accept($offer);
     }
 
-    // ─── Owner marks as delivered ────────────────────────────────────
+    // â”€â”€â”€ Owner marks as delivered â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // POST /services/bookings/{booking}/deliver
-    public function deliver(Request $request, ServiceBook $booking)
+    public function deliver(Request $request, ServiceBooking $booking)
     {
         if ($booking->service_owner_id !== Auth::id()) {
             return response()->json(['error' => 'Unauthorized'], 403);
@@ -313,9 +313,9 @@ class ServiceOfferController extends Controller
         }
     }
 
-    // ─── Customer accepts delivery → owner gets paid ─────────────────
+    // â”€â”€â”€ Customer accepts delivery â†’ owner gets paid â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // POST /services/bookings/{booking}/accept-delivery
-    public function acceptDelivery(ServiceBook $booking)
+    public function acceptDelivery(ServiceBooking $booking)
     {
         if ($booking->booker_id !== Auth::id()) {
             return response()->json(['error' => 'Unauthorized'], 403);
@@ -353,9 +353,9 @@ class ServiceOfferController extends Controller
         }
     }
 
-    // ─── Customer rejects delivery ───────────────────────────────────
+    // â”€â”€â”€ Customer rejects delivery â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // POST /services/bookings/{booking}/reject-delivery
-    public function rejectDelivery(Request $request, ServiceBook $booking)
+    public function rejectDelivery(Request $request, ServiceBooking $booking)
     {
         if ($booking->booker_id !== Auth::id()) {
             return response()->json(['error' => 'Unauthorized'], 403);
@@ -390,7 +390,7 @@ class ServiceOfferController extends Controller
         }
     }
 
-    // ─── Get offers for a service (owner view) ───────────────────────
+    // â”€â”€â”€ Get offers for a service (owner view) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // GET /services/{service}/offers
     public function index(Services $service)
     {
@@ -404,7 +404,7 @@ class ServiceOfferController extends Controller
         ], 200);
     }
 
-    // ─── Get my offers (customer view) ───────────────────────────────
+    // â”€â”€â”€ Get my offers (customer view) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // GET /services/my-offers
     public function myOffers()
     {

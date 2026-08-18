@@ -6,7 +6,7 @@ use App\Events\ChatNotification;
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Equipments;
 use App\Models\Auth\User;
-use App\Models\Services\ServiceBook;
+use App\Models\Services\ServiceBooking;
 use App\Models\Services\ServiceBookingMilestone;
 use App\Models\Services\ServiceMessages;
 use App\Models\Services\ServiceReviews;
@@ -372,7 +372,7 @@ class ServiceController extends Controller
                 $listing->price  = number_format($listing->price);
                 $listing->lat    = (float) $listing->lat;
                 $listing->lng    = (float) $listing->lng;
-                $listing->booked = $userId && ServiceBook::where('service_id', $id)
+                $listing->booked = $userId && ServiceBooking::where('service_id', $id)
                     ->where('booker_id', $userId)
                     ->exists() ? 1 : 0;
 

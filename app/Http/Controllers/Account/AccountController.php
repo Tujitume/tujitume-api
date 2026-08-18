@@ -17,7 +17,7 @@ use App\Models\Finance\Transactions;
 use App\Models\Grants\Grant;
 use App\Models\Grants\GrantProfile;
 use App\Models\Misc\Setting;
-use App\Models\Services\ServiceBook;
+use App\Models\Services\ServiceBooking;
 use App\Models\Services\ServiceMessages;
 use App\Models\Services\Services;
 use App\Service\Account\AccountDeletionEligibilityService;
@@ -231,7 +231,7 @@ class AccountController extends Controller
                 BusinessBids::where('investor_id', $id)->delete();
                 AcceptedBids::where('investor_id', $id)->delete();
 
-                ServiceBook::where('booker_id', $id)->delete();
+                ServiceBooking::where('booker_id', $id)->delete();
                 ServiceMessages::where('to_id', $id)->orWhere('from_id', $id)->delete();
 
                 if ($user->id_passport) {
@@ -269,7 +269,7 @@ class AccountController extends Controller
                     $grant->delete();
                 }
 
-                ServiceBook::where('booker_id', $id)->delete();
+                ServiceBooking::where('booker_id', $id)->delete();
                 ServiceMessages::where('to_id', $id)->orWhere('from_id', $id)->delete();
             }
             else if($type == 3){
@@ -291,12 +291,12 @@ class AccountController extends Controller
                     $capital->delete();
                 }
 
-                ServiceBook::where('booker_id', $id)->delete();
+                ServiceBooking::where('booker_id', $id)->delete();
                 ServiceMessages::where('to_id', $id)->orWhere('from_id', $id)->delete();
             }
             else if($type == 4 || $type == 5){
                 //Delete Business owner documents
-                ServiceBook::where('booker_id', $id)->delete();
+                ServiceBooking::where('booker_id', $id)->delete();
                 ServiceMessages::where('to_id', $id)->orWhere('from_id', $id)->delete();
                 Messages::where('to_id', $id)->orWhere('from_id', $id)->delete();
 
@@ -333,7 +333,7 @@ class AccountController extends Controller
 
                     $service->delete();
                 }
-                ServiceBook::where('service_owner_id', $id)->delete();
+                ServiceBooking::where('service_owner_id', $id)->delete();
             }
 
             User::where('id',$id)->delete();

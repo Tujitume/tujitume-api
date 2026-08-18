@@ -37,6 +37,6 @@ class ServiceOffer extends Model
     }
     public function booking()
     {
-        return $this->belongsTo(ServiceBook::class, 'booking_id');
+        return $this->belongsTo(ServiceBooking::class, 'booking_id');
     }
 }

@@ -9,12 +9,17 @@
 // Login & Registration
 use App\Http\Controllers\Account\UserController;
 use App\Http\Controllers\Auth\AuthController;
+use App\Http\Controllers\Auth\RegisterController;
 use App\Http\Controllers\Auth\SocialController;
+use Illuminate\Support\Facades\Route;
+use Laravel\Socialite\Facades\Socialite;
 
 Route::post('auth/verify-device', [AuthController::class,'verifyDevice']);
-Route::post('login', [AuthController::class,'login'])->name('login');
-Route::post('register', [AuthController::class,'register'])->name('register');
+Route::post('login', [AuthController::class,'login']);
+Route::post('register', [RegisterController::class,'register']);
+Route::post('register/role-user', [RegisterController::class,'registerRoleUser']);
 Route::post('resetPassword', [UserController::class, 'resetPassword']);
+Route::get('logout', [AuthController::class, 'logout']);
 
 // Email Verification
 Route::post('sendEmailOtp', [AuthController::class,'sendEmailVerification']);

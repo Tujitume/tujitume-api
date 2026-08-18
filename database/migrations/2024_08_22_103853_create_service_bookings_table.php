@@ -11,7 +11,7 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('service_books', function (Blueprint $table) {
+        Schema::create('service_bookings', function (Blueprint $table) {
             $table->id();
             $table->string('date', 155)->nullable();
             $table->integer('service_id')->nullable();
@@ -19,7 +19,7 @@ return new class extends Migration
             $table->string('note', 800)->nullable();
             $table->integer('service_owner_id')->nullable();
 
-            $table->enum('status', ['pending', 'confirmed', 'paid', 'in_progress', 'done'])
+            $table->enum('status', ['pending', 'confirmed', 'paid', 'in_progress', 'done', 'completed'])
                 ->default('pending');
 
             $table->string('stage', 100)->default('Pending');
@@ -36,6 +36,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('service_books');
+        Schema::dropIfExists('service_bookings');
     }
 };

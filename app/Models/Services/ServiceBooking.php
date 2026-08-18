@@ -6,7 +6,7 @@ use App\Models\Auth\User;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
-class ServiceBook extends Model
+class ServiceBooking extends Model
 {
     use HasFactory;
     protected $guarded = [];

@@ -21,7 +21,7 @@ use App\Models\Milestones\Dispute;
 use App\Models\Misc\Event;
 use App\Models\Misc\Prospects;
 use App\Models\Misc\Reports;
-use App\Models\Services\ServiceBook;
+use App\Models\Services\ServiceBooking;
 use App\Service\Account\AccountDeletionEligibilityService;
 use App\Service\Misc\ErrorLogService;
 use App\Service\Notification\BulkEmailService;
@@ -99,10 +99,10 @@ class AdminController extends Controller
                 ->select('business_bids.*', 'listings.name', 'listings.investment_needed', 'listings.category')
                 ->get();
 
-            $user->bookedServices = DB::table('service_books')
+            $user->bookedServices = DB::table('service_bookings')
                 ->where('booker_id', $user->id)
-                ->join('services', 'service_books.service_id', '=', 'services.id')
-                ->select('service_books.*', 'services.name', 'services.price')
+                ->join('services', 'service_bookings.service_id', '=', 'services.id')
+                ->select('service_bookings.*', 'services.name', 'services.price')
                 ->get();
         }
 
@@ -140,7 +140,7 @@ class AdminController extends Controller
 
     public function services_active()
     {
-        $acceptedBids = serviceBook::groupBy('service_id')->latest()->get();
+        $acceptedBids = ServiceBooking::groupBy('service_id')->latest()->get();
 
         $businesses = new stdClass; $i=0;$j=0;
         foreach($acceptedBids as $booking){
@@ -201,7 +201,7 @@ class AdminController extends Controller
                 BusinessBids::where('investor_id', $id)->delete();
                 AcceptedBids::where('investor_id', $id)->delete();
 
-                ServiceBook::where('booker_id', $id)->delete();
+                ServiceBooking::where('booker_id', $id)->delete();
                 ServiceMessages::where('to_id', $id)->orWhere('from_id', $id)->delete();
 
                 if ($user->id_passport) {
@@ -239,7 +239,7 @@ class AdminController extends Controller
                     $grant->delete();
                 }
 
-                ServiceBook::where('booker_id', $id)->delete();
+                ServiceBooking::where('booker_id', $id)->delete();
                 ServiceMessages::where('to_id', $id)->orWhere('from_id', $id)->delete();
             }
             else if($type == 3){
@@ -261,12 +261,12 @@ class AdminController extends Controller
                     $capital->delete();
                 }
 
-                ServiceBook::where('booker_id', $id)->delete();
+                ServiceBooking::where('booker_id', $id)->delete();
                 ServiceMessages::where('to_id', $id)->orWhere('from_id', $id)->delete();
             }
             else if($type == 4 || $type == 5){
                 //Delete Business owner documents
-                ServiceBook::where('booker_id', $id)->delete();
+                ServiceBooking::where('booker_id', $id)->delete();
                 ServiceMessages::where('to_id', $id)->orWhere('from_id', $id)->delete();
                 Messages::where('to_id', $id)->orWhere('from_id', $id)->delete();
 
@@ -303,7 +303,7 @@ class AdminController extends Controller
 
                     $service->delete();
                 }
-                ServiceBook::where('service_owner_id', $id)->delete();
+                ServiceBooking::where('service_owner_id', $id)->delete();
             }
 
             User::where('id',$id)->delete();
@@ -535,10 +535,10 @@ class AdminController extends Controller
                     ->select('business_bids.*', 'listings.name', 'listings.investment_needed', 'listings.category')
                     ->get();
 
-                $user->bookedServices = DB::table('service_books')
+                $user->bookedServices = DB::table('service_bookings')
                     ->where('booker_id', $user->id)
-                    ->join('services', 'service_books.service_id', '=', 'services.id')
-                    ->select('service_books.*', 'services.name', 'services.price')
+                    ->join('services', 'service_bookings.service_id', '=', 'services.id')
+                    ->select('service_bookings.*', 'services.name', 'services.price')
                     ->get();
             }
 

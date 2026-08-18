@@ -12,7 +12,7 @@ use App\Models\Cart;
 use App\Models\Communication\Notifications;
 use App\Models\Milestones\Milestones;
 use App\Models\orders;
-use App\Models\Services\serviceBook;
+use App\Models\Services\ServiceBooking;
 use App\Models\Services\ServiceBookingMilestone;
 use App\Models\Services\Services;
 use App\Models\Services\Smilestones;
@@ -294,7 +294,7 @@ class PayStackController extends Controller
                 //ASSET-related
                 if ($service->category == '0')
                 {
-                    $booking = serviceBook::select('business_bid_id')
+                    $booking = ServiceBooking::select('business_bid_id')
                     ->where('service_id',$service->id)
                     ->where('booker_id',$investor_id)->first();
                     $accepted_bids = AcceptedBids::select('business_id')

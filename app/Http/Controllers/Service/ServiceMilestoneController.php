@@ -6,7 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Auth\User;
 use App\Models\Finance\Transactions;
 use App\Models\Misc\Setting;
-use App\Models\Services\ServiceBook;
+use App\Models\Services\ServiceBooking;
 use App\Models\Services\ServiceBookingMilestone;
 use App\Models\Services\ServiceReviews;
 use App\Models\Services\Services;
@@ -57,7 +57,7 @@ class ServiceMilestoneController extends Controller
         $userId  = Auth::id();
         $service = Services::findOrFail($id);
 
-        $booking = ServiceBook::where('service_id', $id)
+        $booking = ServiceBooking::where('service_id', $id)
             ->where('booker_id', $userId)
             ->where('status', 'confirmed')
             ->latest()->first();
@@ -236,7 +236,7 @@ class ServiceMilestoneController extends Controller
                 ->where('status', 'To Do')->exists();
 
             $business = Services::findOrFail($mile->service_id);
-            $booking  = ServiceBook::where('service_id', $mile->service_id)
+            $booking  = ServiceBooking::where('service_id', $mile->service_id)
                 ->where('booker_id', $mile->booker_id)->latest()->firstOrFail();
 
             $owner    = User::findOrFail($booking->service_owner_id);
@@ -361,7 +361,7 @@ class ServiceMilestoneController extends Controller
                 ->exists();
 
             $stage = $pending ? "{$milestone->title} Released" : 'Service Delivered';
-            ServiceBook::where('id', $milestone->booking_id)->update(['stage' => $stage, 'status' => $pending ? 'In Progress' : 'delivered']);
+            ServiceBooking::where('id', $milestone->booking_id)->update(['stage' => $stage, 'status' => $pending ? 'In Progress' : 'delivered']);
 
             // Send emails if service completed
             if (!$pending) {

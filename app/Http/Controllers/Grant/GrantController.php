@@ -15,7 +15,7 @@ use App\Models\Grants\GrantWallet;
 use App\Models\Grants\GrantWatchlist;
 use App\Models\Grants\Rounds\GrantRound;
 use App\Models\Grants\Rounds\RoundCustomQuestion;
-use App\Models\Services\serviceBook;
+use App\Models\Services\ServiceBooking;
 use App\Models\Shared\Watchlist;
 use App\Service\Account\AccountDeletionEligibilityService;
 use App\Service\Balance\BalanceService;
@@ -87,7 +87,7 @@ class GrantController extends Controller
                         $grant->liked = $grant->liked()->where('user_id', $user_id)->exists();
                         $grant->owner_website = $grant->owner->website ?? null;
 
-                        $status = $grant->status; // ✅ store original value first
+                        $status = $grant->status; // âœ… store original value first
 
                         $grant->status = [
                             'value' => $status,
@@ -110,7 +110,7 @@ class GrantController extends Controller
                 $grant->liked = $user_id ? $grant->liked()->where('user_id', $user_id)->exists() : false;
                 $grant->owner_website = $grant->owner->website ?? null;
 
-                $status = $grant->status; // ✅ store original value first
+                $status = $grant->status; // âœ… store original value first
 
                 $grant->status = [
                     'value' => $status,
@@ -193,7 +193,7 @@ class GrantController extends Controller
                 'mid_milestone_required' => 'nullable|boolean',
 
                 // round 1
-                'application_round' => 'required|array',  // ✅ Now it's an array
+                'application_round' => 'required|array',  // âœ… Now it's an array
                 'application_round.round_name' => 'nullable|string|max:100',
                 'application_round.rubric_mode' => 'nullable|in:weighted,simple_total,pass_fail',
                 'application_round.advancement_mode' => 'nullable|in:manual,score_threshold,fixed_quota',
@@ -756,7 +756,7 @@ class GrantController extends Controller
                     $grant->delete();
                 }
 
-                serviceBook::where('booker_id', $user->id)->delete();
+                ServiceBooking::where('booker_id', $user->id)->delete();
                 Messages::where('to_id', $user->id)->orWhere('from_id', $user->id)->delete();
             }
             DB::commit();

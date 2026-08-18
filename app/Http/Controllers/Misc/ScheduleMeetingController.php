@@ -10,7 +10,7 @@ use App\Models\Capital\StartupPitches;
 use App\Models\Communication\Meeting;
 use App\Models\Communication\Schedule;
 use App\Models\Grants\GrantApplication;
-use App\Models\Services\serviceBook;
+use App\Models\Services\ServiceBooking;
 use App\Service\Misc\ErrorLogService;
 use Carbon\Carbon;
 use Hash;
@@ -56,7 +56,7 @@ class ScheduleMeetingController extends Controller
 
             //Notifications
             $dateTime = Carbon::createFromFormat('Y-m-d H:i', $request->date.' '. $request->time);
-            $formatted = $dateTime->format('F j, g:i A'); // → July 1, 2:00 PM
+            $formatted = $dateTime->format('F j, g:i A'); // â†’ July 1, 2:00 PM
 
             if($host->user_type_id == 2 || $host->user_type_id == 3){
                 $linkForSme = 'meeting';
@@ -164,7 +164,7 @@ class ScheduleMeetingController extends Controller
 
             if($type == 1) //Investor
             {
-                $ids = serviceBook::where('service_owner_id', $user_id)->pluck('booker_id')
+                $ids = ServiceBooking::where('service_owner_id', $user_id)->pluck('booker_id')
                     ->unique();
 
                 $ids2 = AcceptedBids::where('owner_id', $user_id)->pluck('investor_id')
@@ -197,7 +197,7 @@ class ScheduleMeetingController extends Controller
                     ->unique();
                 $ids2 = StartupPitches::where('user_id', $user_id)->pluck('capital_owner_id')
                     ->unique();
-                $ids3 = serviceBook::where('booker_id', $user_id)->pluck('service_owner_id')
+                $ids3 = ServiceBooking::where('booker_id', $user_id)->pluck('service_owner_id')
                     ->unique();
                 $ids4 = AcceptedBids::where('owner_id', $user_id)->pluck('investor_id')
                     ->unique();
@@ -206,7 +206,7 @@ class ScheduleMeetingController extends Controller
             }
             else if($type == 5) //Service
             {
-                $ids = serviceBook::where('service_owner_id', $user_id)->pluck('booker_id')
+                $ids = ServiceBooking::where('service_owner_id', $user_id)->pluck('booker_id')
                     ->unique();
                 $client_ids = $ids->unique()->values()->toArray();
             }

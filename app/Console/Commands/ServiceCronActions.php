@@ -2,7 +2,7 @@
 
 namespace App\Console\Commands;
 
-use App\Models\Services\ServiceBook;
+use App\Models\Services\ServiceBooking;
 use App\Service\Notification\NotificationService;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
@@ -31,7 +31,7 @@ class ServiceCronActions extends Command
         //$emailService = new EmailService();
         $notification = new NotificationService();
 
-        ServiceBook::whereIn('status', ['pending', 'confirmed'])
+        ServiceBooking::whereIn('status', ['pending', 'confirmed'])
             ->chunk(100, function ($pendingBookings) use ($notification) {
                 foreach ($pendingBookings as $booking) {
                     $service = $booking->service;
@@ -61,7 +61,7 @@ class ServiceCronActions extends Command
             });
 
         // Setting paid ones in progress
-        $paidBookings = ServiceBook::where('status', 'paid')->orWhere('paid', 1)->get();
+        $paidBookings = ServiceBooking::where('status', 'paid')->orWhere('paid', 1)->get();
 
         foreach ($paidBookings as $booking) {
             $service = $booking->service;

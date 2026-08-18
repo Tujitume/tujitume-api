@@ -22,6 +22,6 @@ class ServiceBookingMilestone extends Model
 
     public function booking()
     {
-        return $this->belongsTo(serviceBook::class,'booking_id','id');
+        return $this->belongsTo(ServiceBooking::class,'booking_id','id');
     }
 }

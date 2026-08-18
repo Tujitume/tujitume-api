@@ -18,6 +18,7 @@ return new class extends Migration
             $table->string('image', 300)->nullable();
             $table->integer('price')->nullable();
             $table->string('category', 155)->nullable();
+            $table->text('sub_category')->nullable();
             $table->json('business_sector_focus')->nullable();
             $table->string('details', 1000)->nullable();
             $table->string('location', 300)->nullable();

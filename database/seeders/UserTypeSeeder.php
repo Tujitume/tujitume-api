@@ -15,14 +15,13 @@ class UserTypeSeeder extends Seeder
     public function run(): void
     {
         $types = [
-            ['id' => 1, 'name' => 'investor'],
-            ['id' => 2, 'name' => 'industry'],
-            ['id' => 3, 'name' => 'capitals'],
-            ['id' => 4, 'name' => 'business_owner'],
-            ['id' => 5, 'name' => 'service_provider'],
-            //['id' => 6, 'name' => 'internal_reviewer'],
+            ['id' => 1, 'name' => 'business_owner'],
+            ['id' => 2, 'name' => 'investor'],
+            ['id' => 3, 'name' => 'service_provider'],
+            ['id' => 4, 'name' => 'organization'],
+            ['id' => 5, 'name' => 'admin'],
             ['id' => 6, 'name' => 'external_reviewer'],
-            ['id' => 7, 'name' => 'admin'],
+
         ];
         UserType::truncate();
         UserType::insert($types);

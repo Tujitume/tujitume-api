@@ -12,7 +12,7 @@ use App\Models\Communication\Notifications;
 use App\Models\Finance\Transactions;
 use App\Models\Milestones\Milestones;
 use App\Models\Misc\Setting;
-use App\Models\Services\ServiceBook;
+use App\Models\Services\ServiceBooking;
 use App\Models\Services\ServiceBookingMilestone;
 use App\Models\Services\Services;
 use App\Models\Services\Smilestones;

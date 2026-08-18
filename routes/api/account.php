@@ -23,7 +23,6 @@ Route::get('/me/devices', [DeviceController::class,'index']);
 Route::patch('/me/devices/{device}', [DeviceController::class,'update']);
 Route::delete('/me/devices/{device}', [DeviceController::class,'destroy']);
 
-Route::get('logout',[AuthController::class,'logout']);
 Route::get('logout-all',[AuthController::class,'logoutAll']);
 Route::get('account/delete/{id}', [AccountController::class, 'destroy']);
 

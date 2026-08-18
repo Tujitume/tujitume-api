@@ -14,7 +14,7 @@ use App\Models\Finance\LiprPayment;
 use App\Models\Grants\GrantMilestone;
 use App\Models\Milestones\Milestones;
 use App\Models\Misc\Setting;
-use App\Models\Services\ServiceBook;
+use App\Models\Services\ServiceBooking;
 use App\Models\Services\ServiceBookingMilestone;
 use App\Service\Balance\BalanceService;
 use App\Service\Balance\CurrencyConverter;
@@ -483,7 +483,7 @@ class MpesaPollingController extends Controller
                 // If Processed
                 $paidAmount = $payment->amount_usd;
                 $milestone->update([ 'status' => 'In Progress']);
-                $booking = serviceBook::where('id',$milestone->booking_id)->first();
+                $booking = ServiceBooking::where('id',$milestone->booking_id)->first();
 
                 $booking->update([
                     'paid' => 1,
@@ -679,7 +679,7 @@ class MpesaPollingController extends Controller
             // Leg 1 successful, Leg 2 processing
             if (strtolower($payment->status) === 'successful' || $milestone->fund_release_status === 'processing') {
                 return response()->json([
-                    'status'     => 'disbursing',  // ← clean lowercase
+                    'status'     => 'disbursing',  // â† clean lowercase
                     'message'    => 'Payment received. Transferring to supplier...',
                     'updated_at' => now(),
                 ], 200);

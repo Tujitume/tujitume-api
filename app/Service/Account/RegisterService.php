@@ -1,406 +1,382 @@
 <?php
+
 namespace App\Service\Account;
+
 use App\Models\Auth\User;
-use App\Models\Capital\CapitalProfile;
-use App\Models\Grants\GrantProfile;
-use Illuminate\Support\Facades\Auth;
+use App\Models\Users\InvestorProfile;
+use App\Models\Organizations\Organization;
+use App\Models\Users\ServiceProviderProfile;
+use App\Models\Auth\UserSetting;
+use App\Models\Organizations\Workspace;
+use App\Service\Misc\ErrorLogService;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Mail;
-use Illuminate\Support\Facades\URL;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
+use Illuminate\Validation\Rules\Password;
 
 class RegisterService
 {
-    public function investorRegister($data)
+    // ─── Business Owner ──────────────────────────────────────────────────
+    public function registerBusinessOwner(Request $request)
     {
-        $investor = 1;
-        $inv_range = $data['inv_range'];
-        $interested_cats = $data['interested_cats'];
-        $past_investment = $data['past_investment'];
-        $website = $data['website'];
-        $id_no = $data['id_no'];
-        $tax_pin = $data['tax_pin'];
+        $data = $request->validate([
+            'first_name' => ['required', 'string', 'max:255'],
+            'last_name'  => ['required', 'string', 'max:255'],
+            'gender'     => ['required', 'in:Male,Female,Other'],
+            'dob'        => ['required', 'date'],
+            'email'      => ['required', 'email', 'max:255', 'unique:users,email'],
+            'password'   => ['required', 'string', Password::min(8)->mixedCase()->numbers()],
+            'phone'      => ['nullable', 'string', 'max:50'],
+            'country'    => ['nullable', 'string', 'max:10'],
+            'city'       => ['nullable', 'string', 'max:100'],
+            'website'    => ['nullable', 'url', 'max:255'],
+        ]);
 
-        $passport=$data['id_passport' ?? null];
-        $pin=$data['pin'] ?? null;
-
-        //File Type Check END!
-
-        if(isset($request->switch) && $request->switch == 1)
-        {
-            $user = User::select('id')->where('email',$data['email'])->first();
-
-            $update = User::where('email',$data['email'])
-                ->update([
-                    'user_type_id' => $investor,
-                    'id_no' => $id_no,
-                    'tax_pin' => $tax_pin,
-                    'inv_range' =>  $inv_range,
-                    'interested_cats' =>  $interested_cats,
-                    'past_investment' => $past_investment,
-                    'website' => $website
-                ]);
-
-        }
-        else
-        {
-            $userCheck = User::where('email',$data['email'])->first();
-            if($userCheck){
-                return response()->json([ 'status' => 400, 'message' => 'Email already exists.'], 400);
-            }
-            //return $data['password'];
-            $user = User::create([
-                'fname' => $data['fname'],
-                'mname' => $data['mname'],
-                'lname' => $data['lname'],
-                'email' => $data['email'],
-                'password' => bcrypt($data['password']),
-                'user_type_id' => $investor,
-                'id_no' => $id_no,
-                'tax_pin' => $tax_pin,
-                'inv_range' =>  $inv_range,
-                'interested_cats' =>  $interested_cats,
-                'turnover_range' =>  $data['turnover_range'],
-                'stage' =>  $data['stage'],
-                'regions_focus' =>  $data['regions_focus'],
-                'social_impact_areas' =>  $data['social_impact_areas'],
-                'past_investment' => $past_investment,
-                'website' => $website
-            ]);
-        }
-
-        //Upload
-        $inv_id = $user->id;
+        DB::beginTransaction();
         try {
-            if (!file_exists('files/investor/'.$inv_id))
-                mkdir('files/investor/'.$inv_id, 0777, true);
-            $loc='files/investor/'.$inv_id.'/';
-            if(isset($pin) && $pin !=null) {
-                $uniqid=hexdec(uniqid());
-                $ext=strtolower($pin->getClientOriginalExtension());
-                $create_name=$uniqid.'.'.$ext;
-                //Move uploaded file
-                $pin->move($loc, $create_name);
-                $final_pin=$loc.$create_name;
-            } else $final_pin=null;
-
-            if($passport) {
-                $uniqid=hexdec(uniqid());
-                $ext=strtolower($passport->getClientOriginalExtension());
-                $create_name=$uniqid.'.'.$ext;
-                $passport->move($loc, $create_name);
-                $final_passport=$loc.$create_name;
-            }else $final_passport='';
-
-            User::where('id',$inv_id)->update([
-                'pin' => $final_pin,
-                'id_passport' => $final_passport
-            ]);
-            $token = $user->createToken('main')->plainTextToken;
-            return response()->json([
-                'user' => $user,
-                'token' => $token,
-                'auth' => Auth::check()
-            ]);
-
-        } catch (\Exception $e) {
-            return response()->json([ 'status' => 400, 'message' => $e->getMessage() ]);
-
-        }
-        //INVESTOR ACCOUNT ENDS
-    }
-
-    public function grantRegister($data)
-    {
-        $investor = 2;
-        $interested_cats = $data['interested_cats'] ?? null;
-        $website = $data['website'] ?? null;
-
-        try {
-            //File Type Check!
-            $passport=$data['document'] ?? null;
-            if($passport) {
-                $ext=strtolower($passport->getClientOriginalExtension());
-
-                $size=($passport->getSize())/1048576; // Get MB
-                if($size == 2 || $size > 2)
-                {
-                    return response()->json([ 'status' => 400, 'message' => 'Document size must be less than 2MB!']);
-                }
-
-                if($ext!='pdf' && $ext!= 'docx')
-                {
-                    return response()->json([ 'status' => 400, 'message' => 'Only pdf & docx are allowed!']);
-                }
-            }
-
-            //File Type Check END!
-
-            $userCheck = User::where('email',$data['email'])->first();
-            if($userCheck){
-                return response()->json(['message' => 'Email already exists'], 400);
-            }
-
-            $password = bcrypt($data['password']) ?? null;
             $user = User::create([
-                'fname' => $data['fname'],
-                'email' => $data['email'],
-                'password' => $password,
-                'user_type_id' => $investor,
-                'interested_cats' => $interested_cats ?? null,
-                'phone' => $data['phone'] ?? null,
-                'website' => $website ?? null,
-                'social_impact_areas' =>  $data['social_impact_areas'] ?? null
+                'first_name'   => $data['first_name'],
+                'last_name'    => $data['last_name'],
+                'gender'       => $data['gender'],
+                'dob'          => $data['dob'],
+                'email'        => $data['email'],
+                'password'     => Hash::make($data['password']),
+                'phone'        => $data['phone'] ?? null,
+                'country'      => $data['country'] ?? null,
+                'city'         => $data['city'] ?? null,
+                'website'      => $data['website'] ?? null,
+                'user_type_id' => 1,
             ]);
 
-            //Upload
-            $inv_id = $user->id;
+            UserSetting::create(['user_id' => $user->id]);
 
-
-            if (!file_exists('files/investor/'.$inv_id))
-                mkdir('files/investor/'.$inv_id, 0777, true);
-            $loc='files/investor/'.$inv_id.'/';
-
-            if($passport) {
-                $uniqid=hexdec(uniqid());
-                $ext=strtolower($passport->getClientOriginalExtension());
-                $create_name=$uniqid.'.'.$ext;
-                $passport->move($loc, $create_name);
-                $final_passport=$loc.$create_name;
-            }else $final_passport='';
-
-            GrantProfile::create([
-                'user_id'  => $user->id,
-                'role_id'  => $data['role_id'] ?? null,
-                'org_type' => $data['org_type'] ?? null,
-                'mission'  => $data['mission'] ?? null,
-                'regions'  => $data['regions'] ?? null,
-                'document' => $final_passport,
-            ]);
-
-
-            //for special user
-            $specialEmail = 'agrisokoo@gmail.com';
-
-            if($data['email'] == $specialEmail){
-                $expiresAt = now()->addMonths(6); // addMonths(6)
-                $token = $user->createToken('main', ['*'], $expiresAt)->plainTextToken;
-            }
-            else
-            {
-                $token = $user->createToken('main')->plainTextToken;
-            }
+            DB::commit();
 
             return response()->json([
-                'user' => $user,
-                'token' => $token,
-                'auth' => true
-            ],200);
-
+                'message' => 'Registration successful.',
+                'user'    => $user,
+                'token'   => $user->createToken('main')->plainTextToken,
+            ], 201);
         } catch (\Exception $e) {
-            return response()->json([ 'status' => 400, 'message' => $e->getMessage(),'line' => $e->getLine() ]);
-
+            DB::rollBack();
+            ErrorLogService::report($e, ['input' => $request->except(['password', 'token'])]);
+            return response()->json(['message' => 'Something went wrong, please try again later.'], 500);
         }
     }
 
-    public function grantRoleUserRegister($data)
+    // ─── Investor ────────────────────────────────────────────────────────
+    public function registerInvestor(Request $request)
     {
-        try {
-            $userCheck = User::where('email',$data['email'])->first();
-            if($userCheck)
-            {
-                return response()->json(['success' => false, 'message' => 'Email already exists'], 400);
-            }
+        $data = $request->validate([
+            'first_name'          => ['required', 'string', 'max:255'],
+            'last_name'           => ['required', 'string', 'max:255'],
+            'gender'              => ['required', 'in:Male,Female,Other'],
+            'dob'                 => ['required', 'date'],
+            'email'               => ['required', 'email', 'max:255', 'unique:users,email'],
+            'password'            => ['required', 'string', Password::min(8)->mixedCase()->numbers()],
+            'phone'               => ['nullable', 'string', 'max:50'],
+            'website'             => ['nullable', 'url', 'max:255'],
+            'country'             => ['nullable', 'string', 'max:10'],
+            'city'                => ['nullable', 'string', 'max:100'],
 
-            $randomPassword = substr(bin2hex(random_bytes(5)), 0, rand(8, 10));
+            // Investor profile
+            'inv_range'           => ['required', 'array'],
+            'turnover_range'      => ['required', 'array'],
+            'interested_sectors'     => ['required', 'array'],
+            'stage'               => ['required', 'array'],
+            'regions_focus'       => ['required', 'array'],
+            'social_impact_areas' => ['nullable', 'array'],
+            'past_investment'     => ['nullable', 'string', 'max:1000'],
+        ]);
+
+        DB::beginTransaction();
+        try {
             $user = User::create([
-                'fname' => $data['fname'],
-                'email' => $data['email'],
-                'password' => $randomPassword,
+                'first_name'   => $data['first_name'],
+                'last_name'    => $data['last_name'],
+                'gender'       => $data['gender'],
+                'dob'          => $data['dob'],
+                'email'        => $data['email'],
+                'password'     => Hash::make($data['password']),
+                'phone'        => $data['phone'] ?? null,
+                'website'      => $data['website'] ?? null,
+                'country'      => $data['country'] ?? null,
+                'city'         => $data['city'] ?? null,
                 'user_type_id' => 2,
             ]);
 
-            $owner=User::select('id','email','fname','lname')->find($data['grant_owner_id']);
-            GrantProfile::create([
-                'user_id'  => $user->id,
-                'role_id'  => $data['role_id'],
-                'grant_owner_id'  => $data['grant_owner_id'] ?? null,
-                'org_type' => $owner->grant_profile->org_type ?? null,
-                'mission'  => $owner->grant_profile->mission ?? null,
-                'regions'  => $owner->grant_profile->regions ?? null,
-                'document' => $owner->grant_profile->document,
-                'active' => 0,
+            InvestorProfile::create([
+                'user_id'             => $user->id,
+                'inv_range'           => $data['inv_range'],
+                'turnover_range'      => $data['turnover_range'],
+                'interested_sectors'     => $data['interested_sectors'],
+                'stage'               => $data['stage'],
+                'regions_focus'       => $data['regions_focus'],
+                'social_impact_areas' => $data['social_impact_areas'] ?? null,
+                'past_investment'     => $data['past_investment'] ?? null,
             ]);
 
-            // E M A I L
-            $link = URL::signedRoute('reject.invitation', ['email' => $data['email']]);
+            UserSetting::create(['user_id' => $user->id]);
+
+            DB::commit();
+
+            return response()->json([
+                'message' => 'Registration successful.',
+                'user'    => $user,
+                'token'   => $user->createToken('main')->plainTextToken,
+            ], 201);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            ErrorLogService::report($e, ['input' => $request->except(['password', 'token'])]);
+            return response()->json(['message' => 'Something went wrong, please try again later.'], 500);
+        }
+    }
+
+    // ─── Service Provider ────────────────────────────────────────────────
+    public function registerServiceProvider(Request $request)
+    {
+        $data = $request->validate([
+            'first_name'     => ['required', 'string', 'max:255'],
+            'last_name'      => ['required', 'string', 'max:255'],
+            'display_name'   => ['nullable', 'string', 'max:255'],
+            'gender'         => ['required', 'in:Male,Female,Other'],
+            'dob'            => ['required', 'date'],
+            'email'          => ['required', 'email', 'max:255', 'unique:users,email'],
+            'password'       => ['required', 'string', Password::min(8)->mixedCase()->numbers()],
+            'phone'          => ['nullable', 'string', 'max:50'],
+            'website'        => ['nullable', 'url', 'max:255'],
+            'country'        => ['nullable', 'string', 'max:10'],
+            'city'           => ['nullable', 'string', 'max:100'],
+
+            // SP profile
+            'supplier_type'  => ['required', 'in:material_goods,business_service,labor'],
+            'bio'            => ['nullable', 'string', 'max:1000'],
+            'region'         => ['nullable', 'string', 'max:100'],
+            'service_areas'  => ['nullable', 'array'],
+            'work_mode'      => ['nullable', 'in:remote,onsite,hybrid'],
+            'available_days' => ['nullable', 'array'],
+            'available_from' => ['nullable', 'string', 'max:10'],
+            'available_to'   => ['nullable', 'string', 'max:10'],
+        ]);
+
+        DB::beginTransaction();
+        try {
+            $user = User::create([
+                'first_name'   => $data['first_name'],
+                'last_name'    => $data['last_name'],
+                'display_name' => $data['display_name'] ?? null,
+                'gender'       => $data['gender'],
+                'dob'          => $data['dob'],
+                'email'        => $data['email'],
+                'password'     => Hash::make($data['password']),
+                'phone'        => $data['phone'] ?? null,
+                'website'      => $data['website'] ?? null,
+                'country'      => $data['country'] ?? null,
+                'city'         => $data['city'] ?? null,
+                'user_type_id' => 3,
+            ]);
+
+            ServiceProviderProfile::create([
+                'user_id'        => $user->id,
+                'supplier_type'  => $data['supplier_type'],
+                'bio'            => $data['bio'] ?? null,
+                'region'         => $data['region'] ?? null,
+                'service_areas'  => $data['service_areas'] ?? null,
+                'work_mode'      => $data['work_mode'] ?? 'hybrid',
+                'available_days' => $data['available_days'] ?? null,
+                'available_from' => $data['available_from'] ?? null,
+                'available_to'   => $data['available_to'] ?? null,
+            ]);
+
+            UserSetting::create(['user_id' => $user->id]);
+
+            DB::commit();
+
+            return response()->json([
+                'message' => 'Registration successful.',
+                'user'    => $user,
+                'token'   => $user->createToken('main')->plainTextToken,
+            ], 201);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            ErrorLogService::report($e, ['input' => $request->except(['password', 'token'])]);
+            return response()->json(['message' => 'Something went wrong, please try again later.'], 500);
+        }
+    }
+
+    // ─── Organization ────────────────────────────────────────────────────
+    public function registerOrganization(Request $request)
+    {
+        $data = $request->validate([
+            // Owner
+            'first_name' => ['required', 'string', 'max:255'],
+            'last_name'  => ['required', 'string', 'max:255'],
+            'email'      => ['required', 'email', 'max:255', 'unique:users,email'],
+            'password'   => ['required', 'string', Password::min(8)->mixedCase()->numbers()],
+            'phone'      => ['nullable', 'string', 'max:50'],
+
+            // Organization
+            'org_name'              => ['required', 'string', 'max:255'],
+            'org_display_name'      => ['nullable', 'string', 'max:255'],
+            'org_legal_name'        => ['nullable', 'string', 'max:255'],
+            'organization_type'     => ['required', 'in:company,ngo,foundation,government,cooperative,other'],
+            'year_established'      => ['nullable', 'integer', 'min:1800', 'max:' . date('Y')],
+            'org_email'             => ['nullable', 'email'],
+            'org_phone'             => ['nullable', 'string', 'max:50'],
+            'org_website'           => ['nullable', 'url', 'max:255'],
+            'description'           => ['nullable', 'string', 'max:2000'],
+
+            // Industry
+            'primary_industry'      => ['nullable', 'string', 'max:100'],
+            'focus_sectors'         => ['nullable', 'array'],
+            'operating_countries'   => ['nullable', 'array'],
+            'target_regions'        => ['nullable', 'array'],
+
+            // Location
+            'country'               => ['nullable', 'string', 'max:10'],
+            'region'                => ['nullable', 'string', 'max:100'],
+            'city'                  => ['nullable', 'string', 'max:100'],
+
+            // Financial
+            'financial_year_start_month' => ['nullable', 'integer', 'min:1', 'max:12'],
+
+            // Workspace
+            'workspace_slug'        => [
+                'required',
+                'string',
+                'max:100',
+                'unique:workspaces,slug',
+                'regex:/^[a-z0-9\-]+$/'
+            ],
+        ]);
+
+        DB::beginTransaction();
+        try {
+            // Create owner user
+            $user = User::create([
+                'first_name'   => $data['first_name'],
+                'last_name'    => $data['last_name'],
+                'email'        => $data['email'],
+                'password'     => Hash::make($data['password']),
+                'phone'        => $data['phone'] ?? null,
+                'user_type_id' => 4,
+            ]);
+
+            // Create organization
+            $organization = Organization::create([
+                'owner_user_id'              => $user->id,
+                'name'                       => $data['org_name'],
+                'display_name'               => $data['org_display_name'] ?? $data['org_name'],
+                'legal_name'                 => $data['org_legal_name'] ?? null,
+                'organization_type'          => $data['organization_type'],
+                'year_established'           => $data['year_established'] ?? null,
+                'email'                      => $data['org_email'] ?? null,
+                'phone'                      => $data['org_phone'] ?? null,
+                'website'                    => $data['org_website'] ?? null,
+                'description'                => $data['description'] ?? null,
+                'primary_industry'           => $data['primary_industry'] ?? null,
+                'focus_sectors'              => $data['focus_sectors'] ?? null,
+                'operating_countries'        => $data['operating_countries'] ?? null,
+                'target_regions'             => $data['target_regions'] ?? null,
+                'country'                    => $data['country'] ?? null,
+                'region'                     => $data['region'] ?? null,
+                'city'                       => $data['city'] ?? null,
+                'financial_year_start_month' => $data['financial_year_start_month'] ?? 1,
+                'status'                     => 'pending_verification',
+            ]);
+
+            // Create workspace
+            Workspace::create([
+                'organization_id'  => $organization->id,
+                'name'             => $data['org_name'],
+                'slug'             => $data['workspace_slug'],
+                'subdomain'        => $data['workspace_slug'],
+                'domain_status'    => 'pending',
+                'workspace_status' => 'pending_verification',
+            ]);
+
+            // Link user to org
+            $user->update(['organization_id' => $organization->id]);
+
+            // Create default settings
+            UserSetting::create([
+                'user_id'          => $user->id,
+                'default_currency' => $data['default_currency'] ?? 'USD',
+                'default_language' => $data['default_language'] ?? 'en',
+            ]);
+
+            DB::commit();
+
+            return response()->json([
+                'message'      => 'Organization registered successfully.',
+                'user'         => $user,
+                'organization' => $organization->load('workspaces'),
+                'token'        => $user->createToken('main')->plainTextToken,
+            ], 201);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            ErrorLogService::report($e, ['input' => $request->except(['password', 'token'])]);
+            return response()->json(['message' => 'Something went wrong, please try again later.'], 500);
+        }
+    }
+
+    // ─── Org Role User (team member) ─────────────────────────────────────
+    public function registerOrgRoleUser(Request $request)
+    {
+        $data = $request->validate([
+            'organization_id' => ['required', 'integer', 'exists:organizations,id'],
+            'role_id'         => ['required', 'integer'],
+            'email'           => ['required', 'email', 'unique:users,email'],
+            'first_name'      => ['required', 'string', 'max:255'],
+        ]);
+
+        DB::beginTransaction();
+        try {
+            $organization = Organization::findOrFail($data['organization_id']);
+            $owner        = $organization->owner;
+
+            $tempPassword = Str::random(10);
+
+            $user = User::create([
+                'first_name'      => $data['first_name'],
+                'email'           => $data['email'],
+                'password'        => Hash::make($tempPassword),
+                'user_type_id'    => 4,
+                'organization_id' => $organization->id,
+            ]);
+
+            UserSetting::create(['user_id' => $user->id]);
+
+            DB::commit();
 
             $roles = [
                 10001 => 'admin',
                 10002 => 'editor',
                 10003 => 'viewer',
-                10004 => 'internal_reviewer'
+                10004 => 'internal_reviewer',
             ];
 
-            $role_name = $roles[$data['role_id']] ?? 'unknown';
+            // Mail::send('create_password', [
+            //     'email'   => $data['email'],
+            //     'o_email' => $owner->email,
+            //     'org'     => $organization->name,
+            //     'role'    => $roles[$data['role_id']] ?? 'member',
+            // ], function ($msg) use ($data, $organization) {
+            //     $msg->to($data['email']);
+            //     $msg->subject("You've been invited to {$organization->name}");
+            // });
 
-            $info=[
-                'email'=>$data['email'], 'o_email' => $owner->email,
-                'link' => $link, 'org' => 'Grant', 'role' => $role_name
-            ];
-            $user['to'] = $data['email']; $headers = "From: webmaster@Jitume.com";
-
-            Mail::send('create_password', $info, function($msg) use ($user){
-                $msg->to($user['to']);
-                $msg->subject('Grant Manage Request');
-            });
-            // E M A I L
             return response()->json([
-                'success' => true, 'user' => $user,
-                'message' => 'User created successfully.'
-            ], 200);
-
-        }
-        catch (\Exception $e) {
-            return response()->json(['success' => false, 'message' => $e->getMessage(),'line' => $e->getLine()], 400);
-
-        }
-    }
-
-
-    public function invCapitalRegister($data)
-    {
-        $investor = 3;
-        $interested_cats = $data['interested_cats'] ?? null;
-        $website = $data['website'] ?? null;
-
-        //File Type Check!
-        try {
-            $passport=$data['document'] ?? null;
-            if($passport) {
-                $ext=strtolower($passport->getClientOriginalExtension());
-
-                $size=($passport->getSize())/1048576; // Get MB
-                if($size == 3 || $size > 3)
-                {
-                    return response()->json([ 'status' => 422, 'message' => 'Document size must be less than 2MB!'], 422);
-                }
-
-                if($ext!='pdf' && $ext!= 'docx')
-                {
-                    return response()->json([ 'status' => 422, 'message' => 'Only pdf & docx are allowed!'], 422);
-                }
-            }
-
-            //File Type Check END!
-
-            $userCheck = User::where('email',$data['email'])->first();
-            if($userCheck){
-                return response()->json(['message' => 'Email already exists'], 400);
-            }
-
-            $randomPassword = substr(bin2hex(random_bytes(5)), 0, rand(8, 10));
-            $password = bcrypt($data['password']);
-            $user = User::create([
-                'fname' => $data['fname'],
-                'email' => $data['email'],
-                'password' => $password ?? $randomPassword,
-                'user_type_id' => $investor,
-                'interested_cats' =>$interested_cats ?? [],
-                'phone' => $data['phone'] ?? null,
-                'inv_range' => $data['inv_range'] ?? null,
-                'turnover_range' =>  $data['turnover_range'] ?? null,
-                'website' => $website ?? null,
-                'social_impact_areas' =>  $data['social_impact_areas'] ?? null,
-            ]);
-            //Upload
-            $inv_id = $user->id;
-
-            if (!file_exists('files/investor/'.$inv_id))
-                mkdir('files/investor/'.$inv_id, 0777, true);
-            $loc='files/investor/'.$inv_id.'/';
-
-            if($passport) {
-                $uniqid=hexdec(uniqid());
-                $ext=strtolower($passport->getClientOriginalExtension());
-                $create_name=$uniqid.'.'.$ext;
-                $passport->move($loc, $create_name);
-                $final_passport=$loc.$create_name;
-            }else $final_passport='';
-
-            CapitalProfile::create([
-                'user_id'  => $user->id,
-                'role_id'  => $data['role_id'] ?? null,
-                'org_type' => $data['org_type'] ?? null,
-                'startup_stage' => $data['stage'] ?? null,
-                'eng_prefer' => $data['eng_prefer'] ?? null,
-                'regions'  => $data['regions_focus'] ?? null,
-                'document' => $final_passport,
-            ]);
-
-            $token = $user->createToken('main')->plainTextToken;
-            return response()->json([
-                'user' => $user,
-                'token' => $token,
-                'auth' => true
-            ]);
-
+                'message' => 'Team member invited successfully.',
+                'user'    => $user,
+            ], 201);
         } catch (\Exception $e) {
-            return response()->json([ 'status' => 400, 'message' => $e->getMessage() ]);
-
+            DB::rollBack();
+            ErrorLogService::report($e, ['input' => $request->except(['password', 'token'])]);
+            return response()->json(['message' => 'Something went wrong, please try again later.'], 500);
         }
     }
-
-    public function capitalRoleUserRegister($data)
-    {
-        try {
-            $userCheck = User::where('email',$data['email'])->first();
-            if($userCheck)
-            {
-                return response()->json([ 'message' => 'Email already exists'], 400);
-            }
-
-            $randomPassword = substr(bin2hex(random_bytes(5)), 0, rand(8, 10));
-            $user = User::create([
-                'fname' => $data['fname'],
-                'email' => $data['email'],
-                'password' => $randomPassword,
-                'user_type_id' => 3,
-            ]);
-
-            $owner=User::select('id','email','fname','lname')->find($data['capital_owner_id']);
-            CapitalProfile::create([
-                'user_id'  => $user->id,
-                'role_id'  => $data['role_id'],
-                'capital_owner_id'  => $data['capital_owner_id'],
-                'startup_stage' => $owner->capital_profile->startup_stage ?? null,
-                'eng_prefer' => $owner->capital_profile->eng_prefer ?? null,
-                'regions'  => $owner->capital_profile->regions ?? null,
-                'active' => 0,
-            ]);
-
-            // E M A I L
-            $role_name = $data['role_id'] == 10001
-                ? 'admin'
-                : ($data['role_id'] == 10002 ? 'editor' : 'viewer');
-
-            $info=[
-                'email'=>$data['email'], 'o_email'=>$owner->email,
-                'org' => 'Capital', 'role' => $role_name
-            ];
-            $user['to'] = $data['email']; $headers = "From: webmaster@Jitume.com";
-
-            Mail::send('create_password', $info,  function($msg) use ($user){
-                $msg->to($user['to']);
-                $msg->subject('Capital Manage Request');
-            });
-            // E M A I L
-            return response()->json(['success' => true, 'message' => 'User created successfully.'], 200);
-
-        }
-        catch (\Exception $e) {
-            return response()->json(['success' => false, 'message' => $e->getMessage(),'line' => $e->getLine()], 400);
-
-        }
-    }
-
-
 }

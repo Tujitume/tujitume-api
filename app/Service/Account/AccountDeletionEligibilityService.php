@@ -4,7 +4,7 @@ use App\Models\Auth\User;
 use App\Models\Business\AcceptedBids;
 use App\Models\Capital\StartupPitches;
 use App\Models\Grants\GrantApplication;
-use App\Models\Services\serviceBook;
+use App\Models\Services\ServiceBooking;
 
 class AccountDeletionEligibilityService
 {
@@ -62,7 +62,7 @@ class AccountDeletionEligibilityService
      */
     protected function checkActiveServiceBookings(): void
     {
-        $ActiveBookings = serviceBook::where(function ($q) {
+        $ActiveBookings = ServiceBooking::where(function ($q) {
             $q->where('booker_id', $this->user->id)
                 ->orWhere('service_owner_id', $this->user->id);
             })

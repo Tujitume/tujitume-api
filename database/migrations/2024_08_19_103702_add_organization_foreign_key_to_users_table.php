@@ -12,14 +12,17 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('users', function (Blueprint $table) {
-            $table->string('stripe_customer_id')->nullable()->after('connect_id');
+            $table->foreign('organization_id')
+                ->references('id')
+                ->on('organizations')
+                ->onDelete('set null');
         });
     }
 
     public function down(): void
     {
         Schema::table('users', function (Blueprint $table) {
-            $table->dropColumn('stripe_customer_id');
+            $table->dropForeign(['organization_id']);
         });
     }
 };

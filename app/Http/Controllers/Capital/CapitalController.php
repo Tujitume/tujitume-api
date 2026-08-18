@@ -13,7 +13,7 @@ use App\Models\Capital\StartupPitches;
 use App\Models\Communication\Messages;
 use App\Models\Finance\BalanceLog;
 use App\Models\Grants\GrantProfile;
-use App\Models\Services\serviceBook;
+use App\Models\Services\ServiceBooking;
 use App\Models\Shared\Watchlist;
 use App\Service\Account\AccountDeletionEligibilityService;
 use App\Service\Balance\BalanceService;
@@ -780,7 +780,7 @@ class CapitalController extends Controller
                     $capital->delete();
                 }
 
-                serviceBook::where('booker_id', $user->id)->delete();
+                ServiceBooking::where('booker_id', $user->id)->delete();
                 Messages::where('to_id', $user->id)->orWhere('from_id', $user->id)->delete();
             }
 

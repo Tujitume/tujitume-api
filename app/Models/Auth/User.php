@@ -10,7 +10,10 @@ use App\Models\Finance\Transactions;
 use App\Models\Grants\GrantApplication;
 use App\Models\Grants\GrantProfile;
 use App\Models\Misc\Event;
+use App\Models\Organizations\Organization;
+use App\Models\Organizations\workspace;
 use App\Models\Services\Services;
+use App\Models\Users\InvestorProfile;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
@@ -65,6 +68,12 @@ class User extends Authenticatable
     {
         return $this->hasOne(UserBalance::class,'user_id', 'id');
     }
+    
+    public function investor_profile()
+    {
+        return $this->hasOne(InvestorProfile::class,'user_id', 'id');
+    }
+    
     public function grant_profile()
     {
         return $this->hasOne(GrantProfile::class,'user_id', 'id');
@@ -77,6 +86,16 @@ class User extends Authenticatable
     public function user_type()
     {
         return $this->belongsTo(UserType::class,'user_type_id', 'id');
+    }
+
+    public function organization()
+    {
+        return $this->belongsTo(Organization::class, 'organization_id', 'id');
+    }
+
+    public function workspaces()
+    {
+        return $this->hasManyThrough(workspace::class, Organization::class, 'id', 'organization_id', 'organization_id', 'id');
     }
 
     public function notifications()

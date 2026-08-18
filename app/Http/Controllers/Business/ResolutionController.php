@@ -10,7 +10,7 @@ use App\Models\Milestones\Dispute;
 use App\Models\Milestones\Milestones;
 use App\Models\Milestones\NonCompliance\MilestoneNonCompliance;
 use App\Models\Milestones\NonCompliance\MilestoneNoncomplianceVotes;
-use App\Models\Services\ServiceBook;
+use App\Models\Services\ServiceBooking;
 use App\Models\Services\ServiceBookingMilestone;
 use App\Models\Services\Services;
 use App\Service\File\FileUploadService;
@@ -255,7 +255,7 @@ class ResolutionController extends Controller
     {
         $toDispute = $type === 'B'
             ? AcceptedBids::where('business_id', $listingId)->where('investor_id', Auth::id())->exists()
-            : serviceBook::where('service_id', $listingId)->where('booker_id', Auth::id())->where('paid', 1)->exists();
+            : ServiceBooking::where('service_id', $listingId)->where('booker_id', Auth::id())->where('paid', 1)->exists();
 
         return response()->json(['dispute' => $toDispute]);
     }

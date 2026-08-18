@@ -4,7 +4,6 @@ namespace Database\Seeders;
 
 use App\Models\Auth\User;
 use App\Models\Capital\CapitalProfile;
-use App\Models\Grants\GrantProfile;
 use Faker\Factory as Faker;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
@@ -17,260 +16,214 @@ class UserSeeder extends Seeder
     public function run(): void
     {
         $faker = Faker::create();
-        $image = "https://randomuser.me/api/portraits/" . (rand(0, 1) ? 'men' : 'men') . "/" . rand(1, 99) . ".jpg";
 
         try {
-            // Insert the business user
-            User::create([
-                'fname' => 'Harry',
-                'mname' => 'J',
-                'lname' => 'Kane',
-                'gender' => 'M',
-                'dob' => $faker->date('Y-m-d'),
-                'user_type_id' => 4,
+            // 1. Business Owner (user_type_id = 1)
+            User::updateOrCreate([
                 'email' => 'tottenham266@gmail.com',
-                'email_verified_at' => now(),
-                'password' => Hash::make('11111111'),
-                'id_passport' => strtoupper($faker->bothify('??######')),
-                'pin' => $faker->randomNumber(6),
-                'inv_range' => null, //$faker->word,
-                'turnover_range' => null, //$faker->word,
-                'interested_cats' => null, //$faker->word,
-                'past_investment' => null,
-                'stage' => ["Idea", "Seed"],
-                'social_impact_areas' => ["Gender-led", "Youth-led"],
-                //'stage' => null,
-                //'social_impact_areas' => null,
-                'regions_focus' => [$faker->country(), $faker->country()],
-                'website' => $faker->url,
-                'phone' => $faker->phoneNumber,
-                'id_no' => $faker->uuid,
-                'tax_pin' => strtoupper($faker->bothify('PIN-###??')),
-                'connect_id' => 'acct_1Nue6WQtwNiZ4yJ0', //acct_1NcUipR0zSac5ey4 $faker->uuid,
-                'token' => '1778118179790478',  //1776943631370498 $faker->sha256,
-                'completed_onboarding' => $faker->numberBetween(0, 1),
-                'remember_token' => $faker->sha1,
-                'image' => "https://randomuser.me/api/portraits/" . (rand(0, 1) ? 'men' : 'men') . "/" . rand(1, 99) . ".jpg",
-                'created_at' => now(),
-                'updated_at' => now(),
-            ]);
-        } catch (\Exception $e) {
-            dd("Error on Harry Kane create:", $e->getMessage(), $e->getTraceAsString());
-        }
-
-        try {
-            // Insert the grant user
-            $grant_user = User::create([
-                'fname' => 'Pep',
-                'mname' => 'J',
-                'lname' => 'Guardiola',
-                'gender' => 'M',
-                'dob' => $faker->date('Y-m-d'),
-                'user_type_id' => 2,
-                'email' => 'test_grant@gmail.com',
-                'email_verified_at' => now(),
-                'password' => Hash::make('11111111'),
-                'id_passport' => strtoupper($faker->bothify('??######')),
-                'pin' => $faker->randomNumber(6),
-                'inv_range' => null, //$faker->word,
-                'turnover_range' => null, //$faker->word,
-                'interested_cats' => null, //$faker->word,
-                'past_investment' => $faker->sentence,
-                'stage' => ["Idea", "Seed"],
-                'social_impact_areas' => [$faker->word, $faker->word],
-                'regions_focus' => [$faker->country(), $faker->country()],
-                'website' => $faker->url,
-                'phone' => $faker->phoneNumber,
-                'id_no' => $faker->uuid,
-                'tax_pin' => strtoupper($faker->bothify('PIN-###??')),
-                'connect_id' => $faker->uuid,
-                'token' => $faker->sha256,
-                'completed_onboarding' => $faker->numberBetween(0, 1),
-                'remember_token' => $faker->sha1,
-                'image' => $image,
-                'created_at' => now(),
-                'updated_at' => now(),
-            ]);
-            GrantProfile::create([
-                'user_id' => $grant_user->id,
-                'role_id' => null,
-                'grant_owner_id' => null,
-                'org_type' => 'Non-Profit',
-                'regions' => 'Africa,Asia,Kenya,Uganda',
-                'mission' => 'To improve education access globally.',
-                'document' => 'mission_doc_1.pdf',
-                'created_at' => now(),
-                'updated_at' => now(),
-            ]);
-        }
-        catch (\Exception $e) {
-            dd("Error on Guardiola create:", $e->getMessage(), $e->getLine(), $e->getTraceAsString());
-        }
-
-
-        try{
-            // Insert the capital user
-            $cap_user = User::create([
-                'fname' => 'Mikel',
-                'mname' => 'J',
-                'lname' => 'Arteta',
-                'gender' => 'M',
-                'dob' => $faker->date('Y-m-d'),
-                'user_type_id' => 3,
-                'email' => 'test_capital@gmail.com',
-                'email_verified_at' => now(),
-                'password' => Hash::make('11111111'),
-                'id_passport' => strtoupper($faker->bothify('??######')),
-                'pin' => $faker->randomNumber(6),
-                'inv_range' => null, //$faker->word,
-                'turnover_range' => null, //$faker->word,
-                'interested_cats' => null, //$faker->word,
-                'past_investment' => $faker->sentence,
-                'stage' => [$faker->word, $faker->word],
-                'social_impact_areas' => [$faker->word, $faker->word],
-                'regions_focus' => [$faker->country(), $faker->country()],
-                'website' => $faker->url,
-                'phone' => $faker->phoneNumber,
-                'id_no' => $faker->uuid,
-                'tax_pin' => strtoupper($faker->bothify('PIN-###??')),
-                'connect_id' => $faker->uuid,
-                'token' => $faker->sha256,
-                'completed_onboarding' => $faker->numberBetween(0, 1),
-                'remember_token' => $faker->sha1,
-                'image' => $image,
-                'created_at' => now(),
-                'updated_at' => now(),
-            ]);
-            CapitalProfile::create([
-                'user_id' => $cap_user->id,
-                'role_id' => null,
-                'capital_owner_id' => null,
-                'org_type' => 'Non-Profit',
-                'regions' => 'Africa,Asia,Kenya',
-                'startup_stage' => 'idea,early,growth',
-                'eng_prefer' => 'To improve education access globally.',
-                'document' => 'mission_doc_1.pdf',
-                'created_at' => now(),
-                'updated_at' => now(),
-            ]);
-        }
-        catch (\Exception $e) {
-            dd("Error on Mikel Arteta create:", $e->getMessage(), $e->getTraceAsString());
-        }
-
-        try{
-            // Insert the investor user
-            User::create([
-                'fname' => 'Viva',
-                'mname' => 'A',
-                'lname' => 'Malan',
+            ], [
+                'first_name' => 'Harry',
+                'last_name' => 'Kane',
                 'gender' => 'M',
                 'dob' => $faker->date('Y-m-d'),
                 'user_type_id' => 1,
+                'email' => 'tottenham266@gmail.com',
+                'email_verified_at' => now(),
+                'password' => Hash::make('11111111'),
+                'country' => $faker->countryCode,
+                'city' => $faker->city,
+                'website' => $faker->url,
+                'phone' => $faker->phoneNumber,
+                'stripe_connect_id' => null,
+                'stripe_customer_id' => null,
+                'completed_onboarding' => $faker->numberBetween(0, 1),
+                'image' => "https://randomuser.me/api/portraits/" . (rand(0, 1) ? 'men' : 'women') . "/" . rand(1, 99) . ".jpg",
+            ]);
+        } catch (\Exception $e) {
+            dd("Error on Business Owner create:", $e->getMessage(), $e->getTraceAsString());
+        }
+
+        try {
+            // 2. Investor (user_type_id = 2)
+            $investor = User::updateOrCreate([
+                'email' => 'pep.guardiola@gmail.com',
+            ], [
+                'first_name' => 'Pep',
+                'last_name' => 'Guardiola',
+                'gender' => 'M',
+                'dob' => $faker->date('Y-m-d'),
+                'user_type_id' => 2,
+                'email' => 'pep.guardiola@gmail.com',
+                'email_verified_at' => now(),
+                'password' => Hash::make('11111111'),
+                'country' => $faker->countryCode,
+                'city' => $faker->city,
+                'website' => $faker->url,
+                'phone' => $faker->phoneNumber,
+                'stripe_connect_id' => null,
+                'stripe_customer_id' => null,
+                'completed_onboarding' => $faker->numberBetween(0, 1),
+                'image' => "https://randomuser.me/api/portraits/" . (rand(0, 1) ? 'men' : 'women') . "/" . rand(1, 99) . ".jpg",
+            ]);
+
+            // Create investor profile with investment details
+            $investor->investor_profile()->create([
+                'inv_range' => ['10000-100000', '100000-250000'],
+                'turnover_range' => ['100000-500000', '500000-1000000'],
+                'interested_sectors' => ['Education', 'Technology', 'Agriculture'],
+                'stage' => ['Idea', 'Seed', 'Growth'],
+                'social_impact_areas' => ['Education', 'Gender-led', 'Youth-led'],
+                'regions_focus' => [$faker->country, $faker->country],
+                'past_investment' => $faker->sentence,
+            ]);
+        } catch (\Exception $e) {
+            dd("Error on Investor create:", $e->getMessage(), $e->getTraceAsString());
+        }
+
+        try {
+            // 3. Service Provider (user_type_id = 3)
+            User::updateOrCreate([
+                'email' => 'mikel.arteta@gmail.com',
+            ], [
+                'first_name' => 'Mikel',
+                'last_name' => 'Arteta',
+                'gender' => 'M',
+                'dob' => $faker->date('Y-m-d'),
+                'user_type_id' => 3,
+                'email' => 'mikel.arteta@gmail.com',
+                'email_verified_at' => now(),
+                'password' => Hash::make('11111111'),
+                'country' => $faker->countryCode,
+                'city' => $faker->city,
+                'website' => $faker->url,
+                'phone' => $faker->phoneNumber,
+                'stripe_connect_id' => null,
+                'stripe_customer_id' => null,
+                'completed_onboarding' => $faker->numberBetween(0, 1),
+                'image' => "https://randomuser.me/api/portraits/" . (rand(0, 1) ? 'men' : 'women') . "/" . rand(1, 99) . ".jpg",
+            ]);
+        } catch (\Exception $e) {
+            dd("Error on Service Provider create:", $e->getMessage(), $e->getTraceAsString());
+        }
+
+        try {
+            // 4. Organization Owner (user_type_id = 4)
+            User::updateOrCreate([
+                'email' => 'viva.malan166@gmail.com',
+            ], [
+                'first_name' => 'Viva',
+                'last_name' => 'Malan',
+                'gender' => 'M',
+                'dob' => $faker->date('Y-m-d'),
+                'user_type_id' => 4,
                 'email' => 'viva.malan166@gmail.com',
                 'email_verified_at' => now(),
                 'password' => Hash::make('11111111'),
-                'id_passport' => strtoupper($faker->bothify('??######')),
-                'pin' => $faker->randomNumber(6),
-
-                'inv_range' => ['10000-100000', '100000-250000'],
-                'turnover_range' => ['10000-100000', '100000-250000'],
-                'interested_cats' => ['Education', 'Technology', 'Sustainability'],
-                'stage' => ['Idea', 'Seed', 'Growth'],
-                'social_impact_areas' => ['Education', 'Gender-led', 'Youth-led'],
-                'regions_focus' => [
-                    $faker->country,
-                    $faker->country
-                ],
-
-                'past_investment' => $faker->sentence,
+                'country' => $faker->countryCode,
+                'city' => $faker->city,
                 'website' => $faker->url,
                 'phone' => $faker->phoneNumber,
-                'id_no' => $faker->uuid,
-                'tax_pin' => strtoupper($faker->bothify('PIN-###??')),
-                'connect_id' => $faker->uuid,
-                'token' => $faker->sha256,
+                'stripe_connect_id' => null,
+                'stripe_customer_id' => null,
                 'completed_onboarding' => $faker->numberBetween(0, 1),
-                'remember_token' => $faker->sha1,
-                'image' => "https://randomuser.me/api/portraits/" . (rand(0, 1) ? 'men' : 'men') . "/" . rand(1, 99) . ".jpg",
-                'created_at' => now(),
-                'updated_at' => now(),
+                'image' => "https://randomuser.me/api/portraits/" . (rand(0, 1) ? 'men' : 'women') . "/" . rand(1, 99) . ".jpg",
             ]);
-        }
-        catch (\Exception $e) {
-            dd("Error on Viva create:", $e->getMessage(), $e->getTraceAsString());
+        } catch (\Exception $e) {
+            dd("Error on Organization Owner create:", $e->getMessage(), $e->getTraceAsString());
         }
 
-        try{
-            //Service Owner
-            User::create([
-                'fname' => $faker->firstName,
-                'mname' => $faker->firstName,
-                'lname' => $faker->lastName,
+        try {
+            // 5. Admin (user_type_id = 5)
+            User::updateOrCreate([
+                'email' => 'admin@tujitume.com',
+            ], [
+                'first_name' => $faker->firstName,
+                'last_name' => $faker->lastName,
                 'gender' => $faker->randomElement(['M', 'F']),
                 'dob' => $faker->date('Y-m-d'),
                 'user_type_id' => 5,
-                'email' => 'tronrane266@gmail.com',
+                'email' => 'admin@tujitume.com',
                 'email_verified_at' => now(),
                 'password' => Hash::make('password'),
-                'id_passport' => strtoupper($faker->bothify('??######')),
-                'pin' => $faker->randomNumber(6),
-                'inv_range' => null,
-                'turnover_range' => null,
-                'interested_cats' => null,
-                'past_investment' => 'Past records are good!',
-                'stage' => null,
-                'social_impact_areas' => null,
-                'regions_focus' => null,
+                'country' => $faker->countryCode,
+                'city' => $faker->city,
                 'website' => $faker->url,
                 'phone' => $faker->phoneNumber,
-                'id_no' => $faker->uuid,
-                'tax_pin' => strtoupper($faker->bothify('PIN-###??')),
-                'connect_id' => $faker->uuid,
-                'token' => $faker->sha256,
-                'completed_onboarding' => $faker->numberBetween(0, 1),
-                'remember_token' => $faker->sha1,
-                'image' => $image,
-                'created_at' => now(),
-                'updated_at' => now(),
+                'stripe_connect_id' => null,
+                'stripe_customer_id' => null,
+                'completed_onboarding' => 1,
+                'image' => "https://randomuser.me/api/portraits/" . (rand(0, 1) ? 'men' : 'women') . "/" . rand(1, 99) . ".jpg",
             ]);
+        } catch (\Exception $e) {
+            dd("Error on Admin create:", $e->getMessage(), $e->getTraceAsString());
+        }
 
-            // Insert 5 more random users
+        try {
+            // 6. External Reviewer (user_type_id = 6)
+            User::updateOrCreate([
+                'email' => 'reviewer@tujitume.com',
+            ], [
+                'first_name' => $faker->firstName,
+                'last_name' => $faker->lastName,
+                'gender' => $faker->randomElement(['M', 'F']),
+                'dob' => $faker->date('Y-m-d'),
+                'user_type_id' => 6,
+                'email' => 'reviewer@tujitume.com',
+                'email_verified_at' => now(),
+                'password' => Hash::make('password'),
+                'country' => $faker->countryCode,
+                'city' => $faker->city,
+                'website' => $faker->url,
+                'phone' => $faker->phoneNumber,
+                'stripe_connect_id' => null,
+                'stripe_customer_id' => null,
+                'completed_onboarding' => 1,
+                'image' => "https://randomuser.me/api/portraits/" . (rand(0, 1) ? 'men' : 'women') . "/" . rand(1, 99) . ".jpg",
+            ]);
+        } catch (\Exception $e) {
+            dd("Error on Reviewer create:", $e->getMessage(), $e->getTraceAsString());
+        }
+
+        // Insert additional random users
+        try {
             for ($i = 0; $i < 3; $i++) {
-                User::create([
-                    'fname' => $faker->firstName,
-                    'mname' => $faker->firstName,
-                    'lname' => $faker->lastName,
+                $user = User::updateOrCreate([
+                    'email' => $faker->unique()->safeEmail,
+                ], [
+                    'first_name' => $faker->firstName,
+                    'last_name' => $faker->lastName,
                     'gender' => $faker->randomElement(['M', 'F']),
                     'dob' => $faker->date('Y-m-d'),
-                    'user_type_id' => $faker->numberBetween(2, 5),
-                    'email' => $faker->unique()->safeEmail,
+                    'user_type_id' => $faker->numberBetween(1, 3),
                     'email_verified_at' => now(),
                     'password' => Hash::make('password'),
-                    'id_passport' => strtoupper($faker->bothify('??######')),
-                    'pin' => $faker->randomNumber(6),
-                    'inv_range' => null,
-                    'turnover_range' => null,
-                    'interested_cats' => null,
-                    'past_investment' => 'Past records are good!',
-                    'stage' => null,
-                    'social_impact_areas' => null,
-                    'regions_focus' => null,
+                    'country' => $faker->countryCode,
+                    'city' => $faker->city,
                     'website' => $faker->url,
                     'phone' => $faker->phoneNumber,
-                    'id_no' => $faker->uuid,
-                    'tax_pin' => strtoupper($faker->bothify('PIN-###??')),
-                    'connect_id' => $faker->uuid,
-                    'token' => $faker->sha256,
+                    'stripe_connect_id' => null,
+                    'stripe_customer_id' => null,
                     'completed_onboarding' => $faker->numberBetween(0, 1),
-                    'remember_token' => $faker->sha1,
-                    'image' => "https://randomuser.me/api/portraits/" . (rand(0, 1) ? 'men' : 'men') . "/" . rand(1, 99) . ".jpg",
-                    'created_at' => now(),
-                    'updated_at' => now(),
+                    'image' => "https://randomuser.me/api/portraits/" . (rand(0, 1) ? 'men' : 'women') . "/" . rand(1, 99) . ".jpg",
                 ]);
+
+                // If it's an investor, create investor profile
+                if ($user->user_type_id === 2) {
+                    $user->investor_profile()->updateOrCreate([
+                        'user_id' => $user->id,
+                    ], [
+                        'inv_range' => [$faker->randomElement(['10000-100000', '100000-250000', '250000-500000'])],
+                        'turnover_range' => [$faker->randomElement(['100000-500000', '500000-1000000', '1000000+'])],
+                        'interested_sectors' => $faker->randomElements(['Education', 'Technology', 'Agriculture', 'Health', 'Energy'], 2),
+                        'stage' => $faker->randomElements(['Idea', 'Seed', 'Growth', 'Series A'], 2),
+                        'social_impact_areas' => $faker->randomElements(['Education', 'Gender-led', 'Youth-led', 'Environment'], 2),
+                        'regions_focus' => [$faker->country, $faker->country],
+                        'past_investment' => $faker->sentence,
+                    ]);
+                }
             }
         } catch (\Exception $e) {
-            dd("Error on Random create:", $e->getMessage(), $e->getTraceAsString());
+            dd("Error on Random users create:", $e->getMessage(), $e->getTraceAsString());
         }
     }
 }

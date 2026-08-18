@@ -13,6 +13,7 @@ return new class extends Migration
     {
         Schema::create('listings', function (Blueprint $table) {
             $table->id();
+            $table->ulid('public_id')->unique()->nullable();
             $table->unsignedInteger('user_id')->nullable();
             $table->string('name', 300)->nullable();
             $table->string('category', 255)->nullable();

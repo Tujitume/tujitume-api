@@ -15,7 +15,7 @@ use App\Models\Grants\GrantApplication;
 use App\Models\Grants\GrantMilestone;
 use App\Models\Milestones\Milestones;
 use App\Models\Misc\Setting;
-use App\Models\Services\serviceBook;
+use App\Models\Services\ServiceBooking;
 use App\Models\Services\ServiceBookingMilestone;
 use App\Service\Balance\BalanceService;
 use App\Service\Balance\CurrencyConverter;

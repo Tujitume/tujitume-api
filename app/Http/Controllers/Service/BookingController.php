@@ -3,7 +3,7 @@ namespace App\Http\Controllers\Service;
 
 use App\Http\Controllers\Controller;
 use App\Models\Auth\User;
-use App\Models\Services\ServiceBook;
+use App\Models\Services\ServiceBooking;
 use App\Models\Services\ServiceBookingMilestone;
 use App\Models\Services\Services;
 use App\Models\Services\Smilestones;
@@ -24,7 +24,7 @@ class BookingController extends Controller
 
     public function myBooking()
     {
-        $bookings = ServiceBook::where('booker_id', Auth::id())->with('service')->get();
+        $bookings = ServiceBooking::where('booker_id', Auth::id())->with('service')->get();
 
         $results = $bookings->filter(fn($b) => $b->service)->map(function ($book) {
             $service = $book->service;
@@ -44,7 +44,7 @@ class BookingController extends Controller
 
     public function serviceBooking()
     {
-        $bookings = ServiceBook::where('service_owner_id', Auth::id())
+        $bookings = ServiceBooking::where('service_owner_id', Auth::id())
             ->where('status', 'Pending')
             ->with(['service', 'booker'])
             ->latest()->get();
@@ -66,7 +66,7 @@ class BookingController extends Controller
             return $book;
         })->values();
 
-        ServiceBook::where('service_owner_id', Auth::id())->update(['new' => 0]);
+        ServiceBooking::where('service_owner_id', Auth::id())->update(['new' => 0]);
 
         return response()->json(['results' => $results]);
     }
@@ -86,7 +86,7 @@ class BookingController extends Controller
             $booker  = Auth::user();
             $service = Services::findOrFail($validated['service_id']);
 
-            if (ServiceBook::where('service_id', $validated['service_id'])->where('booker_id', $booker->id)->exists()) {
+            if (ServiceBooking::where('service_id', $validated['service_id'])->where('booker_id', $booker->id)->exists()) {
                 return response()->json(['message' => 'You already have an active booking for this service.'], 409);
             }
 
@@ -94,7 +94,7 @@ class BookingController extends Controller
             ServiceBookingMilestone::where('service_id', $validated['service_id'])
                 ->where('booker_id', $booker->id)->delete();
 
-            $booking = ServiceBook::create([
+            $booking = ServiceBooking::create([
                 ...$validated,
                 'date'             => Carbon::parse($validated['date'])->format('Y-m-d'),
                 'booker_id'        => $booker->id,
@@ -138,7 +138,7 @@ class BookingController extends Controller
 
         try {
             foreach ($request->bid_ids as $id) {
-                $booking = ServiceBook::find($id);
+                $booking = ServiceBooking::find($id);
                 if (!$booking) continue;
 
                 $investor = User::findOrFail($booking->booker_id);
@@ -207,7 +207,7 @@ class BookingController extends Controller
 
         try {
             foreach ($request->bid_ids as $id) {
-                $booking = ServiceBook::find($id);
+                $booking = ServiceBooking::find($id);
                 if (!$booking) continue;
 
                 $investor = User::findOrFail($booking->booker_id);
@@ -245,7 +245,7 @@ class BookingController extends Controller
     public function rebookService(int $id)
     {
         try {
-            ServiceBook::where('service_id', $id)->where('booker_id', Auth::id())->delete();
+            ServiceBooking::where('service_id', $id)->where('booker_id', Auth::id())->delete();
             ServiceBookingMilestone::where('service_id', $id)->where('booker_id', Auth::id())->delete();
 
             return response()->json(['message' => 'Booking reset successfully.'], 200);
@@ -261,7 +261,7 @@ class BookingController extends Controller
         $booking_id = base64_decode($booking_id);
 
         try {
-            $booking = ServiceBook::findOrFail($booking_id);
+            $booking = ServiceBooking::findOrFail($booking_id);
 
             $booker = $booking->customer; $owner = $booking->service->owner;
 
@@ -322,7 +322,7 @@ class BookingController extends Controller
 
     public function getBookers(int $serviceId)
     {
-        $bookers = ServiceBook::where('service_id', $serviceId)
+        $bookers = ServiceBooking::where('service_id', $serviceId)
             ->where('status', 'confirmed')
             ->with('booker')
             ->get()

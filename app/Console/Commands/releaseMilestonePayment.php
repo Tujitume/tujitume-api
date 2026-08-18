@@ -4,7 +4,7 @@ namespace App\Console\Commands;
 
 use App\Models\Auth\User;
 use App\Models\Communication\Notifications;
-use App\Models\Services\ServiceBook;
+use App\Models\Services\ServiceBooking;
 use App\Models\Services\ServiceBookingMilestone;
 use App\Models\Services\Services;
 use Auth;
@@ -35,7 +35,7 @@ class releaseMilestonePayment extends Command
      */
     public function handle()
     {
-        $bookings = ServiceBook::where('paid', 1)->latest()->get(); $c=0;$d=0;
+        $bookings = ServiceBooking::where('paid', 1)->latest()->get(); $c=0;$d=0;
         foreach($bookings as $booking)
         {
             $milestone = ServiceBookingMilestone::where('booking_id', $booking->id)->get();
