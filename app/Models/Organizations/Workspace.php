@@ -9,6 +9,7 @@ class Workspace extends Model
 {
     use HasFactory;
     
+    // Allow mass assignment for all attributes
     protected $guarded = [];
 
     public function organization()
