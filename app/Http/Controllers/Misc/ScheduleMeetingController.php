@@ -9,7 +9,7 @@ use App\Models\Business\AcceptedBids;
 use App\Models\Capital\StartupPitches;
 use App\Models\Communication\Meeting;
 use App\Models\Communication\Schedule;
-use App\Models\Grants\GrantApplication;
+use App\Models\Programs\ProgramApplication;
 use App\Models\Services\ServiceBooking;
 use App\Service\Misc\ErrorLogService;
 use Carbon\Carbon;
@@ -102,7 +102,7 @@ class ScheduleMeetingController extends Controller
             if($type == 2 || $type == 3){
                 $user = $type == 2 ? $this->get_role() : $this->get_role2();
                 if (in_array($user->role, ['editor', 'viewer', 'admin'])) {
-                    $user_id = $type == 2 ? $user->grant_owner_id : $user->capital_owner_id;
+                    $user_id = $type == 2 ? $user->program_owner_id : $user->capital_owner_id;
                 }
             }
 
@@ -173,13 +173,13 @@ class ScheduleMeetingController extends Controller
                 $client_ids = $ids->merge($ids2)->unique()->values()->toArray();
             }
 
-            else if($type == 2) //Grant
+            else if($type == 2) //Program
             {
                 $user = $this->get_role();
                 if (in_array($user->role, ['editor', 'viewer', 'admin'])) {
-                    $user_id = $user->grant_owner_id;
+                    $user_id = $user->program_owner_id;
                 }
-                $client_ids = GrantApplication::where('grant_owner_id', $user_id)->pluck('user_id')
+                $client_ids = ProgramApplication::where('program_owner_id', $user_id)->pluck('user_id')
                     ->unique()->toArray();
             }
             else if($type == 3) //Capital
@@ -193,7 +193,7 @@ class ScheduleMeetingController extends Controller
             }
             else if($type == 4) //Business
             {
-                $ids = GrantApplication::where('user_id', $user_id)->pluck('grant_owner_id')
+                $ids = ProgramApplication::where('user_id', $user_id)->pluck('program_owner_id')
                     ->unique();
                 $ids2 = StartupPitches::where('user_id', $user_id)->pluck('capital_owner_id')
                     ->unique();
@@ -277,7 +277,7 @@ class ScheduleMeetingController extends Controller
             if($type == 2 || $type == 3){
                 $user = $type == 2 ? $this->get_role() : $this->get_role2();
                 if (in_array($user->role, ['editor', 'viewer', 'admin'])) {
-                    $user_id = $type == 2 ? $user->grant_owner_id : $user->capital_owner_id;
+                    $user_id = $type == 2 ? $user->program_owner_id : $user->capital_owner_id;
                 }
             }
             $schedules = Schedule::where('user_id',$user_id)->latest()->get();
@@ -356,9 +356,9 @@ class ScheduleMeetingController extends Controller
    #____________________________H e l p e r s________________________
     public function get_role()
     {
-        $user = Auth::user()->load('grant_profile.role');
-        $user->role = $user->grant_profile?->role?->name ?? 'super-admin';
-        $user->grant_owner_id = $user->grant_profile?->grant_owner_id;
+        $user = Auth::user()->load('program_profile.role');
+        $user->role = $user->program_profile?->role?->name ?? 'super-admin';
+        $user->program_owner_id = $user->program_profile?->program_owner_id;
         return $user;
     }
 

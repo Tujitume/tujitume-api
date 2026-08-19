@@ -14,7 +14,7 @@ return new class extends Migration
         Schema::create('m_e_site_visits', function (Blueprint $table) {
             $table->id();
             $table->foreignId('checkpoint_id')->constrained('m_e_checkpoints')->onDelete('cascade');
-            $table->foreignId('app_id')->constrained('grant_applications')->onDelete('cascade');
+            $table->foreignId('app_id')->constrained('program_applications')->onDelete('cascade');
             $table->foreignId('reviewer_id')->constrained('users')->onDelete('cascade');
             $table->string('inspector')->nullable();
             $table->date('start_date')->nullable();

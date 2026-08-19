@@ -21,9 +21,9 @@ return new class extends Migration
                 'freeze_milestones',
                 'suspend_business_owner',
                 'request_audit',
-                'block_future_grants',
+                'block_future_programs',
                 'flag_at_risk',
-                'notify_grant_owner',
+                'notify_program_owner',
                 'withhold_payment',
             ]);
 

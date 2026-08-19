@@ -25,7 +25,6 @@ class MilestonePMController extends Controller
 {
 
     protected LiprW2W $liprW2W;
-    protected EmailService $emailService;
     //protected $Client;
     public function __construct(EmailService $emailService, StripeClient $client)
     {

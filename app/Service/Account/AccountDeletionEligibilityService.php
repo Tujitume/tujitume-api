@@ -3,7 +3,7 @@ namespace App\Service\Account;
 use App\Models\Auth\User;
 use App\Models\Business\AcceptedBids;
 use App\Models\Capital\StartupPitches;
-use App\Models\Grants\GrantApplication;
+use App\Models\Programs\ProgramApplication;
 use App\Models\Services\ServiceBooking;
 
 class AccountDeletionEligibilityService
@@ -21,7 +21,7 @@ class AccountDeletionEligibilityService
 
         $this->checkActiveInvestments();
         $this->checkActiveServiceBookings();
-        $this->checkUserReceivedFundingGrant();
+        $this->checkUserReceivedFundingProgram();
         $this->checkUserReceivedFundingCapital();
 
         if (empty($this->reasons)) {
@@ -79,23 +79,23 @@ class AccountDeletionEligibilityService
     }
 
     /**
-     * User personally received grant or capital funding
+     * User personally received program or capital funding
      */
-    protected function checkUserReceivedFundingGrant(): void
+    protected function checkUserReceivedFundingProgram(): void
     {
-        $hasActiveApplications = GrantApplication::where( function ($q) {
+        $hasActiveApplications = ProgramApplication::where( function ($q) {
             $q->where('user_id', $this->user->id)
-                ->orWhere('grant_owner_id', $this->user->id);
+                ->orWhere('program_owner_id', $this->user->id);
             })
-            ->whereHas('grant_milestones', function ($q) {
+            ->whereHas('program_milestones', function ($q) {
                 $q->where('fund_released', 1);
             })
             ->exists();
 
         if ($hasActiveApplications) {
             $this->reasons[] = [
-                'code'    => 'grant_active_funding',
-                'message' => 'You have active grant milestone funds released to a business.',
+                'code'    => 'program_active_funding',
+                'message' => 'You have active program milestone funds released to a business.',
             ];
         }
     }

@@ -15,7 +15,7 @@ return new class extends Migration
             $table->id();
 
             // What is flagged? (polymorphic)
-            $table->string('flaggable_type');                      // User, Grant\Milestone, Business\Milestone
+            $table->string('flaggable_type');                      // User, Program\Milestone, Business\Milestone
             $table->unsignedBigInteger('flaggable_id');
 
             $table->unsignedBigInteger('trigger_id')->nullable(); // originating trigger (optional link)

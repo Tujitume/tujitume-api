@@ -7,8 +7,8 @@ use App\Models\Business\Listing;
 use App\Models\Capital\CapitalProfile;
 use App\Models\Communication\Notifications;
 use App\Models\Finance\Transactions;
-use App\Models\Grants\GrantApplication;
-use App\Models\Grants\GrantProfile;
+use App\Models\Programs\ProgramApplication;
+use App\Models\Programs\ProgramProfile;
 use App\Models\Misc\Event;
 use App\Models\Organizations\Organization;
 use App\Models\Organizations\workspace;
@@ -74,9 +74,9 @@ class User extends Authenticatable
         return $this->hasOne(InvestorProfile::class,'user_id', 'id');
     }
     
-    public function grant_profile()
+    public function program_profile()
     {
-        return $this->hasOne(GrantProfile::class,'user_id', 'id');
+        return $this->hasOne(ProgramProfile::class,'user_id', 'id');
     }
     public function capital_profile()
     {
@@ -125,7 +125,7 @@ class User extends Authenticatable
 
     // as sme
     public function myApplications(){
-        return $this->hasMany(GrantApplication::class,'user_id', 'id');
+        return $this->hasMany(ProgramApplication::class,'user_id', 'id');
     }
 
     public function settings()

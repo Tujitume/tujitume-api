@@ -32,7 +32,7 @@ class MilestoneFundReleaseService
         $this->liprW2W              = new LiprW2W();
         $this->balance              = new BalanceService();
         $this->usdToKes             = (new CurrencyConverter())->UsdToKes();
-        $this->tujitume_lipr_wallet = Setting::where('key', 'platform_lipr_wallet')->first()?->value;
+        $this->tujitume_lipr_wallet = Setting::where('key', 'platform_lipr_wallet')->first()?->value ?? null;
     }
 
     /**

@@ -95,17 +95,17 @@ class MessageController extends Controller
             $from_id = $user->id;
             $to_id = $validated['to_id'];
 
-            // Grant Editor
-            if($user->user_type_id == 2) { //Grant From
-                $role = $user->grant_profile?->role?->name;
+            // Program Editor
+            if($user->user_type_id == 2) { //Program From
+                $role = $user->program_profile?->role?->name;
                 if($role == 'editor' || $role == 'admin'){
-                    $from_id = $user->grant_profile?->grant_owner_id ?? $user->id;
+                    $from_id = $user->program_profile?->program_owner_id ?? $user->id;
                 }
             }
-            else if ($userTo->user_type_id == 2) { //Grant To
-                $role = $userTo->grant_profile?->role?->name;
+            else if ($userTo->user_type_id == 2) { //Program To
+                $role = $userTo->program_profile?->role?->name;
                 if ($role == 'editor' || $role == 'admin') {
-                    $to_id = $userTo->grant_profile?->grant_owner_id ?? $userTo->id;
+                    $to_id = $userTo->program_profile?->program_owner_id ?? $userTo->id;
                 }
             }
 
@@ -313,23 +313,23 @@ class MessageController extends Controller
                 return response()->json(['message' => 'Message sent.', 'status' => 200], 200);
             }
 
-            // General conv. reply (Grant / Capital / Investor)
+            // General conv. reply (Program / Capital / Investor)
             $fromId = $authUser->id;
             $toId   = $validated['to_id'];
 
             $resolveOwnerId = function (User $user, string $type) {
-                $profile = $type === 'grant'   ? $user->grant_profile   : $user->capital_profile;
+                $profile = $type === 'program'   ? $user->program_profile   : $user->capital_profile;
                 $role    = $profile?->role?->name;
-                $ownerKey = $type === 'grant'  ? 'grant_owner_id'       : 'capital_owner_id';
+                $ownerKey = $type === 'program'  ? 'program_owner_id'       : 'capital_owner_id';
                 return ($role === 'editor' || $role === 'admin') ? ($profile?->$ownerKey ?? $user->id) : $user->id;
             };
 
-            if ($authUser->user_type_id === 2) $fromId = $resolveOwnerId($authUser, 'grant');
+            if ($authUser->user_type_id === 2) $fromId = $resolveOwnerId($authUser, 'program');
             if ($authUser->user_type_id === 3) $fromId = $resolveOwnerId($authUser, 'capital');
 
             if ($request->filled('to_id')) {
                 $userTo = User::findOrFail($toId);
-                if ($userTo->user_type_id === 2) $toId = $resolveOwnerId($userTo, 'grant');
+                if ($userTo->user_type_id === 2) $toId = $resolveOwnerId($userTo, 'program');
                 if ($userTo->user_type_id === 3) $toId = $resolveOwnerId($userTo, 'capital');
             }
 

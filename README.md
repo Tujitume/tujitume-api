@@ -1,12 +1,12 @@
 # Tujitume API
 
-> Backend powering the Tujitume Grant & Impact Management SaaS platform.
+> Backend powering the Tujitume Program & Impact Management SaaS platform.
 
 ---
 
 ## Overview
 
-This repository contains the Laravel backend responsible for authentication, grant workflows, business investment flow, service provider flow, reviewer management, milestone verification, payments, notifications, and deployment infrastructure.
+This repository contains the Laravel backend responsible for authentication, program workflows, business investment flow, service provider flow, reviewer management, milestone verification, payments, notifications, and deployment infrastructure.
 
 ---
 
@@ -15,8 +15,8 @@ This repository contains the Laravel backend responsible for authentication, gra
 - RESTful API
 - Sanctum Authentication
 - Role & Permission Management
-- Grant Management
-- Grant Rounds
+- Program Management
+- Program Rounds
 - Reviewer Assignment
 - Milestone Workflow
 - Business Investment

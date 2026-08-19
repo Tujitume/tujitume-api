@@ -2,9 +2,9 @@
 
 namespace App\Models;
 
-use App\Models\Grants\GrantApplication;
-use App\Models\Grants\Rounds\ApplicationRoundResponse;
-use App\Models\Grants\Rounds\GrantRound;
+use App\Models\Programs\ProgramApplication;
+use App\Models\Programs\Rounds\ApplicationRoundResponse;
+use App\Models\Programs\Rounds\ProgramRound;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
@@ -42,7 +42,7 @@ class ApplicationRoundHistory extends Model
      */
     public function application()
     {
-        return $this->belongsTo(GrantApplication::class, 'application_id');
+        return $this->belongsTo(ProgramApplication::class, 'application_id');
     }
 
     public function roundAnswers()
@@ -56,7 +56,7 @@ class ApplicationRoundHistory extends Model
      */
     public function round()
     {
-        return $this->belongsTo(GrantRound::class, 'round_id');
+        return $this->belongsTo(ProgramRound::class, 'round_id');
     }
 
     /**
@@ -133,7 +133,7 @@ class ApplicationRoundHistory extends Model
             'advanced' => 'Advanced',
             'not_selected' => 'Not Selected',
             'withdrawn' => 'Withdrawn',
-            'awarded' => 'Awarded Grant',
+            'awarded' => 'Awarded Program',
             default => 'Unknown',
         };
     }

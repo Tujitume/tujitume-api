@@ -102,7 +102,7 @@ class DashboardController extends Controller
             $notifier = match($notice->type) {
                 'investor', 'customer' => User::find($notice->customer_id),
                 'business'             => Listing::find($notice->customer_id),
-                'grant'                 => 'Grant',
+                'program'                 => 'Program',
                 default                 => 'Tujitume',
             };
 
@@ -110,7 +110,7 @@ class DashboardController extends Controller
 
             $name = match($notice->type) {
                 'investor', 'customer' => ($notifier->fname ?? '') . ' ' . ($notifier->lname ?? ''),
-                'grant'                 => 'Grant',
+                'program'                 => 'Program',
                 default                 => 'Tujitume',
             };
 

@@ -13,8 +13,8 @@ return new class extends Migration
     {
         Schema::create('application_round_history', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('application_id')->constrained('grant_applications')->onDelete('cascade');
-            $table->foreignId('round_id')->constrained('grant_rounds')->onDelete('cascade');
+            $table->foreignId('application_id')->constrained('program_applications')->onDelete('cascade');
+            $table->foreignId('round_id')->constrained('program_rounds')->onDelete('cascade');
 
             // Round participation details
             $table->integer('round_number'); // 1, 2, 3, etc. (denormalized for easy querying)
@@ -33,7 +33,7 @@ return new class extends Migration
                 'advanced',        // Moved to next round
                 'not_selected',    // Didn't advance
                 'withdrawn',       // Applicant withdrew
-                'awarded'          // Final round - received grant
+                'awarded'          // Final round - received program
             ])->default('in_progress');
 
             $table->text('outcome_notes')->nullable(); // Why they advanced/didn't advance

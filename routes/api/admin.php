@@ -47,9 +47,9 @@ Route::prefix('admin')->group(function () { //->name('admin.')
         Route::get('/otherReports/{report}', [AdminController::class, 'otherReports'])->name('other_reports');
         Route::get('/reportDownload/{report}', [AdminController::class, 'reportDownload'])->name('report_download');
 
-        // Transactions / Grants / Capitals / Events
+        // Transactions / Programs / Capitals / Events
         Route::get('/transactions', [AdminController::class, 'transactions'])->name('transactions');
-        Route::get('/grants', [AdminController::class, 'grants'])->name('grants');
+        Route::get('/programs', [AdminController::class, 'programs'])->name('programs');
         Route::get('/capitals', [AdminController::class, 'capitals'])->name('capitals');
         Route::get('/events', [AdminController::class, 'events'])->name('events');
         Route::get('/events/toggle/{event}', [AdminController::class, 'toggleEvent'])->name('admin.events.toggle');

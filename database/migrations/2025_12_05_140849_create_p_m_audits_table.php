@@ -24,7 +24,7 @@ return new class extends Migration
             $table->unsignedBigInteger('assigned_pm_id')->nullable();
 
             // PM audit types
-            $table->enum('type', ['mid_milestone', 'pre_release', 'final_approval', 'grant_milestone', 'capital_milestone'])
+            $table->enum('type', ['mid_milestone', 'pre_release', 'final_approval', 'program_milestone', 'capital_milestone'])
                 ->default('mid_milestone');
 
             // PM acceptance status

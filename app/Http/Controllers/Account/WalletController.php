@@ -170,8 +170,8 @@ class WalletController extends Controller
             $role = null;
 
             if($seller->user_type_id == 2){
-                $seller->load('grant_profile.role');
-                $role = $seller->grant_profile?->role?->name ?? null;
+                $seller->load('program_profile.role');
+                $role = $seller->program_profile?->role?->name ?? null;
             }
             else if($seller->user_type_id == 3){
                 $seller->load('capital_profile.role');
@@ -257,10 +257,10 @@ class WalletController extends Controller
 
             //Role user check
             if($user->user_type_id == 2) {
-                $user->load('grant_profile.role');
-                $role = $user->grant_profile?->role?->name ?? null;
+                $user->load('program_profile.role');
+                $role = $user->program_profile?->role?->name ?? null;
                 if ($role) {
-                    $user_id = $user->grant_profile?->grant_owner_id ?? $user->id;
+                    $user_id = $user->program_profile?->program_owner_id ?? $user->id;
                 }
             }
             else if($user->user_type_id == 3) {

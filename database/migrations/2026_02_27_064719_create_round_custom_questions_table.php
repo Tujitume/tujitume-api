@@ -13,7 +13,7 @@ return new class extends Migration
     {
         Schema::create('round_custom_questions', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('round_id')->constrained('grant_rounds')->onDelete('cascade');
+            $table->foreignId('round_id')->constrained('program_rounds')->onDelete('cascade');
             $table->string('question_text', 500);
             $table->enum('question_type', ['knockout','short_answer', 'long_text', 'multiple_choice', 'file_upload', 'budget_breakdown']);
             $table->json('options')->nullable(); // For multiple choice

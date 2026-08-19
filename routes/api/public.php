@@ -14,8 +14,8 @@ use App\Http\Controllers\Business\BidsController;
 use App\Http\Controllers\Business\BusinessController;
 use App\Http\Controllers\Business\MilestoneController;
 use App\Http\Controllers\Capital\CapitalController;
-use App\Http\Controllers\Grant\GrantController;
-use App\Http\Controllers\Grant\GrantDisbursementController;
+use App\Http\Controllers\Program\ProgramController;
+use App\Http\Controllers\Program\ProgramDisbursementController;
 use App\Http\Controllers\Misc\AiController;
 use App\Http\Controllers\Misc\EventController;
 use App\Http\Controllers\Misc\LookupController;
@@ -26,15 +26,15 @@ use App\Http\Controllers\Service\BookingController;
 use App\Http\Controllers\Service\ServiceController;
 use App\Http\Controllers\Service\ServiceMilestoneController;
 
-// grant supplier confirm
-Route::get('grant/disbursements/{disbursement}/supplier-confirm', [GrantDisbursementController::class, 'supplierConfirm']);
+// program supplier confirm
+Route::get('program/disbursements/{disbursement}/supplier-confirm', [ProgramDisbursementController::class, 'supplierConfirm']);
 
 Route::get('/locations/{query}', [SearchController::class,'locations']);
 Route::get('/get-conversion-rate/{base}', [WalletController::class,'conversion_rate']);
 Route::get('all-events', [EventController::class, 'browse']);
-Route::get('/home/grants', [GrantController::class, 'index']);
+Route::get('/home/programs', [ProgramController::class, 'index']);
 
-Route::get('grant/reject-invitation/{email}', [GrantController::class, 'reject_invitation'])
+Route::get('program/reject-invitation/{email}', [ProgramController::class, 'reject_invitation'])
     ->name('reject.invitation')
     ->middleware('signed');
 Route::get('/home/capital-offers', [CapitalController::class, 'index']);
@@ -73,7 +73,7 @@ Route::middleware('throttle:public')->group(function () {
     Route::prefix('/ai')->group(function(){
         Route::get('listing/{listing_id}/suggestions', [AiController::class,'listing_suggestions']);
         Route::get('service/{service_id}/suggestions', [AiController::class,'service_suggestions']);
-        Route::get('grant/{grant_id}/suggestions', [AiController::class,'grant_suggestions']);
+        Route::get('program/{program_id}/suggestions', [AiController::class,'program_suggestions']);
         Route::get('capital/{capital_id}/suggestions', [AiController::class,'capital_suggestions']);
     });
 });
@@ -86,7 +86,7 @@ Route::get('CancelAssetBid/{id}/{action}',[AssetBidsController::class,'CancelAss
 Route::get('CancelEquipmentRelease/{id}/{action}',[AssetBidsController::class,'CancelAssetRelease']);
 Route::get('CancelServiceBooking/{id}/{action}',[BookingController::class,'CancelServiceBooking']);
 
-Route::get('grant/get_grant/{id}', [GrantController::class, 'get_grant']);
+Route::get('program/get_program/{id}', [ProgramController::class, 'get_program']);
 Route::get('capital/get_capital/{id}', [CapitalController::class, 'get_capital']);
 
 Route::get('agreeToMileS/{s_id}/{booker_id}', [ServiceMilestoneController::class, 'agreeToProgressWithServiceMilestone']);

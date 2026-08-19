@@ -26,10 +26,10 @@ return new class extends Migration
                 'capex', 'opex', 'services', 'mixed',
             ])->nullable();
 
-            $table->enum('added_by', ['grant_owner', 'applicant'])->default('grant_owner');
+            $table->enum('added_by', ['program_owner', 'applicant'])->default('program_owner');
 
             $table->foreign('milestone_id')
-                ->references('id')->on('grant_milestones')->onDelete('cascade');
+                ->references('id')->on('program_milestones')->onDelete('cascade');
             $table->foreign('supplier_id')
                 ->references('id')->on('milestone_suppliers')->onDelete('set null');
 

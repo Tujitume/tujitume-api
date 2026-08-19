@@ -211,9 +211,9 @@ class AuthController extends Controller
                     'email' => ['required', 'email', 'max:255'],
                     'fname' => ['required', 'string', 'max:255'],
                     'user_type_id' => ['required', 'integer', 'in:1,2,3,4,5'],
-                    'grant_owner_id' => ['required', 'integer'],
+                    'program_owner_id' => ['required', 'integer'],
                 ]);
-                $register = $regService->grantRoleUserRegister($data);
+                $register = $regService->programRoleUserRegister($data);
                 return $register;
             }
 
@@ -238,9 +238,9 @@ class AuthController extends Controller
                 'document' => ['nullable', 'file', 'mimes:pdf,doc,docx', 'max:2048'],
                 //For adding role based users
                 'role_id' => ['nullable', 'integer'], // optional, integer
-                'grant_owner_id' => ['nullable', 'integer'],
+                'program_owner_id' => ['nullable', 'integer'],
             ]);
-            $register = $regService->grantRegister($data);
+            $register = $regService->programRegister($data);
             return $register;
         }
 

@@ -12,9 +12,9 @@ use App\Models\Capital\CapitalOffer;
 use App\Models\Capital\StartupPitches;
 use App\Models\Finance\StripePayments;
 use App\Models\Finance\Transactions;
-use App\Models\Grants\Grant;
-use App\Models\Grants\GrantApplication;
-use App\Models\Grants\GrantMilestone;
+use App\Models\Programs\Program;
+use App\Models\Programs\ProgramApplication;
+use App\Models\Programs\ProgramMilestone;
 use App\Models\Milestones\Milestones;
 use App\Models\Services\ServiceBookingMilestone;
 use App\Models\Services\ServiceMessages;
@@ -894,7 +894,7 @@ class CheckoutStripeController extends Controller
     }
 
     #  G R A N T   &   C A P I T A L   D I S B U R S E M E N T S
-    public function grantDisbursement(Request $request)
+    public function programDisbursement(Request $request)
     {
         if( !Auth::check() ){
             return response()->json(['message' => 'Unauthorized!' ],401);
@@ -903,29 +903,29 @@ class CheckoutStripeController extends Controller
 
         try {
             $request->validate([
-                'listing' => 'required|integer|exists:grant_milestones,id',
+                'listing' => 'required|integer|exists:program_milestones,id',
                 'percent' => 'numeric|min:0|max:100',
                 'stripeToken'  => 'required|string',
             ]);
 
-            $milestone = GrantMilestone::findOrFail($request->listing);
+            $milestone = ProgramMilestone::findOrFail($request->listing);
 
             if ($milestone->status === 1){
                 return response()->json(['message' => 'Payment already completed!'], 409);
             }
 
-            $pitch = GrantApplication::with('grant')->where('id',$milestone->app_id)->first();
+            $pitch = ProgramApplication::with('program')->where('id',$milestone->app_id)->first();
 
-            if ($pitch->grant_owner_id !== $user->id) {
+            if ($pitch->program_owner_id !== $user->id) {
                 return response()->json(['message' => 'Forbidden!'], 403);
             }
 
-            $emails = User::whereIn('id', [$pitch->user_id, $pitch->grant_owner_id])
+            $emails = User::whereIn('id', [$pitch->user_id, $pitch->program_owner_id])
                 ->pluck('email', 'id');
             $sme_email = $emails[$pitch->user_id];
-            $grant_owner_email = $emails[$pitch->grant_owner_id];
+            $program_owner_email = $emails[$pitch->program_owner_id];
 
-            $connectIds = User::whereIn('id', [$pitch->user_id, $pitch->grant_owner_id])
+            $connectIds = User::whereIn('id', [$pitch->user_id, $pitch->program_owner_id])
                 ->pluck('connect_id', 'id');
             $sme_connect_id = $connectIds[$pitch->user_id];
 
@@ -938,7 +938,7 @@ class CheckoutStripeController extends Controller
             $amountPayable = round($amount, 2);
             //round($amount + ( $amount* ($tujitume_fee/100) ),2); // 5%
 
-//            if ($pitch->grant->available_amount < $amount) {
+//            if ($pitch->program->available_amount < $amount) {
 //                return response()->json(['message' => 'Insufficient available funds.'], 400);
 //            }
 
@@ -982,7 +982,7 @@ class CheckoutStripeController extends Controller
 
             DB::beginTransaction();
             try{
-                Grant::where('id', $pitch->grant_id)->update([
+                Program::where('id', $pitch->program_id)->update([
                     'available_amount' => DB::raw("available_amount - {$amount}")
                 ]);
 
@@ -992,13 +992,13 @@ class CheckoutStripeController extends Controller
             }
             catch(\Exception $e){
                 DB::rollBack();
-                return response()->json(['message' => 'Payment succeeded but Balance/Grant update failed. Admin notified.'], 500);
+                return response()->json(['message' => 'Payment succeeded but Balance/Program update failed. Admin notified.'], 500);
             }
 
             // Transactions & Stripe Log
             try {
                 $this->transaction->create(
-                    $user->id,'grant_milestone','stripe', $amountPayable, $charge->id, $pitch->user_id
+                    $user->id,'program_milestone','stripe', $amountPayable, $charge->id, $pitch->user_id
                 );
 
                 StripePayments::create([
@@ -1031,19 +1031,19 @@ class CheckoutStripeController extends Controller
 
             // E M A I L  & NotificationService
             try{
-                $text = $milestone->title.' fund for '.$pitch->grant->grant_title.' has been released.';
-                $this->notification->create($pitch->user_id,$pitch->grant->user_id,$text
-                    ,'dashboard.entrepreneur.grantsDealroom.detail::'.$pitch->id,'grant');
+                $text = $milestone->title.' fund for '.$pitch->program->program_title.' has been released.';
+                $this->notification->create($pitch->user_id,$pitch->program->user_id,$text
+                    ,'dashboard.entrepreneur.programsDealroom.detail::'.$pitch->id,'program');
 
                 $info=[
-                    'grant'=>$pitch->grant->grant_title,
+                    'program'=>$pitch->program->program_title,
                     'amount'=>$milestone->amount,
                     'milestone_title' => $milestone->title
-                ]; $recipients ['to'] = [$grant_owner_email, $sme_email];
+                ]; $recipients ['to'] = [$program_owner_email, $sme_email];
 
-                Mail::send('opportunities.grant_milestone', $info, function($msg) use ($recipients){
+                Mail::send('opportunities.program_milestone', $info, function($msg) use ($recipients){
                     $msg->to($recipients ['to']);
-                    $msg->subject(' Grant Milestone Release');
+                    $msg->subject(' Program Milestone Release');
                 });
             }
             catch (\Exception $e){

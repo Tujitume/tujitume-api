@@ -21,8 +21,8 @@ class WatchlistController extends Controller
 
             // SME can bookmark G/C
             if($type == 5 || $type == 4 || $type == 3 || $type == 2){
-                $watchlists1 = Watchlist::with('grant')->where('user_id', $user->id)
-                    ->where('org_type', 'grant')->latest()->get();
+                $watchlists1 = Watchlist::with('program')->where('user_id', $user->id)
+                    ->where('org_type', 'program')->latest()->get();
 
                 $watchlists2 = Watchlist::with('capital')->where('user_id', $user->id)
                     ->where('org_type', 'capital')->latest()->get();
@@ -33,12 +33,12 @@ class WatchlistController extends Controller
                 $watchlists4 = Watchlist::with('service')->where('user_id', $user->id)
                     ->where('org_type', 'service')->latest()->get();
 
-                $grant_lists = $watchlists1->pluck('grant')->filter()->values();
+                $program_lists = $watchlists1->pluck('program')->filter()->values();
                 $capital_lists = $watchlists2->pluck('capital')->filter()->values();
                 $listing_lists = $watchlists3->pluck('listing')->filter()->values();
                 $service_lists = $watchlists4->pluck('service')->filter()->values();
                 $org_lists = [
-                    'grants' => $grant_lists,
+                    'programs' => $program_lists,
                     'capitals' => $capital_lists,
                     'listings' => $listing_lists,
                     'services' => $service_lists,
@@ -82,7 +82,7 @@ class WatchlistController extends Controller
         try{
             $request->validate([
                 'org_id' => 'required|integer',
-                'org_type' => 'required|string|in:grant,capital,listing',
+                'org_type' => 'required|string|in:program,capital,listing',
             ]);
 
             $user_id = Auth::id();

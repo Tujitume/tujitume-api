@@ -21,12 +21,12 @@ return [
     //prod
     'app_url' => env('APP_URL', 'http://localhost:81/'),
     'api_url' => env('API_URL', 'http://127.0.0.1:8000/api/'),
-    'api_base_url' => env('API_URL', 'http://127.0.0.1:8000/'),
+    'api_base_url' => env('API_BASE_URL', 'http://127.0.0.1:8000/'),
 
     //staging
 //    'app_url' => env('APP_URL', 'http://localhost:81/'),
 //    'api_url' => env('API_URL', 'http://127.0.0.1:8000/api/'),
-//    'api_base_url' => env('API_URL', 'http://127.0.0.1:8000/'),
+//    'api_base_url' => env('API_BASE_URL', 'http://127.0.0.1:8000/'),
 
     /*
     |--------------------------------------------------------------------------
@@ -161,7 +161,7 @@ return [
     |
     | The service providers listed here will be automatically loaded on the
     | request to your application. Feel free to add your own services to
-    | this array to grant expanded functionality to your applications.
+    | this array to program expanded functionality to your applications.
     |
     */
 

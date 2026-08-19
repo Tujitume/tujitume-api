@@ -25,9 +25,11 @@ class WithdrawController extends Controller
     protected $transaction;
     protected RetrieveBalanceService $retriveBalance;
 
-    private WithdrawalService  $withdrawalService;
-    private LiprPaymentService $lipr;
-    public function __construct(StripeClient $client)
+    public function __construct(
+        StripeClient $client,
+        private WithdrawalService $withdrawalService,
+        private LiprPaymentService $lipr
+     )
     {
         parent::__construct();
 
@@ -36,8 +38,8 @@ class WithdrawController extends Controller
         $this->liprAuth = new LiprAuthService();
         $this->retriveBalance = new RetrieveBalanceService($this->Client);
 
-        $this->withdrawalService = new WithdrawalService();
-        $this->lipr = new LiprPaymentService();
+        $this->withdrawalService = $withdrawalService;
+        $this->lipr = $lipr;
 
     }
 

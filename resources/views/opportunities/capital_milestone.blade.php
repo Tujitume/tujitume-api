@@ -45,7 +45,7 @@
     <div >
         <div class="content" style="padding: 20px;">
             <h2 class="email-title" style="font-size: 20px; margin-bottom: 20px;">Capital Milestone Payment Released</h2>
-            <p class="email-message" style="font-size: 12px; padding-top: 10px; line-height: 0.5; margin-bottom: 30px;">The milestone payment was released by the grant owner.</p>
+            <p class="email-message" style="font-size: 12px; padding-top: 10px; line-height: 0.5; margin-bottom: 30px;">The milestone payment was released by the program owner.</p>
 
             <div
                 style="width: 60%; margin: auto; background: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); text-align: left;">

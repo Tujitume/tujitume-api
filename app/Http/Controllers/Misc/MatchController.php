@@ -8,9 +8,9 @@ use Illuminate\Http\Request;
 
 class MatchController extends Controller
 {
-    public function score(MatchScore $match, Request $request, $grant_id)
+    public function score(MatchScore $match, Request $request, $program_id)
     {
-        $score = $match->grant($request, $grant_id);
+        $score = $match->program($request, $program_id);
         return response()->json($score,200);
     }
 

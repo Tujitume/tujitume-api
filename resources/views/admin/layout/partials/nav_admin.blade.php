@@ -41,8 +41,8 @@
                                 <a href="transactions" class=""> <i class="bi bi-gear-fill"></i> Transactions</a>
                             </li>
 
-                            <li  class="{{ Request::is('admin/grants') ? 'active' : '' }}">
-                                <a href="grants" class=""> <i class="bi bi-gear-fill"></i> Grants</a>
+                            <li  class="{{ Request::is('admin/programs') ? 'active' : '' }}">
+                                <a href="programs" class=""> <i class="bi bi-gear-fill"></i> Programs</a>
                             </li>
 
                             <li  class="{{ Request::is('admin/capitals') ? 'active' : '' }}">

@@ -9,7 +9,7 @@ use App\Service\File\FileUploadService;
 use App\Service\File\ImageUploadService;
 use App\Service\Misc\TransactionRecord;
 use App\Service\Notification\EmailService;
-use App\Service\Notification\GrantNotificationService;
+use App\Service\Notification\ProgramNotificationService;
 use App\Service\Notification\NotificationService;
 use Illuminate\Foundation\Auth\Access\AuthorizesRequests;
 use Illuminate\Foundation\Validation\ValidatesRequests;
@@ -21,7 +21,7 @@ class Controller extends BaseController
     protected $site_url;
     protected $emailService;
     protected $notification;
-    protected $grantNotification;
+    protected $programNotification;
     protected $transaction;
     protected $fileUpload;
     protected $imageUpload;
@@ -33,7 +33,7 @@ class Controller extends BaseController
     public function __construct() {
         $this->emailService = new EmailService();
         $this->notification = new NotificationService();
-        $this->grantNotification = new GrantNotificationService();
+        $this->programNotification = new ProgramNotificationService();
         $this->transaction = new TransactionRecord();
         $this->fileUpload = new FileUploadService();
         $this->imageUpload = new ImageUploadService();

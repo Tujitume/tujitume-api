@@ -3,8 +3,8 @@
 namespace App\Models\Milestones;
 
 use App\Models\Auth\User;
-use App\Models\Grants\DealRoomDocument;
-use App\Models\Grants\GrantMilestone;
+use App\Models\Programs\DealRoomDocument;
+use App\Models\Programs\ProgramMilestone;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
@@ -36,7 +36,7 @@ class MilestoneCompletionSubmission extends Model
 
     public function milestone()
     {
-        return $this->belongsTo(GrantMilestone::class, 'milestone_id');
+        return $this->belongsTo(ProgramMilestone::class, 'milestone_id');
     }
 
     public function submittedBy()

@@ -113,7 +113,7 @@ class SupportController extends Controller
             'email' => 'required|email|max:191',
 
             'request_type' => 'required|in:demo,meeting,trial,consultation',
-            'type' => 'required|in:grant,investment,capital,service,platform',
+            'type' => 'required|in:program,investment,capital,service,platform',
 
             'notes' => 'nullable|string|max:5000',
         ]);

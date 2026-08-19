@@ -26,7 +26,7 @@ return new class extends Migration
 
             $table->enum('verification_type', ['mprv', 'mid_milestone'])->default('mprv');
 
-            // Grant owner decision — approve / reject / audit (NO voting, section 8)
+            // Program owner decision — approve / reject / audit (NO voting, section 8)
             $table->enum('decision', [
                 'pending',
                 'approved',
@@ -34,7 +34,7 @@ return new class extends Migration
                 'audit_requested',      // triggers PM assignment
             ])->default('pending');
 
-            $table->unsignedBigInteger('decided_by')->nullable();       // grant owner
+            $table->unsignedBigInteger('decided_by')->nullable();       // program owner
             $table->timestamp('decided_at')->nullable();
             $table->text('decision_notes')->nullable();
 
@@ -45,7 +45,7 @@ return new class extends Migration
             $table->text('audit_notes')->nullable();
 
             $table->foreign('milestone_id')
-                ->references('id')->on('grant_milestones')->onDelete('restrict');
+                ->references('id')->on('program_milestones')->onDelete('restrict');
             $table->foreign('submitted_by')
                 ->references('id')->on('users')->onDelete('restrict');
             $table->foreign('decided_by')

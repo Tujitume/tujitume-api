@@ -38,12 +38,12 @@ return new class extends Migration
             $table->text('description')->nullable();
 
             // 3-way visibility (section 10)
-            $table->tinyInteger('visible_to_grant_owner')->default(1);
+            $table->tinyInteger('visible_to_program_owner')->default(1);
             $table->tinyInteger('visible_to_business_owner')->default(1);
             $table->tinyInteger('visible_to_supplier')->default(0);     // opt-in for suppliers
 
             $table->foreign('milestone_id')
-                ->references('id')->on('grant_milestones')->onDelete('restrict');
+                ->references('id')->on('program_milestones')->onDelete('restrict');
             $table->foreign('uploaded_by')
                 ->references('id')->on('users')->onDelete('restrict');
 

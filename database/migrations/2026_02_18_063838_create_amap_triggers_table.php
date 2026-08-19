@@ -15,8 +15,8 @@ return new class extends Migration
             $table->id();
 
             // What is affected? (polymorphic)
-            $table->string('triggerable_type');           // Grant\Milestone, Business\Milestone, Service\M, User
-            $table->unsignedBigInteger('triggerable_id'); //Grant\Milestone id
+            $table->string('triggerable_type');           // Program\Milestone, Business\Milestone, Service\M, User
+            $table->unsignedBigInteger('triggerable_id'); //Program\Milestone id
 
             // What happened?
             $table->enum('trigger_type', [

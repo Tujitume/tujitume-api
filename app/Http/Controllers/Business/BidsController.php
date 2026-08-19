@@ -52,7 +52,7 @@ class BidsController extends Controller
         $this->balance = new BalanceService();
         $this->liprW2W = new LiprW2W();
         $this->convert = new CurrencyConverter();
-        $this->tujitume_lipr = Setting::where('key', 'tujitume_lipr_wallet')->first()->value;
+        $this->tujitume_lipr = Setting::where('key', 'tujitume_lipr_wallet')->first()?->value ?? null;
 
     }
 

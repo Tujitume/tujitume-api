@@ -29,7 +29,6 @@ class PreReleaseRmepController extends Controller
 {
     protected $milestoneLifeCycle;
     protected LiprW2W $liprW2W;
-    protected $emailService;
     protected $notification;
     protected $votingService;
     protected $Client;

@@ -53,35 +53,35 @@
         <h4>Affected Files:</h4>
         
         <div class="file-issue">
-            <strong>File:</strong> /React/src/components/Grants/screens/Capital-pitch/CapitalPitchWorkflow.jsx<br>
+            <strong>File:</strong> /React/src/components/Programs/screens/Capital-pitch/CapitalPitchWorkflow.jsx<br>
             <strong>Lines:</strong> 80-86<br>
             <strong>Issue:</strong> Unsanitized input passed to code execution methods<br>
             <strong>Fix Required:</strong> Sanitize all user inputs before processing
         </div>
 
         <div class="file-issue">
-            <strong>File:</strong> /React/src/components/Grants/Utils/Modals/useCapitalApplication.jsx<br>
+            <strong>File:</strong> /React/src/components/Programs/Utils/Modals/useCapitalApplication.jsx<br>
             <strong>Lines:</strong> 80-81<br>
             <strong>Issue:</strong> Dynamic code execution with user input<br>
             <strong>Fix Required:</strong> Replace eval() or similar functions with safer alternatives
         </div>
 
         <div class="file-issue">
-            <strong>File:</strong> /React/src/components/Grants/components/Grantshome.jsx<br>
+            <strong>File:</strong> /React/src/components/Programs/components/Programshome.jsx<br>
             <strong>Lines:</strong> 436-441<br>
-            <strong>Issue:</strong> Code injection vulnerability in grant processing<br>
+            <strong>Issue:</strong> Code injection vulnerability in program processing<br>
             <strong>Fix Required:</strong> Implement input validation and sanitization
         </div>
 
         <div class="file-issue">
-            <strong>File:</strong> /React/src/components/Grants/Utils/Modals/callme.jsx<br>
+            <strong>File:</strong> /React/src/components/Programs/Utils/Modals/callme.jsx<br>
             <strong>Lines:</strong> 814-819, 907-916<br>
             <strong>Issue:</strong> Multiple code injection points<br>
             <strong>Fix Required:</strong> Replace dynamic code execution with static alternatives
         </div>
 
         <div class="file-issue">
-            <strong>File:</strong> /React/src/components/Grants/Utils/Modals/hooks/useUserActivity.js<br>
+            <strong>File:</strong> /React/src/components/Programs/Utils/Modals/hooks/useUserActivity.js<br>
             <strong>Lines:</strong> 16-23, 32-37<br>
             <strong>Issue:</strong> User activity tracking with unsafe code execution<br>
             <strong>Fix Required:</strong> Use safe JSON parsing and validation
@@ -95,7 +95,7 @@
         </div>
 
         <div class="file-issue">
-            <strong>File:</strong> /React/src/components/Grants/Utils/Modals/FormFields/FileUpload.jsx<br>
+            <strong>File:</strong> /React/src/components/Programs/Utils/Modals/FormFields/FileUpload.jsx<br>
             <strong>Lines:</strong> 11-15<br>
             <strong>Issue:</strong> File upload with code execution vulnerability<br>
             <strong>Fix Required:</strong> Validate file types and sanitize file names

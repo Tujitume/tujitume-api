@@ -10,16 +10,16 @@ use App\Models\Business\Listing;
 use App\Models\Capital\CapitalMilestone;
 use App\Models\Capital\StartupPitches;
 use App\Models\Finance\LiprPayment;
-use App\Models\Grants\Disbursement;
-use App\Models\Grants\GrantApplication;
-use App\Models\Grants\GrantMilestone;
+use App\Models\Programs\Disbursement;
+use App\Models\Programs\ProgramApplication;
+use App\Models\Programs\ProgramMilestone;
 use App\Models\Milestones\Milestones;
 use App\Models\Misc\Setting;
 use App\Models\Services\ServiceBooking;
 use App\Models\Services\ServiceBookingMilestone;
 use App\Service\Balance\BalanceService;
 use App\Service\Balance\CurrencyConverter;
-use App\Service\LiprMpesa\GrantDisbursementService;
+use App\Service\LiprMpesa\ProgramDisbursementService;
 use App\Service\LiprMpesa\LiprAuthService;
 use App\Service\LiprMpesa\LiprW2W;
 use App\Service\Misc\ErrorLogService;
@@ -41,7 +41,7 @@ class CheckoutMpesaController extends Controller
     protected $convert;
     protected $tujitume_lipr;
     protected LiprW2W $liprW2W;
-    public function __construct(GrantDisbursementService $disbursementService)
+    public function __construct(ProgramDisbursementService $disbursementService)
     {
 
         parent::__construct();
@@ -49,7 +49,7 @@ class CheckoutMpesaController extends Controller
         $this->balance = new BalanceService();
         $this->liprW2W = new LiprW2W();
         $this->disbursementService = $disbursementService;
-        $this->tujitume_lipr = Setting::where('key', 'platform_lipr_wallet')->first()->value ?? null;
+        $this->tujitume_lipr = Setting::where('key', 'platform_lipr_wallet')->first()?->value ?? null;
     }
 
     public function auth()
@@ -75,7 +75,7 @@ class CheckoutMpesaController extends Controller
     {
         try {
 
-            if ($request->purpose === "grant_milestone_bulk") {
+            if ($request->purpose === "program_milestone_bulk") {
                 $request->validate([
                     'amount' => 'required|numeric',
                     'amountKes' => 'numeric',
@@ -103,7 +103,7 @@ class CheckoutMpesaController extends Controller
             $token = $this->auth();
             $destination_wallet_acc = null;
             $platform_wallet = Setting::where('key', 'platform_lipr_wallet')->value('value');
-            $tujitume_fee = (float) Setting::where('key', 'tujitume_fee')->first()->value;
+            $tujitume_fee = (float) (Setting::where('key', 'tujitume_fee')->first()?->value ?? 3.0);
             $rate = $converter->UsdToKes('USD');
 
             $callbackUrl = "https://tujitume.com/api/lipr-callback";
@@ -134,36 +134,36 @@ class CheckoutMpesaController extends Controller
                 $amount = round( ($bid->amount) * 0.75, 2); //75%
                 //$destination_wallet_acc = $platform_wallet;
             }
-            else if ($request->purpose === "grant_milestone")
+            else if ($request->purpose === "program_milestone")
             {
-                $milestone = GrantMilestone::where('id',$request->listing_id)
+                $milestone = ProgramMilestone::where('id',$request->listing_id)
                     ->with('application') // eager load the owner
                     ->firstOrFail();
                 $amount = $milestone->amount;
                 $callbackUrl = "https://tujitume.com/api/lipr-callback-grant-direct";
 
-                // Authorization: only grant owner can disburse
-                if ($milestone->application->grant_owner_id !== auth()->id()) {
+                // Authorization: only program owner can disburse
+                if ($milestone->application->program_owner_id !== auth()->id()) {
                     throw new \Exception('Unauthorized', 403);
                 }
             }
-            else if ($request->purpose === "grant_milestone_escrow")
+            else if ($request->purpose === "program_milestone_escrow")
             {
-                $milestone = GrantMilestone::where('id',$request->listing_id)
+                $milestone = ProgramMilestone::where('id',$request->listing_id)
                     ->with('application') // eager load the owner
                     ->firstOrFail();
                 $amount = $milestone->application->total_amount_requested ?? $milestone->application->awarded_amount;
                 $callbackUrl = "https://tujitume.com/api/lipr-callback-grant-escrow";
 
-                // Authorization: only grant owner can disburse
-                if ($milestone->application->grant_owner_id !== auth()->id()) {
+                // Authorization: only program owner can disburse
+                if ($milestone->application->program_owner_id !== auth()->id()) {
                     throw new \Exception('Unauthorized', 403);
                 }
             }
-            else if ($request->purpose === "grant_milestone_bulk")
+            else if ($request->purpose === "program_milestone_bulk")
             {
                 $pitch_ids = $request->listing_id;
-                $total_amount = GrantMilestone::whereIn('app_id', $pitch_ids)
+                $total_amount = ProgramMilestone::whereIn('app_id', $pitch_ids)
                     ->orderBy('id')->get()->groupBy('app_id')
                     ->map(fn($group) => $group->first()->amount)
                     ->sum();
@@ -186,8 +186,8 @@ class CheckoutMpesaController extends Controller
 
             if($request->purpose !== 'bids')
             {
-                if($request->purpose === "grant_milestone_bulk"
-                    || $request->purpose === "grant_milestone"
+                if($request->purpose === "program_milestone_bulk"
+                    || $request->purpose === "program_milestone"
                     || $request->purpose === "capital_milestone"){
                     $amountKes = round($amount * $rate, 0); // USD * KES_RATE
                 }
@@ -267,7 +267,7 @@ class CheckoutMpesaController extends Controller
 
 
     // SPECIAL BULK METHOD
-    public function grant_milestone_bulk(Request $request)
+    public function program_milestone_bulk(Request $request)
     {
         if( !Auth::check() ){
             return response()->json(['message' => 'Unauthorized!' ],401);
@@ -315,13 +315,13 @@ class CheckoutMpesaController extends Controller
 
                 foreach($pitch_ids as $pitch_id)
                 {
-                    $pitch = GrantApplication::with('grant')->find($pitch_id);
-                    $milestone = GrantMilestone::where('app_id',$pitch_id)->orderBy('id', 'asc')
+                    $pitch = ProgramApplication::with('program')->find($pitch_id);
+                    $milestone = ProgramMilestone::where('app_id',$pitch_id)->orderBy('id', 'asc')
                         ->lockForUpdate()->first();
 
                     if (!$pitch || !$milestone) continue;
 
-                    if ($pitch->grant_owner_id !== $user->id) {
+                    if ($pitch->program_owner_id !== $user->id) {
                         throw new \Exception('Unauthorized action.', 403);
                     }
 
@@ -330,10 +330,10 @@ class CheckoutMpesaController extends Controller
                         continue;
                     }
 
-                    $emails = User::whereIn('id', [$pitch->user_id, $pitch->grant_owner_id])
+                    $emails = User::whereIn('id', [$pitch->user_id, $pitch->program_owner_id])
                         ->pluck('email', 'id');
                     $sme_email = $emails[$pitch->user_id];
-                    $grant_owner_email = $emails[$pitch->grant_owner_id];
+                    $program_owner_email = $emails[$pitch->program_owner_id];
 
 
                     //L i p r  Release Transfer API from Tujitume to Sme wallet
@@ -343,7 +343,7 @@ class CheckoutMpesaController extends Controller
                     $amountKes = round($this->usdToKes * $amountToTransfer, 2);
 
                     $transfer = $this->liprW2W->send(
-                        $amountKes, $pitch->sme->lipr_wallet, $this->tujitume_lipr, 'Grant Bulk Milestone Disbursement'
+                        $amountKes, $pitch->sme->lipr_wallet, $this->tujitume_lipr, 'Program Bulk Milestone Disbursement'
                     );
 
                     if(!$transfer){
@@ -358,7 +358,7 @@ class CheckoutMpesaController extends Controller
                         'status' => 1,
                         'fund_released' => 1,
                     ]);
-                    $pitch->grant->decrement('available_amount', $milestone->amount);
+                    $pitch->program->decrement('available_amount', $milestone->amount);
 
                     //Update User Wallet
                     $this->balance->updateBalance($pitch->user_id, $amountToTransfer, 'lipr');
@@ -368,19 +368,19 @@ class CheckoutMpesaController extends Controller
 
                     try{
                         //N O T I
-                        $text = $milestone->title.' fund for '.$pitch->grant->grant_title.' has been released.';
-                        $this->notification->create($pitch->user_id,$pitch->grant->user_id,$text
-                            ,'grants-overview/grants/discover',' grant');
+                        $text = $milestone->title.' fund for '.$pitch->program->program_title.' has been released.';
+                        $this->notification->create($pitch->user_id,$pitch->program->user_id,$text
+                            ,'programs-overview/programs/discover',' program');
 
                         $info=[
-                            'grant'=>$pitch->grant->grant_title,
+                            'program'=>$pitch->program->program_title,
                             'amount'=>$milestone->amount,
                             'milestone_title' => $milestone->title
-                        ]; $recipients['to'] = [$grant_owner_email, $sme_email];
+                        ]; $recipients['to'] = [$program_owner_email, $sme_email];
 
-                        Mail::send('opportunities.grant_milestone', $info, function($msg) use ($recipients){
+                        Mail::send('opportunities.program_milestone', $info, function($msg) use ($recipients){
                             $msg->to($recipients['to']);
-                            $msg->subject(' Grant Milestone');
+                            $msg->subject(' Program Milestone');
                         });
                     }
                     catch (\Throwable $e) {
@@ -398,7 +398,7 @@ class CheckoutMpesaController extends Controller
             try{
 
                 $this->transaction->create(
-                    $user->id,'grant_milestone_bulk','lipr', $paymentExists->amount, $referenceId
+                    $user->id,'program_milestone_bulk','lipr', $paymentExists->amount, $referenceId
                 );
             }
             catch (\Exception $e){

@@ -13,8 +13,8 @@ return new class extends Migration
     {
         Schema::create('application_scores', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('application_id')->constrained('grant_applications')->onDelete('cascade');
-            $table->foreignId('round_id')->constrained('grant_rounds')->onDelete('cascade');
+            $table->foreignId('application_id')->constrained('program_applications')->onDelete('cascade');
+            $table->foreignId('round_id')->constrained('program_rounds')->onDelete('cascade');
             $table->foreignId('reviewer_id')->constrained('users')->onDelete('cascade');
 
             $table->json('criterion_scores'); // [{criterion_name, score, comment}]

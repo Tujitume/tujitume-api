@@ -13,7 +13,7 @@ return new class extends Migration
     {
         Schema::create('round_reviewers', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('round_id')->constrained('grant_rounds')->onDelete('cascade');
+            $table->foreignId('round_id')->constrained('program_rounds')->onDelete('cascade');
             $table->foreignId('user_id')->constrained()->onDelete('cascade');
             $table->enum('reviewer_type', ['internal', 'external'])->default('internal');
             $table->integer('max_apps_assigned')->nullable(); // For load balancing

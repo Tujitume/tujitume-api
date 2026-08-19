@@ -11,14 +11,14 @@ use App\Models\Business\Listing;
 use App\Models\Capital\CapitalMilestone;
 use App\Models\Capital\StartupPitches;
 use App\Models\Finance\LiprPayment;
-use App\Models\Grants\GrantMilestone;
+use App\Models\Programs\ProgramMilestone;
 use App\Models\Milestones\Milestones;
 use App\Models\Misc\Setting;
 use App\Models\Services\ServiceBooking;
 use App\Models\Services\ServiceBookingMilestone;
 use App\Service\Balance\BalanceService;
 use App\Service\Balance\CurrencyConverter;
-use App\Service\LiprMpesa\GrantDisbursementService;
+use App\Service\LiprMpesa\ProgramDisbursementService;
 use App\Service\LiprMpesa\LiprAuthService;
 use App\Service\LiprMpesa\LiprW2W;
 use App\Service\Misc\ErrorLogService;
@@ -33,7 +33,7 @@ use Illuminate\Validation\ValidationException;
 class MpesaPollingController extends Controller
 {
 
-    public function __construct(GrantDisbursementService $disbursementService)
+    public function __construct(ProgramDisbursementService $disbursementService)
     {
 
         parent::__construct();
@@ -41,7 +41,7 @@ class MpesaPollingController extends Controller
         $this->balance = new BalanceService();
         $this->liprW2W = new LiprW2W();
         $this->disbursementService = $disbursementService;
-        $this->tujitume_lipr = Setting::where('key', 'platform_lipr_wallet')->first()->value ?? null;
+        $this->tujitume_lipr = Setting::where('key', 'platform_lipr_wallet')->first()?->value ?? null;
     }
 
     public function auth()
@@ -629,7 +629,7 @@ class MpesaPollingController extends Controller
 
     // G R A N T S  &  C A P I TA L
 
-    public function grantDisbursementStatus(Request $request)
+    public function programDisbursementStatus(Request $request)
     {
         if (!Auth::check()) {
             return response()->json(['message' => 'Unauthorized!'], 401);
@@ -637,7 +637,7 @@ class MpesaPollingController extends Controller
 
         try {
             $request->validate([
-                'milestone_id' => 'required|numeric|exists:grant_milestones,id',
+                'milestone_id' => 'required|numeric|exists:program_milestones,id',
                 'referenceId'  => 'required',
             ]);
 
@@ -661,7 +661,7 @@ class MpesaPollingController extends Controller
                 ], 200);
             }
 
-            $milestone = GrantMilestone::find($request->milestone_id);
+            $milestone = ProgramMilestone::find($request->milestone_id);
 
             if (!$milestone->application->escrow_funded) {
                 return response()->json(['status' => 'pending'], 200);

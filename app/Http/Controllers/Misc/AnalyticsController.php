@@ -4,7 +4,7 @@ namespace App\Http\Controllers\Misc;
 
 use App\Http\Controllers\Controller;
 use App\Models\Capital\StartupPitches;
-use App\Models\Grants\GrantApplication;
+use App\Models\Programs\ProgramApplication;
 use App\Service\Misc\ErrorLogService;
 use App\Service\Notification\NotificationService;
 use DateTime;
@@ -28,10 +28,10 @@ class AnalyticsController extends Controller
 
             $user = $this->get_role();
             if($user->role == 'editor' || $user->role == 'viewer' || $user->role == 'admin'){
-                $user_id = $user->grant_owner_id;
+                $user_id = $user->program_owner_id;
             }
 
-            $pitches = GrantApplication::where('grant_owner_id',$user_id)->get();
+            $pitches = ProgramApplication::where('program_owner_id',$user_id)->get();
             $pitches_funded = $pitches->where('status', 1)->count();
             $pitches_count = $pitches->count();
             //Top Matching StartUps (10)
@@ -58,13 +58,13 @@ class AnalyticsController extends Controller
             $monthData = [];
 
             //Performance Last 6 Months
-            $applicationsByMonth = GrantApplication::
+            $applicationsByMonth = ProgramApplication::
             selectRaw('
                 MONTH(created_at) as month,
                 COUNT(*) as total,
                 SUM(CASE WHEN match_score >= 60 THEN 1 ELSE 0 END) as passed
             ')
-                ->where('grant_owner_id', $user_id)
+                ->where('program_owner_id', $user_id)
                 ->groupBy('month')->get();
 
             foreach ($applicationsByMonth as $row) {
@@ -74,7 +74,7 @@ class AnalyticsController extends Controller
                 'match' => $row->passed,
                 'conversion' => round(($row->passed/$row->total) * 100)
                 ];
-                //$matches = GrantApplication::select('score')->where('score', '>=', 60)->get();
+                //$matches = ProgramApplication::select('score')->where('score', '>=', 60)->get();
             }
 
             foreach ($pitches as $pitch){
@@ -204,7 +204,7 @@ class AnalyticsController extends Controller
             'match' => $row->passed,
             'conversion' => round(($row->passed/$row->total) * 100)
             ];
-            //$matches = GrantApplication::select('score')->where('score', '>=', 60)->get();
+            //$matches = ProgramApplication::select('score')->where('score', '>=', 60)->get();
             }
 
             foreach ($pitches as $pitch){
@@ -277,9 +277,9 @@ class AnalyticsController extends Controller
 
     public function get_role()
     {
-        $user = Auth::user()->load('grant_profile.role');
-        $user->role = $user->grant_profile?->role?->name ?? 'super-admin';
-        $user->grant_owner_id = $user->grant_profile?->grant_owner_id;
+        $user = Auth::user()->load('program_profile.role');
+        $user->role = $user->program_profile?->role?->name ?? 'super-admin';
+        $user->program_owner_id = $user->program_profile?->program_owner_id;
         return $user;
     }
 

@@ -9,14 +9,14 @@ use App\Models\Business\Listing;
 use App\Models\Capital\CapitalProfile;
 use App\Models\Communication\Messages;
 use App\Models\Finance\BalanceLog;
-use App\Models\Grants\GrantProfile;
+use App\Models\Programs\ProgramProfile;
 use App\Models\Services\ServiceMessages;
 use App\Models\Services\Services;
 use App\Models\Shared\ErrorLog;
 
 use App\Models\Capital\CapitalOffer;
 use App\Models\Finance\Transactions;
-use App\Models\Grants\Grant;
+use App\Models\Programs\Program;
 use App\Models\Milestones\Dispute;
 use App\Models\Misc\Event;
 use App\Models\Misc\Prospects;
@@ -220,23 +220,23 @@ class AdminController extends Controller
 
             }
             else if($type == 2){
-                // Delete all Grant owner files & Grant profile
-                $grant_pro = GrantProfile::where('user_id', $id)->first();
-                if($grant_pro && $grant_pro->document){
-                    $filePath = public_path($grant_pro->document);
+                // Delete all Program owner files & Program profile
+                $program_pro = ProgramProfile::where('user_id', $id)->first();
+                if($program_pro && $program_pro->document){
+                    $filePath = public_path($program_pro->document);
                     if (file_exists($filePath)) {
                         unlink($filePath);
                     }
                 }
-                $grant_pro->delete();
+                $program_pro->delete();
 
-                $grants = Grant::where('user_id', $id)->get();
-                foreach ($grants as $grant) {
-                    $filePath = public_path($grant->grant_brief_pdf);
+                $programs = Program::where('user_id', $id)->get();
+                foreach ($programs as $program) {
+                    $filePath = public_path($program->program_brief_pdf);
                     if (file_exists($filePath)) {
                         unlink($filePath);
                     }
-                    $grant->delete();
+                    $program->delete();
                 }
 
                 ServiceBooking::where('booker_id', $id)->delete();
@@ -375,11 +375,11 @@ class AdminController extends Controller
         return view('admin.transactions', compact('transactions'));
     }
 
-    // ==================== Grants / Capitals / Prospects ====================
-    public function grants()
+    // ==================== Programs / Capitals / Prospects ====================
+    public function programs()
     {
-        $grants = Grant::latest()->get();
-        return view('admin.grant.index', compact('grants'));
+        $programs = Program::latest()->get();
+        return view('admin.program.index', compact('programs'));
     }
 
     public function capitals()

@@ -18,11 +18,11 @@ Route::post('/lipr-callback', [MpesaPollingController::class,'callback']);
 Route::post('/stripe-callback', [CheckoutStripeController::class, 'callback']);
 
 
-//grants
-Route::post('/lipr-callback-grant-escrow', [MpesaCallbackController::class,'callbackGrantEscrow']);
+//programs
+Route::post('/lipr-callback-program-escrow', [MpesaCallbackController::class,'callbackProgramEscrow']);
 
-Route::post('/lipr-callback-grant-direct', [MpesaCallbackController::class,'callbackGrantDirectDisburse']);
-Route::post('/lipr-callback-grant-supplier', [MpesaCallbackController::class,'callbackForGrantSupplier']);
+Route::post('/lipr-callback-program-direct', [MpesaCallbackController::class,'callbackProgramDirectDisburse']);
+Route::post('/lipr-callback-program-supplier', [MpesaCallbackController::class,'callbackForProgramSupplier']);
 
 // PUBLIC ROUTES (No Auth Required)
 // =============================================================
@@ -49,8 +49,8 @@ Route::middleware(['auth:sanctum', 'extend-token', 'throttle:api'])->group(funct
     // Services
     require __DIR__ . '/api/services.php';
 
-    // Grants
-    require __DIR__ . '/api/grants.php';
+    // Programs
+    require __DIR__ . '/api/programs.php';
 
     // Capital
     require __DIR__ . '/api/capital.php';

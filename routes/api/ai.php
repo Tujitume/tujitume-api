@@ -3,7 +3,7 @@
 use App\Http\Controllers\Misc\AiController;
 
 Route::prefix('/ai')->group(function(){
-    //Grant
+    //Program
     Route::get('investor/listings', [AiController::class, 'index']);
     Route::get('investor/services',[AiController::class,'index_s']);
     Route::get('business/{business_id}/services',[AiController::class,'index_ls']);

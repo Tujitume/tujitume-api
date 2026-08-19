@@ -3,7 +3,7 @@
 
 use App\Http\Controllers\Capital\CapitalController;
 use App\Http\Controllers\CheckoutStripeController;
-use App\Http\Controllers\Grant\GrantServiceController;
+use App\Http\Controllers\Program\ProgramServiceController;
 use App\Http\Controllers\Misc\AnalyticsController;
 use App\Http\Controllers\Misc\MatchController;
 
@@ -30,8 +30,8 @@ Route::prefix('/capital')->middleware(['capital'])->group(function(){
     Route::get('analytics', [AnalyticsController::class, 'index_capital']);
 
 
-    Route::get('grant-writing-services', [GrantServiceController::class, 'grantWritingServices']);
-    Route::get('pitch-coaching-services', [GrantServiceController::class, 'pitchCoachingServices']);
+    Route::get('program-writing-services', [ProgramServiceController::class, 'programWritingServices']);
+    Route::get('pitch-coaching-services', [ProgramServiceController::class, 'pitchCoachingServices']);
     Route::get('store-watchlist/{pitch_id}', [CapitalController::class, 'store_watchlist']);
     Route::get('get-watchlist', [CapitalController::class, 'get_watchlist']);
     Route::post('update-profile', [CapitalController::class, 'update_profile']);

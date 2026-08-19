@@ -13,8 +13,8 @@ return new class extends Migration
     {
         Schema::create('m_e_checkpoints', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('app_id')->constrained('grant_applications')->onDelete('cascade');
-            $table->foreignId('grant_id')->constrained('grants')->onDelete('cascade');
+            $table->foreignId('app_id')->constrained('program_applications')->onDelete('cascade');
+            $table->foreignId('program_id')->constrained('programs')->onDelete('cascade');
             $table->string('checkpoint_name');
             $table->enum('type', ['monitoring', 'reporting']);
             $table->date('due_date')->nullable();

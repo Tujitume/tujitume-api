@@ -33,7 +33,7 @@ class AmapFlag extends Model
     // ─────────────────────────────────────────────────────────
 
     // Polymorphic — what is flagged?
-    // Can be: User, Grant, GrantMilestone, BusinessMilestone, etc.
+    // Can be: User, Program, ProgramMilestone, BusinessMilestone, etc.
     public function flaggable()
     {
         return $this->morphTo();

@@ -15,7 +15,7 @@ return new class extends Migration
             $table->id();
 
             $table->unsignedBigInteger('milestone_id');
-            $table->unsignedBigInteger('wallet_id')->nullable();                    // which grant wallet
+            $table->unsignedBigInteger('wallet_id')->nullable();                    // which program wallet
             $table->unsignedBigInteger('supplier_id')->nullable();
             $table->unsignedBigInteger('budget_item_id')->nullable();
 
@@ -58,12 +58,12 @@ return new class extends Migration
 
             // Exception justification (section 9.3 — beneficiary payment)
             $table->text('beneficiary_payment_justification')->nullable();
-            $table->unsignedBigInteger('authorized_by')->nullable();    // grant owner who approved exception
+            $table->unsignedBigInteger('authorized_by')->nullable();    // program owner who approved exception
 
             $table->foreign('milestone_id')
-                ->references('id')->on('grant_milestones')->onDelete('restrict');
+                ->references('id')->on('program_milestones')->onDelete('restrict');
             $table->foreign('wallet_id')
-                ->references('id')->on('grant_wallets')->onDelete('restrict');
+                ->references('id')->on('program_wallets')->onDelete('restrict');
             $table->foreign('supplier_id')
                 ->references('id')->on('milestone_suppliers')->onDelete('set null');
             $table->foreign('authorized_by')

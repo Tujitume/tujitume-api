@@ -4,11 +4,11 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Grant status
+    | Program status
     |--------------------------------------------------------------------------
     */
 
-    'grant-status' => [
+    'program-status' => [
         [
             'value' => 'draft',
             'color' => 'info',
@@ -36,11 +36,11 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Grant Round status
+    | Program Round status
     |--------------------------------------------------------------------------
     */
 
-    'grant-round-status' => [
+    'program-round-status' => [
         [
             'value' => 'draft',
             'color' => 'info',
@@ -68,11 +68,11 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Grant Application status
+    | Program Application status
     |--------------------------------------------------------------------------
     */
 
-    'grant-application-status' => [
+    'program-application-status' => [
         [
             'value' => 'pending',
             'label' => 'Pending',
@@ -102,11 +102,11 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Grant Application Round status
+    | Program Application Round status
     |--------------------------------------------------------------------------
     */
 
-    'grant-application-round-status' => [
+    'program-application-round-status' => [
         [
             'value' => 'draft',
             'color' => 'info',
@@ -140,11 +140,11 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Grant Milestone status
+    | Program Milestone status
     |--------------------------------------------------------------------------
     */
 
-    'grant-milestone-status' => [
+    'program-milestone-status' => [
         [
             'value' => 'pending',
             'label' => 'Pending',
@@ -310,11 +310,11 @@ return [
 
     /*
     |--------------------------------------------------------------------------
-    | Grant Wallet status
+    | Program Wallet status
     |--------------------------------------------------------------------------
     */
 
-    'grant-wallet-status' => [
+    'program-wallet-status' => [
         [
             'value' => 'inactive',
             'label' => 'Inactive',

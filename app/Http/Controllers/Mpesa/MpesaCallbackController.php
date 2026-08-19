@@ -4,11 +4,11 @@ namespace App\Http\Controllers\Mpesa;
 
 use App\Http\Controllers\Controller;
 use App\Models\Finance\LiprPayment;
-use App\Models\Grants\GrantMilestone;
+use App\Models\Programs\ProgramMilestone;
 use App\Models\Misc\Setting;
 use App\Service\Balance\BalanceService;
 use App\Service\Balance\CurrencyConverter;
-use App\Service\LiprMpesa\GrantDisbursementService;
+use App\Service\LiprMpesa\ProgramDisbursementService;
 use App\Service\LiprMpesa\LiprAuthService;
 use App\Service\LiprMpesa\LiprW2W;
 use App\Service\Misc\ErrorLogService;
@@ -19,7 +19,7 @@ use Illuminate\Support\Facades\Log;
 class MpesaCallbackController extends Controller
 {
 
-    public function __construct(GrantDisbursementService $disbursementService)
+    public function __construct(ProgramDisbursementService $disbursementService)
     {
 
         parent::__construct();
@@ -27,7 +27,7 @@ class MpesaCallbackController extends Controller
         $this->balance = new BalanceService();
         $this->liprW2W = new LiprW2W();
         $this->disbursementService = $disbursementService;
-        $this->tujitume_lipr = Setting::where('key', 'platform_lipr_wallet')->first()->value ?? null;
+        $this->tujitume_lipr = Setting::where('key', 'platform_lipr_wallet')->first()?->value ?? null;
     }
 
     public function auth()
@@ -106,10 +106,10 @@ class MpesaCallbackController extends Controller
             ], 500);
         }
     }
-    public function callbackGrantEscrow(Request $request, CurrencyConverter $convert)
+    public function callbackProgramEscrow(Request $request, CurrencyConverter $convert)
     {
         try {
-            Log::info('LIPR GRANT CALLBACK', [
+            Log::info('LIPR PROGRAM CALLBACK', [
                 'payload' => $request->all(),
                 'raw'     => $request->getContent(),
             ]);
@@ -149,14 +149,14 @@ class MpesaCallbackController extends Controller
                 return response()->json(['message' => 'Callback received'], 200);
             }
 
-            $milestone = GrantMilestone::findOrFail($listing_id);
+            $milestone = ProgramMilestone::findOrFail($listing_id);
 
             // check duplicate callback
             $existingCompleted = LiprPayment::where('reference_id', $referenceId)
                 ->where('status', 'completed')->exists();
 
             if ($existingCompleted || $milestone->fund_release_status !== 'approved') {
-                Log::info('LIPR GRANT CALLBACK: Already processed', ['reference_id' => $referenceId]);
+                Log::info('LIPR PROGRAM CALLBACK: Already processed', ['reference_id' => $referenceId]);
                 return response()->json(['message' => 'Callback received'], 200);
             }
 
@@ -169,10 +169,10 @@ class MpesaCallbackController extends Controller
             ]);
 
             // Notify GO that funds are in escrow
-//            $this->grantNotification->send('disbursement.escrow_funded', [
-//                $application->grant->owner
+//            $this->programNotification->send('disbursement.escrow_funded', [
+//                $application->program->owner
 //            ], [
-//                'grant_title' => $application->grant->grant_title,
+//                'program_title' => $application->program->program_title,
 //                'amount'      => $application->total_amount_requested,
 //            ]);
 
@@ -185,10 +185,10 @@ class MpesaCallbackController extends Controller
     }
 
 
-    public function callbackGrantDirectDisburse(Request $request, CurrencyConverter $convert)
+    public function callbackProgramDirectDisburse(Request $request, CurrencyConverter $convert)
     {
         try {
-            Log::info('LIPR GRANT CALLBACK', [
+            Log::info('LIPR PROGRAM CALLBACK', [
                 'payload' => $request->all(),
                 'raw'     => $request->getContent(),
             ]);
@@ -228,14 +228,14 @@ class MpesaCallbackController extends Controller
                 return response()->json(['message' => 'Callback received'], 200);
             }
 
-            $milestone = GrantMilestone::findOrFail($listing_id);
+            $milestone = ProgramMilestone::findOrFail($listing_id);
 
             // check duplicate callback
             $existingCompleted = LiprPayment::where('reference_id', $referenceId)
                 ->where('status', 'completed')->exists();
 
             if ($existingCompleted || $milestone->fund_release_status !== 'approved') {
-                Log::info('LIPR GRANT CALLBACK: Already processed', ['reference_id' => $referenceId]);
+                Log::info('LIPR PROGRAM CALLBACK: Already processed', ['reference_id' => $referenceId]);
                 return response()->json(['message' => 'Callback received'], 200);
             }
 
@@ -251,7 +251,7 @@ class MpesaCallbackController extends Controller
             $supplier  = $milestone->suppliers()->first();
             $pitch     = $milestone->application;
 
-            $pitch->grant->decrement('available_amount', $milestone->amount);
+            $pitch->program->decrement('available_amount', $milestone->amount);
 
             if (!$supplier) {
                 throw new \Exception('Supplier not found.', 500);
@@ -300,8 +300,8 @@ class MpesaCallbackController extends Controller
                 ]);
 
                 // Transactions
-                $this->transaction->create($pitch->grant_owner_id, 'grant_milestone', 'lipr', $payment->amount, $referenceId, $pitch->user_id);
-                $this->transaction->create($pitch->user_id, 'grant_milestone', 'lipr', $payment->amount, $referenceId, $pitch->user_id);
+                $this->transaction->create($pitch->program_owner_id, 'program_milestone', 'lipr', $payment->amount, $referenceId, $pitch->user_id);
+                $this->transaction->create($pitch->user_id, 'program_milestone', 'lipr', $payment->amount, $referenceId, $pitch->user_id);
 
                 // Balance update for direct_to_applicant
                 if ($supplier->payment_route == 'direct_to_applicant') {
@@ -310,9 +310,9 @@ class MpesaCallbackController extends Controller
             });
 
             // Notify
-            $this->grantNotification->send('disbursement.created', [
+            $this->programNotification->send('disbursement.created', [
                 $pitch->user,
-                $pitch->grant->owner,
+                $pitch->program->owner,
             ], [
                 'amount'         => $milestone->amount,
                 'supplier_name'  => $supplier->supplierDirectory->legal_name,
@@ -328,10 +328,10 @@ class MpesaCallbackController extends Controller
     }
 
 
-    public function callbackForGrantSupplier(Request $request, CurrencyConverter $convert)
+    public function callbackForProgramSupplier(Request $request, CurrencyConverter $convert)
     {
         try {
-            Log::info('LIPR GRANT SUPPLIER CALLBACK', [
+            Log::info('LIPR PROGRAM SUPPLIER CALLBACK', [
                 'payload' => $request->all(),
                 'raw'     => $request->getContent(),
             ]);
@@ -359,10 +359,10 @@ class MpesaCallbackController extends Controller
                 'amount_usd'     => $convert->KesToUsd() * $amount,
             ]);
 
-            $milestone   = GrantMilestone::findOrFail($listing_id);
+            $milestone   = ProgramMilestone::findOrFail($listing_id);
 
             if ($milestone->fund_released || $milestone->fund_release_status === 'released') {
-                Log::info('LIPR GRANT SUPPLIER CALLBACK: Already processed', ['reference_id' => $referenceId]);
+                Log::info('LIPR PROGRAM SUPPLIER CALLBACK: Already processed', ['reference_id' => $referenceId]);
                 return response()->json(['message' => 'Callback received'], 200);
             }
 
@@ -386,8 +386,8 @@ class MpesaCallbackController extends Controller
                         "supplier_id" => $supplier?->id,
                     ]);
 
-                    // Deduct from grant wallet
-                    $wallet = $pitch->grant->wallet;
+                    // Deduct from program wallet
+                    $wallet = $pitch->program->wallet;
 //                    $wallet->update([
 //                        'total_reserved'  => $wallet->total_reserved - $milestone->amount,
 //                        'total_disbursed' => $wallet->total_disbursed + $milestone->amount,
@@ -395,9 +395,9 @@ class MpesaCallbackController extends Controller
                 });
 
                 // Notify
-                $this->grantNotification->send('disbursement.completed', [
+                $this->programNotification->send('disbursement.completed', [
                     $pitch->user,
-                    $pitch->grant->owner,
+                    $pitch->program->owner,
                 ], [
                     'amount'        => $milestone->amount,
                     'supplier_name' => $supplier?->supplierDirectory->legal_name,
@@ -406,8 +406,8 @@ class MpesaCallbackController extends Controller
                 // supplier invoice
                 $token = hash('sha256', $disbursement->id . $disbursement->created_at . config('app.key'));
 
-                $this->grantNotification->send('disbursement.supplier_confirmed', [$supplier->supplierDirectory], [
-                    'grant_title'       => $pitch->grant->grant_title,
+                $this->programNotification->send('disbursement.supplier_confirmed', [$supplier->supplierDirectory], [
+                    'program_title'       => $pitch->program->program_title,
                     'amount'            => $milestone->amount,
                     'payment_reference' => $disbursement->payment_reference,
                     'disbursement_id'   => $disbursement->id,
@@ -421,8 +421,8 @@ class MpesaCallbackController extends Controller
                 $disbursement?->update(['status' => 'failed']);
 
                 // Notify owner
-                $this->grantNotification->send('disbursement.failed', [
-                    $pitch->grant->owner,
+                $this->programNotification->send('disbursement.failed', [
+                    $pitch->program->owner,
                 ], [
                     'amount'        => $milestone->amount,
                     'supplier_name' => $supplier?->supplierDirectory->legal_name,

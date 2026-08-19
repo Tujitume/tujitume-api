@@ -2,18 +2,18 @@
 namespace App\Service\AiScore;
 use App\Models\Business\Listing;
 use App\Models\Capital\CapitalOffer;
-use App\Models\Grants\Grant;
-use App\Models\Grants\Rounds\GrantRound;
+use App\Models\Programs\Program;
+use App\Models\Programs\Rounds\ProgramRound;
 use App\Service\Misc\ErrorLogService;
 
 class MatchScore
 {
-    public function grant($request, $grant_id)
+    public function program($request, $program_id)
     {
         $now=date("Y-m-d H:i"); $date=date('d M, h:i a',strtotime($now));
-        $grant = Grant::where('id',$grant_id)->first();
+        $program = Program::where('id',$program_id)->first();
         $business = Listing::where('id',$request->business_id)->first();
-        //$pitch = GrantApplication::with('listing')->where('id',$pitch_id)->first();
+        //$pitch = ProgramApplication::with('listing')->where('id',$pitch_id)->first();
         $score = 0;
         try{
             // Input data
@@ -30,14 +30,14 @@ class MatchScore
             ];
 
             $org = [
-                'preferred_sectors' => $grant->grant_focus,
-                'target_regions' => $grant->regions,
-                'target_stages' => $grant->startup_stage_focus,
-                'revenue' => $grant->funding_per_business,
+                'preferred_sectors' => $program->program_focus,
+                'target_regions' => $program->regions,
+                'target_stages' => $program->startup_stage_focus,
+                'revenue' => $program->funding_per_business,
                 'team_size' => $request->evaluation_criteria,
-                'impact_score' => $grant->social_impact_areas,
+                'impact_score' => $program->social_impact_areas,
                 'milestones_achieved' => true,
-                'documents_submitted' => $grant->grant_brief_pdf != null ? true : false,
+                'documents_submitted' => $program->program_brief_pdf != null ? true : false,
             ];
 
             // Sector Alignment (30%)
@@ -94,7 +94,7 @@ class MatchScore
             $score += $milestoneScore * 0.10;
 
             // Document Completeness (5%)
-            $round1 = GrantRound::where('grant_id', $grant->id)->where('round_number', 1)->first();
+            $round1 = ProgramRound::where('program_id', $program->id)->where('round_number', 1)->first();
             $requiredDocs = collect($round1?->required_documents ?? [])
                 ->map(fn($d) => is_array($d) ? ($d['label'] ?? '') : $d)
                 ->filter()->values()->toArray();
@@ -121,7 +121,7 @@ class MatchScore
 
             $bo = 0;
             foreach ($bonusInput ?? [] as $bonus) {
-                if (in_array($bonus, $grant->bonus_points ?? [])) {
+                if (in_array($bonus, $program->bonus_points ?? [])) {
                     $bo += 5;
                 }
             }

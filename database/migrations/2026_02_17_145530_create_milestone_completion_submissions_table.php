@@ -23,7 +23,7 @@ return new class extends Migration
             $table->text('delivery_notes')->nullable();
             $table->json('proof_files')->nullable();                    // array of deal_room_document IDs
 
-            // Grant owner decision
+            // Program owner decision
             $table->enum('decision', [
                 'pending',
                 'approved',             // milestone complete, next can begin
@@ -36,7 +36,7 @@ return new class extends Migration
             $table->text('decision_notes')->nullable();
 
             $table->foreign('milestone_id')
-                ->references('id')->on('grant_milestones')->onDelete('restrict');
+                ->references('id')->on('program_milestones')->onDelete('restrict');
             $table->foreign('submitted_by')
                 ->references('id')->on('users')->onDelete('restrict');
             $table->foreign('decided_by')

@@ -1,6 +1,6 @@
 <?php
 return [
-    'grant' => [
+    'program' => [
         'draft' => 'info',
         'published' => 'warning',
         'open' => 'success',
@@ -8,7 +8,7 @@ return [
         'awarded' => 'success',
     ],
 
-    'grant_round' => [
+    'program_round' => [
         'draft'     => 'info',
         'published' => 'warning',
         'in_review' => 'warning',
@@ -16,7 +16,7 @@ return [
         'finalized' => 'success',
     ],
 
-    'grant_application' => [
+    'program_application' => [
         'pending'   => 'info',
         'approved'  => 'success',
         'rejected'  => 'danger',
@@ -24,7 +24,7 @@ return [
         'completed' => 'success',
     ],
 
-    'grant_application_round' => [
+    'program_application_round' => [
         'draft'        => 'info',
         'submitted'    => 'info',
         'under_review' => 'warning',
@@ -33,7 +33,7 @@ return [
         'not_selected' => 'danger',
     ],
 
-    'grant_milestone' => [
+    'program_milestone' => [
         'pending'     => 'info',
         'submitted'   => 'warning',
         'approved'    => 'success',
@@ -76,14 +76,14 @@ return [
         'rejected' => 'danger',
     ],
 
-    'funding_setup' => [                 // funding_setup_status on grant_applications
+    'funding_setup' => [                 // funding_setup_status on program_applications
         'not_started'     => 'info',
         'in_progress'     => 'warning',
         'awaiting_review' => 'warning',
         'approved'        => 'success',
     ],
 
-    'grant_wallet' => [
+    'program_wallet' => [
         'inactive' => 'danger',
         'active'   => 'success',
     ],

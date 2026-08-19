@@ -31,7 +31,7 @@ class AmapTrigger extends Model
     // ─────────────────────────────────────────────────────────
 
     // Polymorphic — what triggered AMAP?
-    // Can be: Grant, GrantApplication, GrantMilestone, BusinessMilestone, User, etc.
+    // Can be: Program, ProgramApplication, ProgramMilestone, BusinessMilestone, User, etc.
     public function triggerable()
     {
         return $this->morphTo();

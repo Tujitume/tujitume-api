@@ -13,7 +13,7 @@ return new class extends Migration
     {
         Schema::create('milestone_pre_agreements', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('milestone_id')->constrained('grant_milestones')->onDelete('cascade');
+            $table->foreignId('milestone_id')->constrained('program_milestones')->onDelete('cascade');
             $table->enum('verification_type', ['mprv', 'mid_milestone', 'final_approval']);
             $table->enum('status', ['pending', 'agreed', 'rejected', 'final_rejected'])->default('pending');
             $table->unsignedTinyInteger('rejection_count')->default(0);

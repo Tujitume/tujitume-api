@@ -52,7 +52,7 @@ class LikeController extends Controller
     {
         try {
             $request->validate([
-                'type' => 'required|in:listing,service,grant,capital'
+                'type' => 'required|in:listing,service,program,capital'
             ]);
             $listing_id = $request->listing_id;
             $type = $request->type;

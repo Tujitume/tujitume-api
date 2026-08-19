@@ -29,8 +29,8 @@ return new class extends Migration
                 'investment_awaiting',
                 'service_fee',
                 'service_milestone',
-                'grant_milestone',
-                'grant_milestone_bulk',
+                'program_milestone',
+                'program_milestone_bulk',
                 'capital_milestone',
                 'subscription',
                 'refund'

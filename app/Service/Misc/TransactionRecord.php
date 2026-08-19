@@ -9,7 +9,7 @@ class TransactionRecord
     public function create($user_id, $type, $method, $gross, $reference_id = null, $recipient_id = null, $status = 'settled' )
     {
         $user = Auth::user();
-        $fee = Setting::where('key', 'tujitume_fee')->first()->value;
+        $fee = Setting::where('key', 'tujitume_fee')->first()?->value ?? 0;
 
         if($type == 'withdraw' && ( $method == 'lipr-mobile' || $method == 'lipr-paybill' || $method == 'lipr-till') ){
             $fee_amount = 0;
@@ -45,7 +45,7 @@ class TransactionRecord
             $direction = 'debit';
         }
         // role-based exceptions
-        elseif (in_array($type, ['capital_milestone', 'grant_milestone', 'grant_milestone_bulk'])) {
+        elseif (in_array($type, ['capital_milestone', 'program_milestone', 'program_milestone_bulk'])) {
             if(!Auth::check()){
                 $direction = ($user_id == $recipient_id) ? 'credit' : 'debit';
             }
@@ -87,8 +87,8 @@ class TransactionRecord
 //        'service_fee',
         //'service_milestone',
         //'business_milestone',
-//        'grant_milestone',
-//        'grant_milestone_bulk',
+//        'program_milestone',
+//        'program_milestone_bulk',
 //        'capital_milestone',
 //        'refund'
           //'subscription'

@@ -1,7 +1,7 @@
 <?php
 namespace App\Service\LiprMpesa;
 
-use App\Models\Grants\Disbursement;
+use App\Models\Programs\Disbursement;
 
 class LiprW2W
 {
@@ -35,7 +35,7 @@ class LiprW2W
             'payment_method' => 'mpesa_mobile',
             'currency' => 'KES',
             'status' => 'pending',
-            'authorized_by' => $milestone->application->grant_owner_id,
+            'authorized_by' => $milestone->application->program_owner_id,
         ]);
 
         $liprAuth = new LiprAuthService();

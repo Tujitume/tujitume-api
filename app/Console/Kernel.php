@@ -18,7 +18,7 @@ class Kernel extends ConsoleKernel
         $schedule->command('release:service_milestone_payment')->hourly();
         $schedule->command('send:bid_approval_reminder')->hourly();
 
-        $schedule->command('update:grant-status')->daily();
+        $schedule->command('update:program-status')->daily();
 
     }
 

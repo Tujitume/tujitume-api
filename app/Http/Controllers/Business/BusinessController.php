@@ -5,7 +5,7 @@ namespace App\Http\Controllers\Business;
 use App\Http\Controllers\Controller;
 use App\Models\Business\BusinessDocs;
 use App\Models\Capital\CapitalOffer;
-use App\Models\Grants\Grant;
+use App\Models\Programs\Program;
 use App\Service\AI\InvestorPersonalizedListing;
 use Illuminate\Http\Request;
 use App\Models\Auth\User;
@@ -78,18 +78,18 @@ class BusinessController extends Controller
                     ->all();
             }
 
-            $grants   = Grant::withCount('liked')->where('visible', 1)->latest()->get();
+            $programs   = Program::withCount('liked')->where('visible', 1)->latest()->get();
             $capitals = CapitalOffer::withCount('liked')->where('visible', 1)->latest()->get();
 
             if ($userId) {
-                $grants->each(fn($g) => $g->liked = $g->liked()->where('user_id', $userId)->exists());
+                $programs->each(fn($g) => $g->liked = $g->liked()->where('user_id', $userId)->exists());
                 $capitals->each(fn($c) => $c->liked = $c->liked()->where('user_id', $userId)->exists());
             }
 
             return response()->json([
                 'score-data' => $topListings,
                 'data'       => $results,
-                'grants'     => $grants,
+                'programs'     => $programs,
                 'capitals'   => $capitals,
             ], 200);
 

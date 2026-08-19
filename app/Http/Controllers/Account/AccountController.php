@@ -14,8 +14,8 @@ use App\Models\Communication\Messages;
 use App\Models\Finance\BalanceLog;
 use App\Models\Finance\LiprPayment;
 use App\Models\Finance\Transactions;
-use App\Models\Grants\Grant;
-use App\Models\Grants\GrantProfile;
+use App\Models\Programs\Program;
+use App\Models\Programs\ProgramProfile;
 use App\Models\Misc\Setting;
 use App\Models\Services\ServiceBooking;
 use App\Models\Services\ServiceMessages;
@@ -66,10 +66,10 @@ class AccountController extends Controller
 
             //Role User check
             if($user->user_type_id == 2){
-                $user->load('grant_profile.role');
-                $role = $user->grant_profile?->role?->name ?? null;
+                $user->load('program_profile.role');
+                $role = $user->program_profile?->role?->name ?? null;
                 if($role){
-                    $owner_id = $user->grant_profile?->grant_owner_id;
+                    $owner_id = $user->program_profile?->program_owner_id;
                     $owner = User::findOrFail($owner_id);
                     $userBalance = $owner->balance?->balance ?? 0;
 
@@ -136,9 +136,9 @@ class AccountController extends Controller
             $user_id = $user->id;
 
             if($user->user_type_id == 2){
-                $role = $user->grant_profile?->role?->name;
+                $role = $user->program_profile?->role?->name;
                 if($role){
-                    $user_id = $user->grant_profile?->grant_owner_id;
+                    $user_id = $user->program_profile?->program_owner_id;
                 }
             }
             else if($user->user_type_id == 3){
@@ -250,23 +250,23 @@ class AccountController extends Controller
 
             }
             else if($type == 2){
-                // Delete all Grant owner files & Grant profile
-                $grant_pro = GrantProfile::where('user_id', $id)->first();
-                if($grant_pro && $grant_pro->document){
-                    $filePath = public_path($grant_pro->document);
+                // Delete all Program owner files & Program profile
+                $program_pro = ProgramProfile::where('user_id', $id)->first();
+                if($program_pro && $program_pro->document){
+                    $filePath = public_path($program_pro->document);
                     if (file_exists($filePath)) {
                         unlink($filePath);
                     }
                 }
-                $grant_pro->delete();
+                $program_pro->delete();
 
-                $grants = Grant::where('user_id', $id)->get();
-                foreach ($grants as $grant) {
-                    $filePath = public_path($grant->grant_brief_pdf);
+                $programs = Program::where('user_id', $id)->get();
+                foreach ($programs as $program) {
+                    $filePath = public_path($program->program_brief_pdf);
                     if (file_exists($filePath)) {
                         unlink($filePath);
                     }
-                    $grant->delete();
+                    $program->delete();
                 }
 
                 ServiceBooking::where('booker_id', $id)->delete();

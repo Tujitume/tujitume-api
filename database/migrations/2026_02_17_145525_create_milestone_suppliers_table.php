@@ -13,7 +13,7 @@ return new class extends Migration
     {
         Schema::create('milestone_suppliers', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('milestone_id')->constrained('grant_milestones')->onDelete('cascade');
+            $table->foreignId('milestone_id')->constrained('program_milestones')->onDelete('cascade');
             $table->foreignId('supplier_id')->constrained('supplier_directories')->onDelete('restrict');
 
             // Assignment metadata (NEW)
@@ -31,7 +31,7 @@ return new class extends Migration
             $table->tinyInteger('conflict_of_interest_declared')->default(0);
             $table->text('conflict_of_interest_notes')->nullable();
 
-            $table->enum('added_by', ['grant_owner', 'applicant'])->default('grant_owner');
+            $table->enum('added_by', ['program_owner', 'applicant'])->default('program_owner');
 
             $table->timestamps();
 

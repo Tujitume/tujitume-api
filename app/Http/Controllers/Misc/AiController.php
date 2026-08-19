@@ -5,11 +5,11 @@ namespace App\Http\Controllers\Misc;
 use App\Http\Controllers\Controller;
 use App\Models\Business\Listing;
 use App\Models\Capital\CapitalOffer;
-use App\Models\Grants\Grant;
+use App\Models\Programs\Program;
 use App\Models\Services\Services;
 use App\Service\AI\CapitalMarketAnalysis;
 use App\Service\AI\SuggestionsForACapital;
-use App\Service\AI\SuggestionsForAGrant;
+use App\Service\AI\SuggestionsForAProgram;
 use App\Service\AI\SuggestionsForAListing;
 use App\Service\AI\SuggestionsForAService;
 use App\Service\AiScore\ListingScore;
@@ -187,13 +187,13 @@ class AiController extends Controller
         }
     }
 
-    public function grant_suggestions($grant_id)
+    public function program_suggestions($program_id)
     {
         try{
             $investor = Auth::user();
-            $pivot_listing = Grant::find($grant_id);
-            $suggested = SuggestionsForAGrant::for($pivot_listing)->limit(10)->get();
-            return response()->json(['grants' => $suggested]);
+            $pivot_listing = Program::find($program_id);
+            $suggested = SuggestionsForAProgram::for($pivot_listing)->limit(10)->get();
+            return response()->json(['programs' => $suggested]);
         }
         catch (\Exception $e) {
             ErrorLogService::report($e, ['input' => request()->except(['password', 'token']),]);

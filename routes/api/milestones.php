@@ -5,7 +5,7 @@
 |--------------------------------------------------------------------------
 | Milestones Routes (Business/Service Milestones)
 |--------------------------------------------------------------------------
-| Note: Grant milestones are in grants.php
+| Note: Program milestones are in programs.php
 */
 
 use App\Http\Controllers\Business\InvestmentController;

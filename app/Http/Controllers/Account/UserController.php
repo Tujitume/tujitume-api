@@ -11,9 +11,9 @@ use App\Models\Business\Listing;
 use App\Models\Capital\CapitalOffer;
 use App\Models\Capital\CapitalProfile;
 use App\Models\Capital\StartupPitches;
-use App\Models\Grants\Grant;
-use App\Models\Grants\GrantApplication;
-use App\Models\Grants\GrantProfile;
+use App\Models\Programs\Program;
+use App\Models\Programs\ProgramApplication;
+use App\Models\Programs\ProgramProfile;
 use App\Models\Services\ServiceBookingMilestone;
 use App\Models\Services\Smilestones;
 use App\Service\Account\CalculateUserFunds;
@@ -82,8 +82,8 @@ class UserController extends Controller
                 case 1: // Investor
                     //return $this->getInvestorDashboard($user);
 
-                case 2: // Grant
-                    return response()->json($funds->calculateGrantFunds($user), 200);
+                case 2: // Program
+                    return response()->json($funds->calculateProgramFunds($user), 200);
 
                 case 3: // Capital
                     return response()->json($funds->calculateCapitalFunds($user), 200);
@@ -125,8 +125,8 @@ class UserController extends Controller
         try{
             $user = Auth::user();
             if ($user->user_type_id == 2) {
-                $user = GrantProfile::with('user')
-                    ->where('grant_owner_id', $user->id)
+                $user = ProgramProfile::with('user')
+                    ->where('program_owner_id', $user->id)
                     ->latest()->get();
             } else {
                 $user = CapitalProfile::with('user')
@@ -184,10 +184,10 @@ class UserController extends Controller
 
             // Activating role based users
             if($user->user_type_id == 2){
-                $grantProfile = $user->grant_profile;
+                $programProfile = $user->program_profile;
 
-                if ($grantProfile && in_array($grantProfile->role_id, [10001, 10002, 10003])) {
-                    $grantProfile->update(['active' => 1]);
+                if ($programProfile && in_array($programProfile->role_id, [10001, 10002, 10003])) {
+                    $programProfile->update(['active' => 1]);
                 }
             }
 

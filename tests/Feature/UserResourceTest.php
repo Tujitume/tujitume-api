@@ -65,7 +65,7 @@ class UserResourceTest extends TestCase
         $this->assertSame('organization', $payload['user_type']);
         $this->assertSame('Acme Org', $payload['organization']['name']);
         $this->assertCount(1, $payload['workspaces']);
-        $this->assertArrayNotHasKey('grant_profile', $payload);
+        $this->assertArrayNotHasKey('program_profile', $payload);
         $this->assertArrayNotHasKey('capital_profile', $payload);
     }
 }

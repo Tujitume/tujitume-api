@@ -26,7 +26,7 @@ return new class extends Migration
             ])->default('demo');
 
             $table->enum('type', [
-                'grant',
+                'program',
                 'investment',
                 'capital',
                 'service',
