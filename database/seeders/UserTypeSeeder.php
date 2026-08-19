@@ -19,8 +19,10 @@ class UserTypeSeeder extends Seeder
             ['id' => 2, 'name' => 'investor'],
             ['id' => 3, 'name' => 'service_provider'],
             ['id' => 4, 'name' => 'organization'],
-            ['id' => 5, 'name' => 'admin'],
+            ['id' => 5, 'name' => 'capital'],
             ['id' => 6, 'name' => 'external_reviewer'],
+            ['id' => 7, 'name' => 'admin'],
+
 
         ];
         UserType::truncate();
