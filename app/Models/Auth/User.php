@@ -11,7 +11,7 @@ use App\Models\Programs\ProgramApplication;
 use App\Models\Programs\ProgramProfile;
 use App\Models\Misc\Event;
 use App\Models\Organizations\Organization;
-use App\Models\Organizations\workspace;
+use App\Models\Organizations\Workspace;
 use App\Models\Services\Services;
 use App\Models\Users\InvestorProfile;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -95,7 +95,7 @@ class User extends Authenticatable
 
     public function workspaces()
     {
-        return $this->hasManyThrough(workspace::class, Organization::class, 'id', 'organization_id', 'organization_id', 'id');
+        return $this->hasManyThrough(Workspace::class, Organization::class, 'id', 'organization_id', 'organization_id', 'id');
     }
 
     public function notifications()

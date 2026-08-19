@@ -25,6 +25,6 @@ class Organization extends Model
 
     public function workspaces()
     {
-        return $this->hasMany(workspace::class, 'organization_id', 'id');
+        return $this->hasMany(Workspace::class, 'organization_id', 'id');
     }
 }

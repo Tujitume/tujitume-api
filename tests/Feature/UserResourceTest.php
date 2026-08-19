@@ -6,7 +6,7 @@ use App\Http\Resources\User\UserResource;
 use App\Models\Auth\User;
 use App\Models\Auth\UserType;
 use App\Models\Organizations\Organization;
-use App\Models\Organizations\workspace;
+use App\Models\Organizations\Workspace;
 use Tests\TestCase;
 
 class UserResourceTest extends TestCase
@@ -46,7 +46,7 @@ class UserResourceTest extends TestCase
         ]);
 
         $organization->setRelation('workspaces', collect([
-            new workspace([
+            new Workspace([
                 'id' => 9,
                 'organization_id' => 7,
                 'name' => 'Acme Workspace',
