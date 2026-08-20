@@ -220,28 +220,28 @@ class RegisterService
 
             // Organization
             'org_name'              => ['required', 'string', 'max:255'],
-            'org_display_name'      => ['nullable', 'string', 'max:255'],
-            'org_legal_name'        => ['nullable', 'string', 'max:255'],
+            'org_display_name'      => ['required', 'string', 'max:255'],
+            'org_legal_name'        => ['required', 'string', 'max:255'],
             'organization_type'     => ['required', 'in:company,ngo,foundation,government,cooperative,other'],
-            'year_established'      => ['nullable', 'integer', 'min:1800', 'max:' . date('Y')],
-            'org_email'             => ['nullable', 'email'],
-            'org_phone'             => ['nullable', 'string', 'max:50'],
-            'org_website'           => ['nullable', 'url', 'max:255'],
-            'description'           => ['nullable', 'string', 'max:2000'],
+            'year_established'      => ['required', 'integer', 'min:1800', 'max:' . date('Y')],
+            'org_email'             => ['required', 'email'],
+            'org_phone'             => ['required', 'string', 'max:50'],
+            'org_website'           => ['required', 'url', 'max:255'],
+            'description'           => ['required', 'string', 'max:2000'],
 
             // Industry
-            'primary_industry'      => ['nullable', 'string', 'max:100'],
-            'focus_sectors'         => ['nullable', 'array'],
-            'operating_countries'   => ['nullable', 'array'],
-            'target_regions'        => ['nullable', 'array'],
+            'primary_industry'      => ['required', 'string', 'max:100'],
+            'focus_sectors'         => ['required', 'array'],
+            'operating_countries'   => ['required', 'array'],
+            'target_regions'        => ['required', 'array'],
 
             // Location
-            'country'               => ['nullable', 'string', 'max:10'],
-            'region'                => ['nullable', 'string', 'max:100'],
-            'city'                  => ['nullable', 'string', 'max:100'],
+            'country'               => ['required', 'string', 'max:10'],
+            'region'                => ['required', 'string', 'max:100'],
+            'city'                  => ['required', 'string', 'max:100'],
 
             // Financial
-            'financial_year_start_month' => ['nullable', 'integer', 'min:1', 'max:12'],
+            'financial_year_start_month' => ['required', 'integer', 'min:1', 'max:12'],
 
             // Workspace
             'workspace_slug'        => [
