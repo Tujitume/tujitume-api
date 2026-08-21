@@ -4,7 +4,6 @@ namespace App\Http\Controllers\Account;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreUserRequest;
 use App\Http\Requests\UpdateUserRequest;
-use App\Http\Resources\UserResource;
 use App\Models\admin;
 use App\Models\Auth\User;
 use App\Models\Business\Listing;
@@ -21,6 +20,7 @@ use App\Service\Misc\ErrorLogService;
 use App\Service\Misc\GetPlaces;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use App\Http\Resources\User\UserResource;
 use Session;
 
 class UserController extends Controller
@@ -79,17 +79,19 @@ class UserController extends Controller
 
         try{
             switch ($user->user_type_id){
-                case 1: // Investor
-                    //return $this->getInvestorDashboard($user);
+                case 1: // Business Owner
+                    return response()->json($funds->calculateSMEFunds($user), 200);
 
-                case 2: // Program
+                case 2: // Investor
                     return response()->json($funds->calculateProgramFunds($user), 200);
 
-                case 3: // Capital
+                case 3: // Service Provider
                     return response()->json($funds->calculateCapitalFunds($user), 200);
 
-                case 4: // Business - SME
-                    return response()->json($funds->calculateSMEFunds($user), 200);
+                case 4: // Org
+                    return response()->json([
+                        'data' => new UserResource($user)
+                    ], 200);
 
                 case 5: // Service Provider
                     //return $funds->calculateServiceProviderFunds($user);
@@ -102,7 +104,7 @@ class UserController extends Controller
 
                 default:
                     return response()->json([
-                        'user' => $user,
+                        'user' => new UserResource($user),
                         'role' => 'N/A',
                         'total_funds' => 0,
                         'available_funds' => 0,
