@@ -3,6 +3,7 @@
 namespace App\Models\Organizations;
 
 use App\Models\Auth\User;
+use App\Models\ProgramIndustry;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
@@ -26,5 +27,10 @@ class Organization extends Model
     public function workspaces()
     {
         return $this->hasMany(Workspace::class, 'organization_id', 'id');
+    }
+
+    public function programIndustry()
+    {
+        return $this->belongsTo(ProgramIndustry::class, 'primary_industry_id');
     }
 }

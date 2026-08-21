@@ -41,7 +41,10 @@ return new class extends Migration
             $table->string('city')->nullable();
 
             // ─── Industry ────────────────────────────────────────────────
-            $table->string('primary_industry')->nullable();
+            $table->foreignId('program_industry_id')
+                ->nullable()->constrained('program_industries')
+                ->nullOnDelete();
+
             $table->json('focus_sectors')->nullable();
             $table->json('operating_countries')->nullable();
             $table->json('target_regions')->nullable();

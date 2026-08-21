@@ -22,7 +22,7 @@ class UserResource extends JsonResource
         $isCapital = $userTypeId === 5;
 
         if ($isOrganization) {
-            $this->loadMissing('organization.workspaces');
+            $this->loadMissing('organization.workspaces', 'organization.programIndustry');
         } elseif ($isInvestor) {
             $this->loadMissing('investor_profile');
         } elseif ($isServiceProvider) {
@@ -66,7 +66,8 @@ class UserResource extends JsonResource
                 'country' => $organization->country,
                 'region' => $organization->region,
                 'city' => $organization->city,
-                'primary_industry' => $organization->primary_industry,
+                'program_industry_id' => $organization->program_industry_id,
+                'program_industry' => $organization->programIndustry?->only(['id', 'name']),
                 'focus_sectors' => $organization->focus_sectors,
                 'operating_countries' => $organization->operating_countries,
                 'target_regions' => $organization->target_regions,

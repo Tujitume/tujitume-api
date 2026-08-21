@@ -16,6 +16,7 @@ use App\Http\Controllers\Business\MilestoneController;
 use App\Http\Controllers\Capital\CapitalController;
 use App\Http\Controllers\Program\ProgramController;
 use App\Http\Controllers\Program\ProgramDisbursementController;
+use App\Http\Controllers\Organizations\ProgramIndustryController;
 use App\Http\Controllers\Misc\AiController;
 use App\Http\Controllers\Misc\EventController;
 use App\Http\Controllers\Misc\LookupController;
@@ -38,6 +39,7 @@ Route::get('program/reject-invitation/{email}', [ProgramController::class, 'reje
     ->name('reject.invitation')
     ->middleware('signed');
 Route::get('/home/capital-offers', [CapitalController::class, 'index']);
+Route::get('program-industries', [ProgramIndustryController::class, 'index']);
 
 // L A N D I N G   &   S E A R C H
 Route::middleware('throttle:public')->group(function () {

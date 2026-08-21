@@ -230,7 +230,7 @@ class RegisterService
             'description'           => ['required', 'string', 'max:2000'],
 
             // Industry
-            'primary_industry'      => ['required', 'string', 'max:100'],
+            'program_industry_id'   => ['required', 'integer', 'exists:program_industries,id'],
             'focus_sectors'         => ['required', 'array'],
             'operating_countries'   => ['required', 'array'],
             'target_regions'        => ['required', 'array'],
@@ -251,6 +251,7 @@ class RegisterService
                 'unique:workspaces,slug',
                 'regex:/^[a-z0-9\-]+$/'
             ],
+            'image'                => ['nullable', 'image', 'mimes:jpeg,png,jpg,gif,svg', 'max:2048'],
         ]);
 
         DB::beginTransaction();
