@@ -14,6 +14,7 @@ use App\Models\Organizations\Organization;
 use App\Models\Organizations\Workspace;
 use App\Models\Services\Services;
 use App\Models\Users\InvestorProfile;
+use App\Models\Users\ServiceProviderProfile;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
@@ -72,6 +73,11 @@ class User extends Authenticatable
     public function investor_profile()
     {
         return $this->hasOne(InvestorProfile::class,'user_id', 'id');
+    }
+
+    public function service_provider_profile()
+    {
+        return $this->hasOne(ServiceProviderProfile::class, 'user_id', 'id');
     }
     
     public function program_profile()

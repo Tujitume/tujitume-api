@@ -15,6 +15,22 @@ class UserResource extends JsonResource
     public function toArray(Request $request): array
     {
         $userTypeId = (int) ($this->user_type_id ?? 0);
+
+        $isInvestor = $userTypeId === 2;
+        $isServiceProvider = $userTypeId === 3;
+        $isOrganization = $userTypeId === 4;
+        $isCapital = $userTypeId === 5;
+
+        if ($isOrganization) {
+            $this->loadMissing('organization.workspaces');
+        } elseif ($isInvestor) {
+            $this->loadMissing('investor_profile');
+        } elseif ($isServiceProvider) {
+            $this->loadMissing('service_provider_profile');
+        } elseif ($isCapital) {
+            $this->loadMissing('capital_profile');
+        }
+
         $organization = $this->relationLoaded('organization') ? $this->organization : null;
         $organizationWorkspaces = [];
 
@@ -61,7 +77,7 @@ class UserResource extends JsonResource
             ];
         }
 
-        return [
+        $user = [
             'id' => (int) $this->id,
             'user_type_id' => $userTypeId,
             'user_type' => $this->user_type?->name,
@@ -71,11 +87,6 @@ class UserResource extends JsonResource
             'email' => $this->email,
             'phone' => $this->phone,
             'image' => $this->image,
-            'gender' => $this->gender,
-            'dob' => $this->dob,
-            'country' => $this->country,
-            'city' => $this->city,
-            'website' => $this->website,
             'completed_onboarding' => (bool) ($this->completed_onboarding ?? false),
             'organization_id' => $this->organization_id,
             'stripe_connect_id' => $this->stripe_connect_id,
@@ -83,5 +94,23 @@ class UserResource extends JsonResource
             'organization' => $organizationPayload,
             'workspaces' => $organizationWorkspaces,
         ];
+
+        if (!$isOrganization) {
+            $user['gender'] = $this->gender;
+            $user['dob'] = $this->dob;
+            $user['city'] = $this->city;
+            $user['country'] = $this->country;
+            $user['website'] = $this->website;
+        }
+
+        if ($isInvestor) {
+            $user['investor_profile'] = $this->investor_profile;
+        } elseif ($isServiceProvider) {
+            $user['service_provider_profile'] = $this->service_provider_profile;
+        } elseif ($isCapital) {
+            $user['capital_profile'] = $this->capital_profile;
+        }
+
+        return $user;
     }
 }
