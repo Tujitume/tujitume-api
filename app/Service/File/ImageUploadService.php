@@ -59,4 +59,25 @@ class ImageUploadService
         return $site_url . $path . '/'. $filename;
         */
     }
+
+    /**
+     * Delete an image previously saved by this service.
+     *
+     * The database stores the public URL, while S3 deletion requires its key.
+     */
+    public function delete(?string $file): void
+    {
+        if (!$file) {
+            return;
+        }
+
+        $baseUrl = rtrim((string) config('filesystems.disks.s3.url'), '/');
+        $key = str_starts_with($file, $baseUrl . '/')
+            ? substr($file, strlen($baseUrl) + 1)
+            : ltrim((string) parse_url($file, PHP_URL_PATH), '/');
+
+        if ($key) {
+            Storage::disk('s3')->delete($key);
+        }
+    }
 }

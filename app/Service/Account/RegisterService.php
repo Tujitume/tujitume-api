@@ -9,6 +9,7 @@ use App\Models\Users\ServiceProviderProfile;
 use App\Models\Auth\UserSetting;
 use App\Models\Organizations\Workspace;
 use App\Service\Misc\ErrorLogService;
+use App\Service\File\ImageUploadService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -19,6 +20,10 @@ use Illuminate\Validation\Rules\Password;
 
 class RegisterService
 {
+    public function __construct(private ImageUploadService $imageUpload)
+    {
+    }
+
     // ─── Business Owner ──────────────────────────────────────────────────
     public function registerBusinessOwner(Request $request)
     {
@@ -33,10 +38,19 @@ class RegisterService
             'country'    => ['nullable', 'string', 'max:10'],
             'city'       => ['nullable', 'string', 'max:100'],
             'website'    => ['nullable', 'url', 'max:255'],
+            'image'      => ['nullable', 'image', 'mimes:jpeg,png,jpg,gif,svg', 'max:2048'],
         ]);
+
+        $uploadedImage = null;
 
         DB::beginTransaction();
         try {
+            $image = $data['image'] ?? null;
+
+            if ($image) {
+                $uploadedImage = $this->imageUpload->save($image, 'images/users');
+            }
+
             $user = User::create([
                 'first_name'   => $data['first_name'],
                 'last_name'    => $data['last_name'],
@@ -49,6 +63,7 @@ class RegisterService
                 'city'         => $data['city'] ?? null,
                 'website'      => $data['website'] ?? null,
                 'user_type_id' => 1,
+                'image'        => $uploadedImage,
             ]);
 
             UserSetting::create(['user_id' => $user->id]);
@@ -60,8 +75,9 @@ class RegisterService
                 'user'    => $user,
                 'token'   => $user->createToken('main')->plainTextToken,
             ], 201);
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             DB::rollBack();
+            $this->deleteUploadedImage($uploadedImage);
             ErrorLogService::report($e, ['input' => $request->except(['password', 'token'])]);
             return response()->json(['message' => 'Something went wrong, please try again later.'], 500);
         }
@@ -81,6 +97,7 @@ class RegisterService
             'website'             => ['nullable', 'url', 'max:255'],
             'country'             => ['nullable', 'string', 'max:10'],
             'city'                => ['nullable', 'string', 'max:100'],
+            'image'               => ['nullable', 'image', 'mimes:jpeg,png,jpg,gif,svg', 'max:2048'],
 
             // Investor profile
             'inv_range'           => ['required', 'array'],
@@ -92,8 +109,16 @@ class RegisterService
             'past_investment'     => ['nullable', 'string', 'max:1000'],
         ]);
 
+        $uploadedImage = null;
+
         DB::beginTransaction();
         try {
+            $image = $data['image'] ?? null;
+
+            if ($image) {
+                $uploadedImage = $this->imageUpload->save($image, 'images/users');
+            }
+
             $user = User::create([
                 'first_name'   => $data['first_name'],
                 'last_name'    => $data['last_name'],
@@ -106,6 +131,7 @@ class RegisterService
                 'country'      => $data['country'] ?? null,
                 'city'         => $data['city'] ?? null,
                 'user_type_id' => 2,
+                'image'        => $uploadedImage,
             ]);
 
             InvestorProfile::create([
@@ -128,8 +154,9 @@ class RegisterService
                 'user'    => $user,
                 'token'   => $user->createToken('main')->plainTextToken,
             ], 201);
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             DB::rollBack();
+            $this->deleteUploadedImage($uploadedImage);
             ErrorLogService::report($e, ['input' => $request->except(['password', 'token'])]);
             return response()->json(['message' => 'Something went wrong, please try again later.'], 500);
         }
@@ -150,6 +177,7 @@ class RegisterService
             'website'        => ['nullable', 'url', 'max:255'],
             'country'        => ['nullable', 'string', 'max:10'],
             'city'           => ['nullable', 'string', 'max:100'],
+            'image'          => ['nullable', 'image', 'mimes:jpeg,png,jpg,gif,svg', 'max:2048'],
 
             // SP profile
             'supplier_type'  => ['required', 'in:material_goods,business_service,labor'],
@@ -162,8 +190,16 @@ class RegisterService
             'available_to'   => ['nullable', 'string', 'max:10'],
         ]);
 
+        $uploadedImage = null;
+
         DB::beginTransaction();
         try {
+            $image = $data['image'] ?? null;
+
+            if ($image) {
+                $uploadedImage = $this->imageUpload->save($image, 'images/users');
+            }
+
             $user = User::create([
                 'first_name'   => $data['first_name'],
                 'last_name'    => $data['last_name'],
@@ -177,6 +213,7 @@ class RegisterService
                 'country'      => $data['country'] ?? null,
                 'city'         => $data['city'] ?? null,
                 'user_type_id' => 3,
+                'image'        => $uploadedImage,
             ]);
 
             ServiceProviderProfile::create([
@@ -200,8 +237,9 @@ class RegisterService
                 'user'    => $user,
                 'token'   => $user->createToken('main')->plainTextToken,
             ], 201);
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             DB::rollBack();
+            $this->deleteUploadedImage($uploadedImage);
             ErrorLogService::report($e, ['input' => $request->except(['password', 'token'])]);
             return response()->json(['message' => 'Something went wrong, please try again later.'], 500);
         }
@@ -254,23 +292,33 @@ class RegisterService
             'image'                => ['nullable', 'image', 'mimes:jpeg,png,jpg,gif,svg', 'max:2048'],
         ]);
 
+        $uploadedImage = null;
+
         DB::beginTransaction();
         try {
+            $image = $data['image'] ?? null;
+
+            if ($image) {
+                $uploadedImage = $this->imageUpload->save($image, 'images/users');
+            }
+
             // Create owner user
             $user = User::create([
                 'first_name'   => $data['first_name'],
                 'last_name'    => $data['last_name'],
+                'display_name' => $data['org_display_name'] ?? $data['org_name'],
                 'email'        => $data['email'],
                 'password'     => Hash::make($data['password']),
                 'phone'        => $data['phone'] ?? null,
                 'user_type_id' => 4,
+                'image'       => $uploadedImage,
             ]);
 
             // Create organization
             $organization = Organization::create([
                 'owner_user_id'              => $user->id,
                 'name'                       => $data['org_name'],
-                'display_name'               => $data['org_display_name'] ?? $data['org_name'],
+                //'display_name'               => $data['org_display_name'] ?? $data['org_name'],
                 'legal_name'                 => $data['org_legal_name'] ?? null,
                 'organization_type'          => $data['organization_type'],
                 'year_established'           => $data['year_established'] ?? null,
@@ -278,7 +326,7 @@ class RegisterService
                 'phone'                      => $data['org_phone'] ?? null,
                 'website'                    => $data['org_website'] ?? null,
                 'description'                => $data['description'] ?? null,
-                'primary_industry'           => $data['primary_industry'] ?? null,
+                'program_industry_id'        => $data['program_industry_id'] ?? null,
                 'focus_sectors'              => $data['focus_sectors'] ?? null,
                 'operating_countries'        => $data['operating_countries'] ?? null,
                 'target_regions'             => $data['target_regions'] ?? null,
@@ -317,10 +365,22 @@ class RegisterService
                 'organization' => $organization->load('workspaces'),
                 'token'        => $user->createToken('main')->plainTextToken,
             ], 201);
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             DB::rollBack();
+
+            $this->deleteUploadedImage($uploadedImage);
+
             ErrorLogService::report($e, ['input' => $request->except(['password', 'token'])]);
             return response()->json(['message' => 'Something went wrong, please try again later.'], 500);
+        }
+    }
+
+    private function deleteUploadedImage(?string $uploadedImage): void
+    {
+        try {
+            $this->imageUpload->delete($uploadedImage);
+        } catch (\Throwable $cleanupException) {
+            ErrorLogService::report($cleanupException, ['image' => $uploadedImage]);
         }
     }
 
@@ -332,10 +392,19 @@ class RegisterService
             'role_id'         => ['required', 'integer'],
             'email'           => ['required', 'email', 'unique:users,email'],
             'first_name'      => ['required', 'string', 'max:255'],
+            'image'           => ['nullable', 'image', 'mimes:jpeg,png,jpg,gif,svg', 'max:2048'],
         ]);
+
+        $uploadedImage = null;
 
         DB::beginTransaction();
         try {
+            $image = $data['image'] ?? null;
+
+            if ($image) {
+                $uploadedImage = $this->imageUpload->save($image, 'images/users');
+            }
+
             $organization = Organization::findOrFail($data['organization_id']);
             $owner        = $organization->owner;
 
@@ -347,6 +416,7 @@ class RegisterService
                 'password'        => Hash::make($tempPassword),
                 'user_type_id'    => 4,
                 'organization_id' => $organization->id,
+                'image'           => $uploadedImage,
             ]);
 
             UserSetting::create(['user_id' => $user->id]);
@@ -374,8 +444,9 @@ class RegisterService
                 'message' => 'Team member invited successfully.',
                 'user'    => $user,
             ], 201);
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             DB::rollBack();
+            $this->deleteUploadedImage($uploadedImage);
             ErrorLogService::report($e, ['input' => $request->except(['password', 'token'])]);
             return response()->json(['message' => 'Something went wrong, please try again later.'], 500);
         }

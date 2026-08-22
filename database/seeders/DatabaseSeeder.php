@@ -15,6 +15,7 @@ class DatabaseSeeder extends Seeder
         //putenv('TERM=unknown'); // Disable advanced terminal styling
         $this->call([
             CategorySeeder::class,
+            ProgramIndustrySeeder::class,
             RoleSeeder::class,
             PlatformSettingSeeder::class,
             UserTypeSeeder::class,

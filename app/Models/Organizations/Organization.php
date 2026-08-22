@@ -31,6 +31,6 @@ class Organization extends Model
 
     public function programIndustry()
     {
-        return $this->belongsTo(ProgramIndustry::class, 'primary_industry_id');
+        return $this->belongsTo(ProgramIndustry::class, 'program_industry_id');
     }
 }
