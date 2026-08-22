@@ -24,13 +24,13 @@ Route::patch('/me/devices/{device}', [DeviceController::class,'update']);
 Route::delete('/me/devices/{device}', [DeviceController::class,'destroy']);
 
 Route::get('logout-all',[AuthController::class,'logoutAll']);
-Route::get('account/delete/{id}', [AccountController::class, 'destroy']);
 
 Route::get('account', [AccountController::class, 'account_wallet'])->name('account');
 
 // User Resource
 Route::get('users', [UserController::class, 'index']);
 Route::get('users/me', [UserController::class, 'me']);
+Route::delete('users/{id}', [AccountController::class, 'destroy']);
 
 Route::get('users/types', function () {
     $types = DB::table('user_types')->get();

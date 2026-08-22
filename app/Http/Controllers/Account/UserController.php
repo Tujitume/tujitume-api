@@ -6,13 +6,7 @@ use App\Http\Requests\StoreUserRequest;
 use App\Http\Requests\UpdateUserRequest;
 use App\Models\admin;
 use App\Models\Auth\User;
-use App\Models\Business\Listing;
-use App\Models\Capital\CapitalOffer;
-use App\Models\Capital\CapitalProfile;
-use App\Models\Capital\StartupPitches;
-use App\Models\Programs\Program;
-use App\Models\Programs\ProgramApplication;
-use App\Models\Programs\ProgramProfile;
+
 use App\Models\Services\ServiceBookingMilestone;
 use App\Models\Services\Smilestones;
 use App\Service\Account\CalculateUserFunds;
@@ -21,6 +15,26 @@ use App\Service\Misc\GetPlaces;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use App\Http\Resources\User\UserResource;
+use App\Service\Account\AccountDeletionEligibilityService;
+use App\Models\Business\AcceptedBids;
+use App\Models\Business\BusinessBids;
+use App\Models\Business\BusinessSubscriptions;
+use App\Models\Business\Listing;
+use App\Models\Capital\CapitalOffer;
+use App\Models\Capital\CapitalProfile;
+use App\Models\Communication\Messages;
+use App\Models\Finance\BalanceLog;
+use App\Models\Organizations\Organization;
+use App\Models\Programs\Program;
+use App\Models\Programs\ProgramApplication;
+use App\Models\Programs\ProgramProfile;
+use App\Models\Misc\Setting;
+use App\Models\Services\ServiceBooking;
+use App\Models\Services\ServiceMessages;
+use App\Models\Services\Services;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
+
 use Session;
 
 class UserController extends Controller
@@ -293,5 +307,301 @@ class UserController extends Controller
         }
     }
 
+
+    // Delete account
+    public function destroy($id)
+    {
+        $user = User::with('balance')->find($id);
+
+        if (!$user) {
+            return response(['message' => 'User not found.'], 404);
+        }
+
+        $type = $user->user_type_id;
+
+        if ($id != Auth::id()) {
+            return response(['message' => 'Unauthorized.'], 401);
+        }
+
+        if ($user->balance?->balance > 0) {
+            return response(['message' => 'Account deletion not allowed. Please withdraw your balance first.'], 400);
+        }
+
+        //deletion eligibility checks
+        $checker = new AccountDeletionEligibilityService($user);
+
+        if (!$checker->isDeletable()) {
+            return response()->json([
+                'message' => 'Account deletion is not allowed',
+                'reasons' => $checker->preventingReason(),
+            ], 400);
+        }
+
+        //return response(['message' => 'Deletion begins...'],200);
+
+        DB::beginTransaction();
+        try {
+
+            //Balance logs
+            BalanceLog::where('changed_by', $user->id)->delete();
+            $this->deleteProgramDataForUser($user);
+
+            if ($type == 1) {
+                // Delete all investor files & active investment
+                BusinessBids::where('investor_id', $id)->delete();
+                AcceptedBids::where('investor_id', $id)->delete();
+
+                ServiceBooking::where('booker_id', $id)->delete();
+                ServiceMessages::where('to_id', $id)->orWhere('from_id', $id)->delete();
+
+                if ($user->id_passport) {
+                    $this->deleteLocalFile($user->id_passport);
+                }
+
+                if ($user->pin) {
+                    $this->deleteLocalFile($user->pin);
+                }
+            } else if ($type == 2) {
+                ServiceBooking::where('booker_id', $id)->delete();
+                ServiceMessages::where('to_id', $id)->orWhere('from_id', $id)->delete();
+            } else if ($type == 3) {
+                // Delete all Capital owner files & Capital profile
+                $cap = CapitalProfile::where('user_id', $id)->first();
+                if ($cap && $cap->document) {
+                    $this->deleteLocalFile($cap->document);
+                }
+                $cap?->delete();
+                $capitals = CapitalOffer::where('user_id', $id)->get();
+                foreach ($capitals as $capital) {
+                    $this->deleteLocalFile($capital->offer_brief_pdf);
+                    $capital->delete();
+                }
+
+                ServiceBooking::where('booker_id', $id)->delete();
+                ServiceMessages::where('to_id', $id)->orWhere('from_id', $id)->delete();
+            } else if ($type == 4 || $type == 5) {
+                //Delete Business owner documents
+                ServiceBooking::where('booker_id', $id)->delete();
+                ServiceMessages::where('to_id', $id)->orWhere('from_id', $id)->delete();
+                Messages::where('to_id', $id)->orWhere('from_id', $id)->delete();
+
+                if ($type == 4) {
+                    $this->deleteOrganizationDataForUser($user);
+                }
+
+                $listings = Listing::where('user_id', $id)->get();
+                $services = Services::where('user_id', $id)->get();
+                foreach ($listings as $listing) {
+                    $this->deleteLocalFile($listing->pin);
+                    $this->deleteLocalFile($listing->identification);
+                    $this->deleteLocalFile($listing->document);
+                    $this->deleteLocalFile($listing->video);
+
+                    $listing->delete();
+                }
+                BusinessBids::where('owner_id', $id)->delete();
+                AcceptedBids::where('owner_id', $id)
+                    ->whereNotIn('status', ['Confirmed', 'awaiting_payment', 'under_verification'])
+                    ->delete();
+
+                foreach ($services as $service) {
+                    $this->deleteLocalFile($service->pin);
+                    $this->deleteLocalFile($service->identification);
+                    $this->deleteLocalFile($service->document);
+                    $this->deleteLocalFile($service->video);
+
+                    $service->delete();
+                }
+                ServiceBooking::where('service_owner_id', $id)->delete();
+            }
+
+            $this->deleteS3File($user->image);
+            $this->deleteLocalFile($user->image);
+            User::where('id', $id)->delete();
+            DB::commit();
+            return response(['message' => 'Account removed. All documents deleted.'], 200);
+        } catch (\Exception $e) {
+            DB::rollBack();
+
+            ErrorLogService::report($e, [
+                'input' => request()->except(['password', 'token']),
+            ]);
+
+            return response()->json([
+                'message' => 'Something went wrong, please try again later.'
+            ], 500);
+        }
+    }
+
+    private function deleteOrganizationDataForUser(User $user): void
+    {
+        $organizationIds = Organization::query()
+            ->where('owner_user_id', $user->id)
+            ->when($user->organization_id, function ($query) use ($user) {
+                $query->orWhere('id', $user->organization_id);
+            })
+            ->pluck('id');
+
+        if ($organizationIds->isEmpty()) {
+            return;
+        }
+
+        DB::table('workspaces')
+            ->whereIn('organization_id', $organizationIds)
+            ->delete();
+
+        Organization::whereIn('id', $organizationIds)->delete();
+    }
+
+    private function deleteProgramDataForUser(User $user): void
+    {
+        $userId = $user->id;
+        $programIds = Program::where('user_id', $userId)->pluck('id');
+
+        $applicationIds = ProgramApplication::where(function ($query) use ($userId, $programIds) {
+            $query->where('user_id', $userId)
+                ->orWhere('program_owner_id', $userId);
+
+            if ($programIds->isNotEmpty()) {
+                $query->orWhereIn('program_id', $programIds);
+            }
+        })->pluck('id');
+
+        $this->deleteProgramApplications($applicationIds->all());
+        $this->deleteOwnedProgramProfiles($user);
+
+        Program::where('user_id', $userId)
+            ->get()
+            ->each(function (Program $program): void {
+                $this->deleteLocalFile($program->program_brief_pdf);
+                $program->delete();
+            });
+    }
+
+    private function deleteProgramApplications(array $applicationIds): void
+    {
+        if (empty($applicationIds)) {
+            return;
+        }
+
+        $applications = ProgramApplication::whereIn('id', $applicationIds)->get();
+        $milestoneIds = DB::table('program_milestones')
+            ->whereIn('app_id', $applicationIds)
+            ->pluck('id');
+
+        $applications->each(function (ProgramApplication $application): void {
+            $this->deleteS3File($application->pitch_deck_file);
+            $this->deleteS3File($application->business_plan_file);
+            $this->deleteLocalFile($application->pitch_video);
+        });
+
+        DB::table('round_required_documents')
+            ->whereIn('application_id', $applicationIds)
+            ->pluck('file_path')
+            ->each(fn (?string $path) => $this->deleteS3File($path));
+
+        DB::table('application_round_responses')
+            ->whereIn('application_id', $applicationIds)
+            ->pluck('file_path')
+            ->each(fn (?string $path) => $this->deleteS3File($path));
+
+        if ($milestoneIds->isNotEmpty()) {
+            $this->deleteProgramMilestones($milestoneIds->all());
+        }
+
+        ProgramApplication::whereIn('id', $applicationIds)->delete();
+    }
+
+    private function deleteProgramMilestones(array $milestoneIds): void
+    {
+        DB::table('program_milestones')
+            ->whereIn('id', $milestoneIds)
+            ->pluck('document')
+            ->each(fn (?string $path) => $this->deleteS3File($path));
+
+        DB::table('milestone_verifications')
+            ->whereIn('milestone_id', $milestoneIds)
+            ->pluck('document')
+            ->each(fn (?string $path) => $this->deleteS3File($path));
+
+        DB::table('deal_room_documents')
+            ->whereIn('milestone_id', $milestoneIds)
+            ->pluck('file_path')
+            ->each(fn (?string $path) => $this->deleteS3File($path));
+
+        DB::table('disbursements')
+            ->whereIn('milestone_id', $milestoneIds)
+            ->pluck('receipt_file')
+            ->each(fn (?string $path) => $this->deleteS3File($path));
+
+        DB::table('milestone_suppliers')
+            ->whereIn('milestone_id', $milestoneIds)
+            ->get(['invoice_file', 'quotation_file'])
+            ->each(function ($supplier): void {
+                $this->deleteS3File($supplier->invoice_file);
+                $this->deleteS3File($supplier->quotation_file);
+            });
+
+        DB::table('disbursements')->whereIn('milestone_id', $milestoneIds)->delete();
+        DB::table('deal_room_documents')->whereIn('milestone_id', $milestoneIds)->delete();
+        DB::table('milestone_verifications')->whereIn('milestone_id', $milestoneIds)->delete();
+        DB::table('milestone_completion_submissions')->whereIn('milestone_id', $milestoneIds)->delete();
+        DB::table('program_milestones')->whereIn('id', $milestoneIds)->delete();
+    }
+
+    private function deleteOwnedProgramProfiles(User $user): void
+    {
+        $profiles = ProgramProfile::with('user')
+            ->where('user_id', $user->id)
+            ->orWhere('program_owner_id', $user->id)
+            ->get();
+
+        foreach ($profiles as $profile) {
+            $this->deleteLocalFile($profile->document);
+
+            if ($profile->user_id !== $user->id) {
+                BalanceLog::where('changed_by', $profile->user_id)->delete();
+                ServiceMessages::where('to_id', $profile->user_id)
+                    ->orWhere('from_id', $profile->user_id)
+                    ->delete();
+                Messages::where('to_id', $profile->user_id)
+                    ->orWhere('from_id', $profile->user_id)
+                    ->delete();
+
+                $profile->user?->delete();
+            }
+
+            $profile->delete();
+        }
+    }
+
+    private function deleteLocalFile(?string $path): void
+    {
+        if (!$path) {
+            return;
+        }
+
+        $filePath = public_path($path);
+
+        if (is_file($filePath)) {
+            unlink($filePath);
+        }
+    }
+
+    private function deleteS3File(?string $path): void
+    {
+        if (!$path) {
+            return;
+        }
+
+        $baseUrl = rtrim((string) config('filesystems.disks.s3.url'), '/');
+        $key = str_starts_with($path, $baseUrl . '/')
+            ? substr($path, strlen($baseUrl) + 1)
+            : ltrim((string) parse_url($path, PHP_URL_PATH), '/');
+
+        if ($key) {
+            Storage::disk('s3')->delete($key);
+        }
+    }
 
 }

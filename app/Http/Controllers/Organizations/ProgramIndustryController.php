@@ -13,7 +13,7 @@ class ProgramIndustryController extends Controller
         return response()->json([
             'data' => ProgramIndustry::query()
                 ->orderBy('name')
-                ->get(['id', 'name']),
+                ->get(['id', 'name', 'url']),
         ]);
     }
 }
