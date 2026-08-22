@@ -30,7 +30,7 @@ Route::get('account', [AccountController::class, 'account_wallet'])->name('accou
 // User Resource
 Route::get('users', [UserController::class, 'index']);
 Route::get('users/me', [UserController::class, 'me']);
-Route::delete('users/{id}', [AccountController::class, 'destroy']);
+Route::delete('users/{id}', [UserController::class, 'destroy']);
 
 Route::get('users/types', function () {
     $types = DB::table('user_types')->get();

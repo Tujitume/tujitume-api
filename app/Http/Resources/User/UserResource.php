@@ -67,7 +67,7 @@ class UserResource extends JsonResource
                 'region' => $organization->region,
                 'city' => $organization->city,
                 'program_industry_id' => $organization->program_industry_id,
-                'program_industry' => $organization->programIndustry?->only(['id', 'name']),
+                'program_industry' => $organization->programIndustry?->only(['id', 'name', 'url']),
                 'focus_sectors' => $organization->focus_sectors,
                 'operating_countries' => $organization->operating_countries,
                 'target_regions' => $organization->target_regions,
