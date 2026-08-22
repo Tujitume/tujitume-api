@@ -142,11 +142,7 @@ class User extends Authenticatable
     // Helper to get settings with defaults
     public function getSettings(): UserSetting
     {
-        return $this->settings ?? new UserSetting([
-            'theme'  => 'default',
-            'mode'   => 'system',
-            'accent_color' => '#14532d',
-        ]);
+        return $this->settings ?? new UserSetting(UserSetting::defaults());
     }
 
 }

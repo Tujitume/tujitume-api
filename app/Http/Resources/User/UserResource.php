@@ -96,7 +96,7 @@ class UserResource extends JsonResource
             'lipr_wallet_account' => $this->lipr_wallet_account,
             'organization' => $organizationPayload,
             'workspaces' => $organizationWorkspaces,
-            'settings' => $this->getSettings(),
+            'settings' => $this->getSettings()->toFrontendArray(),
         ];
 
         if (!$isOrganization) {
