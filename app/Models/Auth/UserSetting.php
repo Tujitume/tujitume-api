@@ -91,6 +91,13 @@ class UserSetting extends Model
     public function toFrontendArray(): array
     {
         $data = array_merge(self::DEFAULTS, $this->attributesToArray());
+        $hasCustomBrand = !empty($data['accent_color']) || !empty($data['custom']);
+        if (empty($data['theme']) && $hasCustomBrand) {
+            $data['theme'] = 'custom';
+        } elseif (empty($data['theme'])) {
+            $data['theme'] = self::DEFAULTS['theme'];
+        }
+
         $data['id'] = $this->id;
         $data['user_id'] = $this->user_id;
         $data['email_notifications'] = (bool) $data['email_notifications'];
