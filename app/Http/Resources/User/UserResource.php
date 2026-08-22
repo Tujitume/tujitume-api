@@ -31,7 +31,7 @@ class UserResource extends JsonResource
             $this->loadMissing('capital_profile');
         }
 
-        $this->load('getSettings');
+        $this->load('settings');
 
         $organization = $this->relationLoaded('organization') ? $this->organization : null;
         $organizationWorkspaces = [];
@@ -96,7 +96,7 @@ class UserResource extends JsonResource
             'lipr_wallet_account' => $this->lipr_wallet_account,
             'organization' => $organizationPayload,
             'workspaces' => $organizationWorkspaces,
-            'settings' => $this->getSettings ?? null,
+            'settings' => $this->getSettings() ?? null,
         ];
 
         if (!$isOrganization) {
