@@ -28,17 +28,16 @@ Route::get('logout-all',[AuthController::class,'logoutAll']);
 Route::get('account', [AccountController::class, 'account_wallet'])->name('account');
 
 // User Resource
-Route::get('users', [UserController::class, 'index']);
-Route::get('users/me', [UserController::class, 'me']);
-Route::delete('users/{id}', [UserController::class, 'destroy']);
-
 Route::get('users/types', function () {
     $types = DB::table('user_types')->get();
     return response()->json($types);
 });
 
-Route::get('users/{id}', [UserController::class, 'fetchUser'])
-    ->where('id', '[0-9]+'); // only numeric IDs allowed
+Route::get('users', [UserController::class, 'index']);
+Route::get('users/me', [UserController::class, 'me']);
+Route::delete('users/{id}', [UserController::class, 'destroy']);
+
+
 
 Route::get('/partiesInfo/{listing_id}', [UserController::class,'partiesInfo']);
 Route::get('/partiesServiceMile/{rep_mile_id}', [UserController::class,'getServiceOwner']);
