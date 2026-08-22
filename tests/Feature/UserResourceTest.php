@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Http\Resources\User\UserResource;
 use App\Models\Auth\User;
+use App\Models\Auth\UserSetting;
 use App\Models\Auth\UserType;
 use App\Models\Organizations\Organization;
 use App\Models\Organizations\Workspace;
@@ -57,6 +58,11 @@ class UserResourceTest extends TestCase
         ]));
 
         $user->setRelation('organization', $organization);
+        $user->setRelation('settings', new UserSetting([
+            'theme' => 'default',
+            'mode' => 'system',
+            'accent_color' => '#14532d',
+        ]));
 
         $payload = (new UserResource($user))->resolve();
 
@@ -65,6 +71,7 @@ class UserResourceTest extends TestCase
         $this->assertSame('organization', $payload['user_type']);
         $this->assertSame('Acme Org', $payload['organization']['name']);
         $this->assertCount(1, $payload['workspaces']);
+        $this->assertSame('default', $payload['settings']['theme']);
         $this->assertArrayNotHasKey('program_profile', $payload);
         $this->assertArrayNotHasKey('capital_profile', $payload);
     }
