@@ -11,23 +11,28 @@ class UserSetting extends Model
         'user_id',
         'theme',
         'mode',
+        'logo',
         'accent_color',
         'bg_color',
         'font_weight',
+        'subscription_status',
         'language',
         'currency',
         'timezone',
         'profile_visibility',
+        'date_format',
+        'supported_currencies',
+        'supported_languages',
         'email_notifications',
         'push_notifications',
-        'marketing_emails',
         'custom',
     ];
 
     protected $casts = [
         'email_notifications' => 'boolean',
         'push_notifications'  => 'boolean',
-        'marketing_emails'    => 'boolean',
+        'supported_currencies' => 'array',
+        'supported_languages' => 'array',
         'custom'              => 'array',
     ];
 

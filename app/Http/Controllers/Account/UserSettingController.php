@@ -14,17 +14,7 @@ class UserSettingController extends Controller
     // GET /user/settings
     public function show()
     {
-        $settings = UserSetting::firstOrCreate(
-            ['user_id' => Auth::id()],
-            [
-                'theme'               => 'default',
-                'mode'                => 'system',
-                'accent_color'        => '#14532d',
-                'email_notifications' => true,
-                'push_notifications'  => true,
-                'marketing_emails'    => false,
-            ]
-        );
+        $settings = UserSetting::firstOrCreate(['user_id' => Auth::id()]);
 
         return response()->json(['data' => $settings], 200);
     }
@@ -45,7 +35,6 @@ class UserSettingController extends Controller
                 'profile_visibility'  => 'sometimes|in:public,private',
                 'email_notifications' => 'sometimes|boolean',
                 'push_notifications'  => 'sometimes|boolean',
-                'marketing_emails'    => 'sometimes|boolean',
                 'custom'              => 'sometimes|nullable|array',
             ]);
 
@@ -75,11 +64,9 @@ class UserSettingController extends Controller
                 'mode'                => 'system',
                 'accent_color'        => '#14532d',
                 'bg_color'            => null,
-                'font_size'           => 'medium',
                 'language'            => 'en',
                 'email_notifications' => true,
                 'push_notifications'  => true,
-                'marketing_emails'    => false,
                 'custom'              => null,
             ]);
 
