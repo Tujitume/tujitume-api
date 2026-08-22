@@ -97,6 +97,7 @@ class UserResource extends JsonResource
             'organization' => $organizationPayload,
             'workspaces' => $organizationWorkspaces,
             'settings' => $this->getSettings() ?? null,
+            'test'  => 'test',
         ];
 
         if (!$isOrganization) {
