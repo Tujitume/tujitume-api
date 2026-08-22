@@ -31,7 +31,7 @@ class UserResource extends JsonResource
             $this->loadMissing('capital_profile');
         }
 
-        $this->load('settings');
+        //$this->load('settings');
 
         $organization = $this->relationLoaded('organization') ? $this->organization : null;
         $organizationWorkspaces = [];
