@@ -34,6 +34,8 @@ class UserResource extends JsonResource
         $this->loadMissing('settings');
 
         $organization = $this->relationLoaded('organization') ? $this->organization : null;
+        $stripeAccountId = $this->stripe_connect_id ?? $this->connect_id ?? null;
+        $liprWallet = $this->lipr_wallet_account ?? $this->lipr_wallet ?? null;
         $organizationWorkspaces = [];
 
         if ($organization && $organization->relationLoaded('workspaces')) {
@@ -92,8 +94,10 @@ class UserResource extends JsonResource
             'image' => $this->image,
             'completed_onboarding' => (bool) ($this->completed_onboarding ?? false),
             'organization_id' => $this->organization_id,
-            'stripe_connect_id' => $this->stripe_connect_id,
-            'lipr_wallet_account' => $this->lipr_wallet_account,
+            'stripe_connect_id' => $stripeAccountId,
+            'lipr_wallet_account' => $liprWallet,
+            'stripe_onboard' => $stripeAccountId && $this->completed_onboarding ? 1 : 0,
+            'lipr_onboard' => $liprWallet ? 1 : 0,
             'organization' => $organizationPayload,
             'workspaces' => $organizationWorkspaces,
             'settings' => $this->getSettings()->toFrontendArray(),
