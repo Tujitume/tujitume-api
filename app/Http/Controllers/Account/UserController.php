@@ -92,15 +92,11 @@ class UserController extends Controller
         $user = Auth::user();
 
         try{
-            $user->loadMissing(
-                'settings',
-                'user_type',
-                'organization.workspaces',
-                'organization.programIndustry',
-                'investor_profile',
-                'service_provider_profile',
-                'capital_profile'
-            );
+            if (!$user) {
+                return response()->json(['message' => 'Unauthenticated.'], 401);
+            }
+
+            $user->loadMissing('settings', 'user_type');
 
             switch ($user->user_type_id){
                 case 1: // Business Owner
