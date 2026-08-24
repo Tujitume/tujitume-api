@@ -14,6 +14,6 @@ class ProgramIndustry extends Model
 
     public function organizations()
     {
-        return $this->hasMany(Organization::class, 'primary_industry_id');
+        return $this->hasMany(Organization::class, 'program_industry_id');
     }
 }

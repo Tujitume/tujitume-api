@@ -292,7 +292,7 @@ class RegisterService
                 'unique:workspaces,slug',
                 'regex:/^[a-z0-9\-]+$/',
             ],
-            'image' => ['required', 'image', 'mimes:jpeg,png,jpg,gif,svg', 'max:2048'],
+            'image' => ['nullable', 'image', 'mimes:jpeg,png,jpg,gif,svg', 'max:2048'],
         ]);
 
         $uploadedImage = null;

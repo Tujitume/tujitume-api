@@ -59,7 +59,7 @@ class OrganizationSeeder extends Seeder
                 'country' => 'KE',
                 'region' => 'East Africa',
                 'city' => 'Nairobi',
-                'primary_industry_id' => 8,
+                'program_industry_id' => 8,
                 'focus_sectors' => ['Education', 'Youth Development'],
                 'operating_countries' => ['Kenya', 'Uganda', 'Tanzania'],
                 'target_regions' => ['East Africa', 'Sub-Saharan Africa'],
