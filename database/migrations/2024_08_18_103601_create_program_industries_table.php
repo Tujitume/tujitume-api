@@ -11,6 +11,7 @@ return new class extends Migration
         Schema::create('program_industries', function (Blueprint $table) {
             $table->id();
             $table->string('name')->unique();
+            $table->string('url')->nullable()->unique();
             $table->timestamps();
         });
     }
