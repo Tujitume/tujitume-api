@@ -7,8 +7,16 @@ cd "$APP_DIR"
 
 echo "Fixing permissions..."
 
-sudo chown -R www-data:www-data storage bootstrap/cache
-sudo chmod -R 775 storage bootstrap/cache
+sudo chown -R ubuntu:www-data "$APP_DIR"
+
+sudo find "$APP_DIR" -type d -exec chmod 775 {} \;
+sudo find "$APP_DIR" -type f -exec chmod 664 {} \;
+
+sudo chmod -R 775 "$APP_DIR/storage"
+sudo chmod -R 775 "$APP_DIR/bootstrap/cache"
+
+sudo find "$APP_DIR/storage" -type d -exec chmod g+s {} \;
+sudo find "$APP_DIR/bootstrap/cache" -type d -exec chmod g+s {} \;
 
 echo "Clearing Laravel caches..."
 
