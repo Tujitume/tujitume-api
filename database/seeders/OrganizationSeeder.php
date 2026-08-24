@@ -6,7 +6,7 @@ use App\Models\Auth\OrganizationUserRole;
 use App\Models\Auth\Role;
 use App\Models\Auth\User;
 use App\Models\Organizations\Organization;
-use App\Models\Organizations\workspace;
+use App\Models\Organizations\Workspace;
 use Faker\Factory as Faker;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
@@ -83,71 +83,5 @@ class OrganizationSeeder extends Seeder
         } catch (\Exception $e) {
             dd('Error creating NGO Organization:', $e->getMessage(), $e->getTraceAsString());
         }
-
-        try {
-            // Create Foundation Organization Owner
-            $foundation_owner = User::updateOrCreate([
-                'email' => 'john.foundation@tujitume.com',
-            ], [
-                'first_name' => 'John',
-                'last_name' => 'Smith',
-                'gender' => 'M',
-                'dob' => $faker->date('Y-m-d'),
-                'user_type_id' => 4, // organization type
-                'email' => 'john.foundation@tujitume.com',
-                'email_verified_at' => now(),
-                'password' => Hash::make('password'),
-                'country' => 'US',
-                'city' => 'New York',
-                'phone' => $faker->phoneNumber,
-                'website' => 'https://innovation-foundation.org',
-                'stripe_connect_id' => null,
-                'stripe_customer_id' => null,
-                'completed_onboarding' => 1,
-                'image' => 'https://randomuser.me/api/portraits/men/'.rand(1, 99).'.jpg',
-            ]);
-
-            // Create Organization for Foundation
-            $foundation = Organization::updateOrCreate([
-                'owner_user_id' => $foundation_owner->id,
-            ], [
-                'name' => 'Innovation & Technology Foundation',
-                'display_name' => 'ITF',
-                'legal_name' => 'Innovation & Technology Foundation Inc',
-                'organization_type' => 'foundation',
-                'year_established' => 2010,
-                'description' => 'Foundation supporting tech innovation and entrepreneurship across Africa.',
-                'email' => 'contact@itf.org',
-                'phone' => $faker->phoneNumber,
-                'website' => 'https://innovation-foundation.org',
-                'country' => 'US',
-                'region' => 'North America',
-                'city' => 'New York',
-                'primary_industry_id' => 5,
-                'focus_sectors' => ['Technology', 'Innovation', 'Entrepreneurship'],
-                'operating_countries' => ['Kenya', 'Nigeria', 'South Africa'],
-                'target_regions' => ['Africa', 'Emerging Markets'],
-                'status' => 'active',
-            ]);
-
-            // Create workspace for Foundation
-            workspace::updateOrCreate([
-                'organization_id' => $foundation->id,
-            ], [
-                'name' => 'ITF Main Workspace',
-                'slug' => 'itf-main',
-                'subdomain' => 'itf',
-                'workspace_status' => 'active',
-            ]);
-
-            $foundation_owner->update(['organization_id' => $foundation->id]);
-            OrganizationUserRole::updateOrCreate(
-                ['organization_id' => $foundation->id, 'user_id' => $foundation_owner->id],
-                ['role_id' => Role::where('name', 'super_admin')->value('id')]
-            );
-        } catch (\Exception $e) {
-            dd('Error creating Foundation Organization:', $e->getMessage(), $e->getTraceAsString());
-        }
-
     }
 }
