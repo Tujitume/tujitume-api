@@ -36,6 +36,8 @@ Route::get('users/types', function () {
 Route::get('users', [UserController::class, 'index']);
 Route::get('users/me', [UserController::class, 'me']);
 Route::delete('users/{id}', [UserController::class, 'destroy']);
+Route::delete('organizations/team-members/{teamMember}', [UserController::class, 'destroyOrgTeamMember']);
+Route::patch('organizations/team-members/{teamMember}/status', [UserController::class, 'updateOrgTeamMemberStatus']);
 
 Route::get('/partiesInfo/{listing_id}', [UserController::class, 'partiesInfo']);
 Route::get('/partiesServiceMile/{rep_mile_id}', [UserController::class, 'getServiceOwner']);

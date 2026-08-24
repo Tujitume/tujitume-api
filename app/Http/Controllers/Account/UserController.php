@@ -28,7 +28,9 @@ use App\Service\Misc\ErrorLogService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\Rules\Password;
 
 class UserController extends Controller
 {
@@ -143,13 +145,7 @@ class UserController extends Controller
             return response()->json(['message' => 'You are not a member of an organization.'], 403);
         }
 
-        $isSuperAdmin = OrganizationUserRole::query()
-            ->where('organization_id', $user->organization_id)
-            ->where('user_id', $user->id)
-            ->whereHas('role', fn ($query) => $query->where('name', 'super_admin'))
-            ->exists();
-
-        if (! $isSuperAdmin) {
+        if (! $this->isOrganizationSuperAdmin($user)) {
             return response()->json(['message' => 'Only an organization super admin can view team members.'], 403);
         }
 
@@ -173,6 +169,16 @@ class UserController extends Controller
                 'image' => $membership->user->image,
                 'user_type_id' => $membership->user->user_type_id,
                 'organization_id' => $membership->organization_id,
+                'membership' => [
+                    'id' => $membership->id,
+                    'status' => $membership->status,
+                    'invited_at' => $membership->invited_at?->toISOString(),
+                    'accepted_at' => $membership->accepted_at?->toISOString(),
+                    'revoked_at' => $membership->revoked_at?->toISOString(),
+                    'invitation_expires_at' => $membership->invitation_expires_at?->toISOString(),
+                    'created_at' => $membership->created_at?->toISOString(),
+                    'updated_at' => $membership->updated_at?->toISOString(),
+                ],
                 'role' => [
                     'id' => $membership->role->id,
                     'name' => $membership->role->name,
@@ -346,6 +352,198 @@ class UserController extends Controller
                 'message' => 'Something went wrong, please try again later.',
             ], 500);
         }
+    }
+
+    public function destroyOrgTeamMember(Request $request, User $teamMember)
+    {
+        $user = $request->user();
+
+        if (! $user?->organization_id) {
+            return response()->json(['message' => 'You are not a member of an organization.'], 403);
+        }
+
+        if (! $this->isOrganizationSuperAdmin($user)) {
+            return response()->json(['message' => 'Only an organization super admin can remove team members.'], 403);
+        }
+
+        $membership = OrganizationUserRole::query()
+            ->where('organization_id', $user->organization_id)
+            ->where('user_id', $teamMember->id)
+            ->first();
+
+        if (! $membership) {
+            return response()->json(['message' => 'Team member not found in your organization.'], 404);
+        }
+
+        if ($teamMember->id === $user->id) {
+            return response()->json(['message' => 'You cannot remove your own account from the organization.'], 422);
+        }
+
+        if (Organization::whereKey($user->organization_id)
+            ->where('owner_user_id', $teamMember->id)
+            ->exists()) {
+            return response()->json(['message' => 'The organization owner cannot be removed as a team member.'], 422);
+        }
+
+        try {
+            DB::transaction(function () use ($teamMember): void {
+                // organization_user_roles.user_id cascades with the user deletion.
+                $teamMember->delete();
+            });
+
+            return response()->json(['message' => 'Team member deleted.'], 200);
+        } catch (\Exception $e) {
+            ErrorLogService::report($e, [
+                'input' => request()->except(['password', 'token']),
+            ]);
+
+            return response()->json([
+                'message' => 'Something went wrong, please try again later.',
+            ], 500);
+        }
+    }
+
+    public function updateOrgTeamMemberStatus(Request $request, User $teamMember)
+    {
+        $data = $request->validate([
+            'status' => ['required', 'in:pending,revoked'],
+        ]);
+
+        $user = $request->user();
+
+        if (! $user?->organization_id || ! $this->isOrganizationSuperAdmin($user)) {
+            return response()->json(['message' => 'Only an organization super admin can update team-member status.'], 403);
+        }
+
+        $membership = OrganizationUserRole::query()
+            ->where('organization_id', $user->organization_id)
+            ->where('user_id', $teamMember->id)
+            ->first();
+
+        if (! $membership) {
+            return response()->json(['message' => 'Team member not found in your organization.'], 404);
+        }
+
+        if ($teamMember->id === $user->id || Organization::whereKey($user->organization_id)
+            ->where('owner_user_id', $teamMember->id)
+            ->exists()) {
+            return response()->json(['message' => 'The organization owner cannot have their membership status changed.'], 422);
+        }
+
+        try {
+            $invitationToken = null;
+
+            DB::transaction(function () use ($data, $membership, $user, &$invitationToken): void {
+                if ($data['status'] === 'pending') {
+                    $invitationToken = \Illuminate\Support\Str::random(64);
+                    $membership->update([
+                        'status' => 'pending',
+                        'invited_by_user_id' => $user->id,
+                        'invited_at' => now(),
+                        'accepted_at' => null,
+                        'revoked_at' => null,
+                        'invitation_token_hash' => hash('sha256', $invitationToken),
+                        'invitation_expires_at' => now()->addDays(7),
+                    ]);
+
+                    return;
+                }
+
+                $membership->update([
+                    'status' => 'revoked',
+                    'revoked_at' => now(),
+                    'invitation_token_hash' => null,
+                    'invitation_expires_at' => null,
+                ]);
+            });
+
+            $membership->refresh()->load('role');
+
+            return response()->json([
+                'message' => $membership->status === 'pending'
+                    ? 'Team-member invitation reopened.'
+                    : 'Team-member access revoked.',
+                'membership' => $this->organizationMembershipPayload($membership),
+                // Send this only to the intended recipient through the invitation email.
+                'invitation_token' => $invitationToken,
+            ]);
+        } catch (\Exception $e) {
+            ErrorLogService::report($e, ['input' => $request->except(['token', 'password'])]);
+
+            return response()->json(['message' => 'Something went wrong, please try again later.'], 500);
+        }
+    }
+
+    public function acceptOrgTeamInvitation(Request $request)
+    {
+        $data = $request->validate([
+            'token' => ['required', 'string', 'size:64'],
+            'password' => ['required', 'confirmed', Password::min(8)->mixedCase()->numbers()],
+        ]);
+
+        try {
+            $membership = DB::transaction(function () use ($data): OrganizationUserRole {
+                $membership = OrganizationUserRole::query()
+                    ->with('user')
+                    ->where('invitation_token_hash', hash('sha256', $data['token']))
+                    ->lockForUpdate()
+                    ->first();
+
+                if (! $membership || $membership->status !== 'pending' || $membership->invitation_expires_at?->isPast()) {
+                    abort(422, 'This invitation is invalid or has expired.');
+                }
+
+                $membership->user->update([
+                    'password' => Hash::make($data['password']),
+                ]);
+
+                $membership->update([
+                    'status' => 'active',
+                    'accepted_at' => now(),
+                    'revoked_at' => null,
+                    'invitation_token_hash' => null,
+                    'invitation_expires_at' => null,
+                ]);
+
+                return $membership->fresh(['user.organizationRole.role']);
+            });
+
+            return response()->json([
+                'message' => 'Organization invitation accepted successfully.',
+                'user' => new UserResource($membership->user),
+            ]);
+        } catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) {
+            return response()->json(['message' => $e->getMessage()], $e->getStatusCode());
+        } catch (\Exception $e) {
+            ErrorLogService::report($e, ['input' => $request->except(['token', 'password', 'password_confirmation'])]);
+
+            return response()->json(['message' => 'Something went wrong, please try again later.'], 500);
+        }
+    }
+
+    private function isOrganizationSuperAdmin(User $user): bool
+    {
+        return OrganizationUserRole::query()
+            ->where('organization_id', $user->organization_id)
+            ->where('user_id', $user->id)
+            // ->where('status', 'active')
+            ->whereHas('role', fn ($query) => $query->where('name', 'super_admin'))
+            ->exists();
+    }
+
+    private function organizationMembershipPayload(OrganizationUserRole $membership): array
+    {
+        return [
+            'id' => $membership->id,
+            'organization_id' => $membership->organization_id,
+            'user_id' => $membership->user_id,
+            'status' => $membership->status,
+            'invited_at' => $membership->invited_at?->toISOString(),
+            'accepted_at' => $membership->accepted_at?->toISOString(),
+            'revoked_at' => $membership->revoked_at?->toISOString(),
+            'invitation_expires_at' => $membership->invitation_expires_at?->toISOString(),
+            'role' => $membership->role?->only(['id', 'name', 'access_types']),
+        ];
     }
 
     // Delete account

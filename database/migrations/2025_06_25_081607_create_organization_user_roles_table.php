@@ -13,6 +13,13 @@ return new class extends Migration
             $table->foreignId('organization_id')->constrained()->cascadeOnDelete();
             $table->foreignId('user_id')->constrained()->cascadeOnDelete();
             $table->foreignId('role_id')->constrained()->restrictOnDelete();
+            $table->enum('status', ['pending', 'active', 'declined', 'revoked'])->default('pending');
+            $table->foreignId('invited_by_user_id')->nullable()->constrained('users')->nullOnDelete();
+            $table->timestamp('invited_at')->nullable();
+            $table->timestamp('accepted_at')->nullable();
+            $table->timestamp('revoked_at')->nullable();
+            $table->string('invitation_token_hash', 64)->nullable()->unique();
+            $table->timestamp('invitation_expires_at')->nullable();
             $table->timestamps();
 
             // users.organization_id currently limits a user to one organization;

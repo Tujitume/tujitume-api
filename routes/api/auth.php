@@ -17,8 +17,9 @@ use Laravel\Socialite\Facades\Socialite;
 Route::post('auth/verify-device', [AuthController::class, 'verifyDevice']);
 Route::post('login', [AuthController::class, 'login']);
 Route::post('register', [RegisterController::class, 'register']);
-Route::post('register/role-user', [RegisterController::class, 'registerRoleUser'])
+Route::post('register/org-team-member', [RegisterController::class, 'registerRoleUser'])
     ->middleware('auth:sanctum');
+Route::post('organization-invitations/accept', [UserController::class, 'acceptOrgTeamInvitation']);
 Route::post('resetPassword', [UserController::class, 'resetPassword']);
 Route::get('logout', [AuthController::class, 'logout']);
 

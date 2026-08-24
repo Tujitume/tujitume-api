@@ -16,7 +16,6 @@ use App\Service\Misc\ErrorLogService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rules\Password;
 
@@ -360,6 +359,7 @@ class RegisterService
                 'user_id' => $user->id,
                 'role_id' => Role::where('name', 'super_admin')->value('id')
                     ?? throw new \RuntimeException('The super_admin role has not been seeded.'),
+                'status' => 'active',
             ]);
 
             // Create default settings
@@ -413,6 +413,7 @@ class RegisterService
         $isOrganizationOwner = $inviter?->id === $organization->owner_user_id;
         $isOrganizationAdmin = $inviter?->organizationRole()
             ->where('organization_id', $organization->id)
+            ->where('status', 'active')
             ->whereHas('role', fn ($query) => $query->where('name', 'super_admin'))
             ->exists();
 
@@ -430,14 +431,12 @@ class RegisterService
                 $uploadedImage = $this->imageUpload->save($image, 'images/users');
             }
 
-            $owner = $organization->owner;
-
-            $tempPassword = Str::random(10);
+            $invitationToken = Str::random(64);
 
             $user = User::create([
                 'first_name' => $data['first_name'],
                 'email' => $data['email'],
-                'password' => Hash::make($tempPassword),
+                'password' => null,
                 'user_type_id' => 4,
                 'organization_id' => $organization->id,
                 'image' => $uploadedImage,
@@ -449,30 +448,21 @@ class RegisterService
                 'organization_id' => $organization->id,
                 'user_id' => $user->id,
                 'role_id' => $data['role_id'],
+                'status' => 'pending',
+                'invited_by_user_id' => $inviter->id,
+                'invited_at' => now(),
+                'invitation_token_hash' => hash('sha256', $invitationToken),
+                'invitation_expires_at' => now()->addDays(7),
             ]);
 
             DB::commit();
 
-            $roles = [
-                10001 => 'super admin',
-                10002 => 'editor',
-                10003 => 'viewer',
-                10004 => 'internal_reviewer',
-            ];
-
-            // Mail::send('create_password', [
-            //     'email'   => $data['email'],
-            //     'o_email' => $owner->email,
-            //     'org'     => $organization->name,
-            //     'role'    => $roles[$data['role_id']] ?? 'member',
-            // ], function ($msg) use ($data, $organization) {
-            //     $msg->to($data['email']);
-            //     $msg->subject("You've been invited to {$organization->name}");
-            // });
-
             return response()->json([
                 'message' => 'Team member invited successfully.',
                 'user' => new UserResource($user->load('organizationRoles.role')),
+                // Send this single-use value through the invitation email in production.
+                'invitation_token' => $invitationToken,
+                'invitation_expires_at' => now()->addDays(7)->toISOString(),
             ], 201);
         } catch (\Throwable $e) {
             DB::rollBack();

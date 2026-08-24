@@ -98,6 +98,20 @@ class UserResource extends JsonResource
             ]
             : null;
 
+        $organizationMembership = $organizationRole
+            ? [
+                'id' => $organizationRole->id,
+                'organization_id' => $organizationRole->organization_id,
+                'status' => $organizationRole->status,
+                'invited_at' => $organizationRole->invited_at?->toISOString(),
+                'accepted_at' => $organizationRole->accepted_at?->toISOString(),
+                'revoked_at' => $organizationRole->revoked_at?->toISOString(),
+                'invitation_expires_at' => $organizationRole->invitation_expires_at?->toISOString(),
+                'created_at' => $organizationRole->created_at?->toISOString(),
+                'updated_at' => $organizationRole->updated_at?->toISOString(),
+            ]
+            : null;
+
         $user = [
             'id' => (int) $this->id,
             'user_type_id' => $userTypeId,
@@ -116,6 +130,7 @@ class UserResource extends JsonResource
             'lipr_onboard' => $liprWallet ? 1 : 0,
             'organization' => $organizationPayload,
             'role' => $role,
+            'organization_membership' => $organizationMembership,
             'workspaces' => $organizationWorkspaces,
             'settings' => $this->getSettings()->toFrontendArray(),
         ];
