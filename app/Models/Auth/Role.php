@@ -8,11 +8,18 @@ use Illuminate\Database\Eloquent\Model;
 class Role extends Model
 {
     use HasFactory;
-    protected $guarded = [];
 
-    public function insert(array $values)
+    protected $fillable = [
+        'name',
+        'access_types',
+    ];
+
+    protected $casts = [
+        'access_types' => 'array',
+    ];
+
+    public function organizationUserRoles()
     {
-        return $this->newQuery()->insert($values);
+        return $this->hasMany(OrganizationUserRole::class);
     }
-
 }

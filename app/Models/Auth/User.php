@@ -7,11 +7,10 @@ use App\Models\Business\Listing;
 use App\Models\Capital\CapitalProfile;
 use App\Models\Communication\Notifications;
 use App\Models\Finance\Transactions;
-use App\Models\Programs\ProgramApplication;
-use App\Models\Programs\ProgramProfile;
 use App\Models\Misc\Event;
 use App\Models\Organizations\Organization;
 use App\Models\Organizations\Workspace;
+use App\Models\Programs\ProgramApplication;
 use App\Models\Services\Services;
 use App\Models\Users\InvestorProfile;
 use App\Models\Users\ServiceProviderProfile;
@@ -29,12 +28,13 @@ class User extends Authenticatable
      *
      * @var array<int, string>
      */
-    protected $guarded = [];
-    // protected $fillable = [
-    //     'name',
-    //     'email',
-    //     'password',
-    // ];
+    protected $fillable = [
+        'first_name', 'last_name', 'display_name', 'email', 'phone', 'image',
+        'gender', 'dob', 'password', 'token', 'email_verified_at', 'user_type_id',
+        'completed_onboarding', 'country', 'city', 'website',
+        'lipr_wallet_account', 'stripe_connect_id', 'stripe_customer_id',
+        'organization_id',
+    ];
 
     /**
      * The attributes that should be hidden for serialization.
@@ -64,39 +64,44 @@ class User extends Authenticatable
         'social_impact_areas' => 'array',
     ];
 
-
     public function balance()
     {
-        return $this->hasOne(UserBalance::class,'user_id', 'id');
+        return $this->hasOne(UserBalance::class, 'user_id', 'id');
     }
-    
+
     public function investor_profile()
     {
-        return $this->hasOne(InvestorProfile::class,'user_id', 'id');
+        return $this->hasOne(InvestorProfile::class, 'user_id', 'id');
     }
 
     public function service_provider_profile()
     {
         return $this->hasOne(ServiceProviderProfile::class, 'user_id', 'id');
     }
-    
-    public function program_profile()
-    {
-        return $this->hasOne(ProgramProfile::class,'user_id', 'id');
-    }
+
     public function capital_profile()
     {
-        return $this->hasOne(CapitalProfile::class,'user_id', 'id');
+        return $this->hasOne(CapitalProfile::class, 'user_id', 'id');
     }
 
     public function user_type()
     {
-        return $this->belongsTo(UserType::class,'user_type_id', 'id');
+        return $this->belongsTo(UserType::class, 'user_type_id', 'id');
     }
 
     public function organization()
     {
         return $this->belongsTo(Organization::class, 'organization_id', 'id');
+    }
+
+    public function organizationRole()
+    {
+        return $this->hasOne(OrganizationUserRole::class);
+    }
+
+    public function organizationRoles()
+    {
+        return $this->hasMany(OrganizationUserRole::class);
     }
 
     public function workspaces()
@@ -106,32 +111,33 @@ class User extends Authenticatable
 
     public function notifications()
     {
-        return $this->hasMany(Notifications::class,'receiver_id', 'id');
+        return $this->hasMany(Notifications::class, 'receiver_id', 'id');
     }
 
     public function transactions()
     {
-        return $this->hasMany(Transactions::class,'user_id', 'id');
+        return $this->hasMany(Transactions::class, 'user_id', 'id');
     }
 
     public function listings()
     {
-        return $this->hasMany(Listing::class,'user_id', 'id');
+        return $this->hasMany(Listing::class, 'user_id', 'id');
     }
 
     public function services()
     {
-        return $this->hasMany(Services::class,'user_id', 'id');
+        return $this->hasMany(Services::class, 'user_id', 'id');
     }
 
     public function events()
     {
-        return $this->hasMany(Event::class,'user_id', 'id');
+        return $this->hasMany(Event::class, 'user_id', 'id');
     }
 
     // as sme
-    public function myApplications(){
-        return $this->hasMany(ProgramApplication::class,'user_id', 'id');
+    public function myApplications()
+    {
+        return $this->hasMany(ProgramApplication::class, 'user_id', 'id');
     }
 
     public function settings()
@@ -142,7 +148,10 @@ class User extends Authenticatable
     // Helper to get settings with defaults
     public function getSettings(): UserSetting
     {
-        return $this->settings ?? new UserSetting(UserSetting::defaults());
+        return $this->settings ?? new UserSetting([
+            'theme' => 'default',
+            'mode' => 'system',
+            'accent_color' => '#14532d',
+        ]);
     }
-
 }

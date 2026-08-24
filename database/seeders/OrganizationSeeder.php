@@ -2,6 +2,8 @@
 
 namespace Database\Seeders;
 
+use App\Models\Auth\OrganizationUserRole;
+use App\Models\Auth\Role;
 use App\Models\Auth\User;
 use App\Models\Organizations\Organization;
 use App\Models\Organizations\workspace;
@@ -38,7 +40,7 @@ class OrganizationSeeder extends Seeder
                 'stripe_connect_id' => null,
                 'stripe_customer_id' => null,
                 'completed_onboarding' => 1,
-                'image' => "https://randomuser.me/api/portraits/women/" . rand(1, 99) . ".jpg",
+                'image' => 'https://randomuser.me/api/portraits/women/'.rand(1, 99).'.jpg',
             ]);
 
             // Create Organization for NGO
@@ -72,8 +74,14 @@ class OrganizationSeeder extends Seeder
                 'subdomain' => 'efa',
                 'workspace_status' => 'active',
             ]);
+
+            $ngo_owner->update(['organization_id' => $ngo->id]);
+            OrganizationUserRole::updateOrCreate(
+                ['organization_id' => $ngo->id, 'user_id' => $ngo_owner->id],
+                ['role_id' => Role::where('name', 'super_admin')->value('id')]
+            );
         } catch (\Exception $e) {
-            dd("Error creating NGO Organization:", $e->getMessage(), $e->getTraceAsString());
+            dd('Error creating NGO Organization:', $e->getMessage(), $e->getTraceAsString());
         }
 
         try {
@@ -96,7 +104,7 @@ class OrganizationSeeder extends Seeder
                 'stripe_connect_id' => null,
                 'stripe_customer_id' => null,
                 'completed_onboarding' => 1,
-                'image' => "https://randomuser.me/api/portraits/men/" . rand(1, 99) . ".jpg",
+                'image' => 'https://randomuser.me/api/portraits/men/'.rand(1, 99).'.jpg',
             ]);
 
             // Create Organization for Foundation
@@ -131,8 +139,14 @@ class OrganizationSeeder extends Seeder
                 'subdomain' => 'itf',
                 'workspace_status' => 'active',
             ]);
+
+            $foundation_owner->update(['organization_id' => $foundation->id]);
+            OrganizationUserRole::updateOrCreate(
+                ['organization_id' => $foundation->id, 'user_id' => $foundation_owner->id],
+                ['role_id' => Role::where('name', 'super_admin')->value('id')]
+            );
         } catch (\Exception $e) {
-            dd("Error creating Foundation Organization:", $e->getMessage(), $e->getTraceAsString());
+            dd('Error creating Foundation Organization:', $e->getMessage(), $e->getTraceAsString());
         }
 
     }

@@ -3,6 +3,8 @@
 namespace Tests\Feature;
 
 use App\Http\Resources\User\UserResource;
+use App\Models\Auth\OrganizationUserRole;
+use App\Models\Auth\Role;
 use App\Models\Auth\User;
 use App\Models\Auth\UserSetting;
 use App\Models\Auth\UserType;
@@ -58,6 +60,17 @@ class UserResourceTest extends TestCase
         ]));
 
         $user->setRelation('organization', $organization);
+        $organizationUserRole = new OrganizationUserRole([
+            'organization_id' => 7,
+            'user_id' => 42,
+            'role_id' => 10001,
+        ]);
+        $organizationUserRole->setRelation('role', new Role([
+            'id' => 10001,
+            'name' => 'super_admin',
+            'access_types' => ['all'],
+        ]));
+        $user->setRelation('organizationRole', $organizationUserRole);
         $user->setRelation('settings', new UserSetting([
             'theme' => 'default',
             'mode' => 'system',
@@ -70,6 +83,7 @@ class UserResourceTest extends TestCase
         $this->assertSame(4, $payload['user_type_id']);
         $this->assertSame('organization', $payload['user_type']);
         $this->assertSame('Acme Org', $payload['organization']['name']);
+        $this->assertSame('super_admin', $payload['role']['name']);
         $this->assertCount(1, $payload['workspaces']);
         $this->assertSame('default', $payload['settings']['theme']);
         $this->assertArrayNotHasKey('program_profile', $payload);

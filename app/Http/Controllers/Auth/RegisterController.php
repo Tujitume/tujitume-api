@@ -18,7 +18,7 @@ class RegisterController extends Controller
             'user_type_id' => ['required', 'integer', 'in:1,2,3,4'],
         ]);
 
-        return match ( (int) $request->user_type_id ) {
+        return match ((int) $request->user_type_id) {
             1 => $this->registerService->registerBusinessOwner($request),
             2 => $this->registerService->registerInvestor($request),
             3 => $this->registerService->registerServiceProvider($request),
@@ -30,11 +30,11 @@ class RegisterController extends Controller
     public function registerRoleUser(Request $request)
     {
         $request->validate([
-            'user_type_id'    => ['required', 'integer', 'in:4'],
+            'user_type_id' => ['required', 'integer', 'in:4'],
             'organization_id' => ['required', 'integer', 'exists:organizations,id'],
-            'role_id'         => ['required', 'integer'],
-            'email'           => ['required', 'email'],
-            'first_name'      => ['required', 'string', 'max:255'],
+            'role_id' => ['required', 'integer', 'exists:roles,id'],
+            'email' => ['required', 'email'],
+            'first_name' => ['required', 'string', 'max:255'],
         ]);
 
         return $this->registerService->registerOrgRoleUser($request);

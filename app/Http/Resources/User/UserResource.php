@@ -23,6 +23,10 @@ class UserResource extends JsonResource
 
         if ($isOrganization) {
             $this->loadMissing('organization.workspaces', 'organization.programIndustry');
+
+            if ($this->resource->exists) {
+                $this->loadMissing('organizationRole.role');
+            }
         } elseif ($isInvestor) {
             $this->loadMissing('investor_profile');
         } elseif ($isServiceProvider) {
@@ -82,6 +86,18 @@ class UserResource extends JsonResource
             ];
         }
 
+        $organizationRole = $isOrganization && $this->relationLoaded('organizationRole')
+            ? $this->organizationRole
+            : null;
+
+        $role = $organizationRole
+            ? [
+                'id' => $organizationRole->role_id,
+                'name' => $organizationRole->role?->name,
+                'access_types' => $organizationRole->role?->access_types,
+            ]
+            : null;
+
         $user = [
             'id' => (int) $this->id,
             'user_type_id' => $userTypeId,
@@ -99,11 +115,12 @@ class UserResource extends JsonResource
             'stripe_onboard' => $stripeAccountId && $this->completed_onboarding ? 1 : 0,
             'lipr_onboard' => $liprWallet ? 1 : 0,
             'organization' => $organizationPayload,
+            'role' => $role,
             'workspaces' => $organizationWorkspaces,
             'settings' => $this->getSettings()->toFrontendArray(),
         ];
 
-        if (!$isOrganization) {
+        if (! $isOrganization) {
             $user['gender'] = $this->gender;
             $user['dob'] = $this->dob;
             $user['city'] = $this->city;
