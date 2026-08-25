@@ -14,76 +14,84 @@ use Illuminate\Support\Facades\Route;
 
 // THIRD PARTY CALLBACKS (Public)
 // =============================================================
-Route::post('/lipr-callback', [MpesaPollingController::class,'callback']);
+Route::post('/lipr-callback', [MpesaPollingController::class, 'callback']);
 Route::post('/stripe-callback', [CheckoutStripeController::class, 'callback']);
 
+// programs
+Route::post('/lipr-callback-program-escrow', [MpesaCallbackController::class, 'callbackProgramEscrow']);
 
-//programs
-Route::post('/lipr-callback-program-escrow', [MpesaCallbackController::class,'callbackProgramEscrow']);
-
-Route::post('/lipr-callback-program-direct', [MpesaCallbackController::class,'callbackProgramDirectDisburse']);
-Route::post('/lipr-callback-program-supplier', [MpesaCallbackController::class,'callbackForProgramSupplier']);
+Route::post('/lipr-callback-program-direct', [MpesaCallbackController::class, 'callbackProgramDirectDisburse']);
+Route::post('/lipr-callback-program-supplier', [MpesaCallbackController::class, 'callbackForProgramSupplier']);
 
 // PUBLIC ROUTES (No Auth Required)
 // =============================================================
-require __DIR__ . '/api/public.php';
+require __DIR__.'/api/public.php';
 
 // AUTHENTICATION ROUTES
 // =============================================================
-require __DIR__ . '/api/auth.php';
+require __DIR__.'/api/auth.php';
 
 // PROTECTED ROUTES (Auth Required)
 // =============================================================
-Route::middleware(['auth:sanctum', 'extend-token', 'throttle:api'])->group(function() {
+Route::middleware(['auth:sanctum', 'extend-token', 'throttle:api'])->group(function () {
 
     // Account & Security
-    require __DIR__ . '/api/account.php';
+    require __DIR__.'/api/account.php';
+
+    // Organizations
+    require __DIR__.'/api/organization.php';
 
     // Business & Listings
-    require __DIR__ . '/api/business.php';
+    require __DIR__.'/api/business.php';
 
-    require __DIR__ . '/api/milestones.php';
+    require __DIR__.'/api/milestones.php';
 
-    require __DIR__ . '/api/dealroom.php';
+    require __DIR__.'/api/dealroom.php';
 
     // Services
-    require __DIR__ . '/api/services.php';
+    require __DIR__.'/api/services.php';
 
     // Programs
-    require __DIR__ . '/api/programs.php';
+    require __DIR__.'/api/programs.php';
 
     // Capital
-    require __DIR__ . '/api/capital.php';
+    require __DIR__.'/api/capital.php';
 
     // Payments & Wallet
-    require __DIR__ . '/api/payments.php';
+    require __DIR__.'/api/payments.php';
 
     // Social & Communication
-    require __DIR__ . '/api/social.php';
+    require __DIR__.'/api/social.php';
 
     // AI Routes
-    require __DIR__ . '/api/ai.php';
+    require __DIR__.'/api/ai.php';
 
     // Events
-    require __DIR__ . '/api/events.php';
+    require __DIR__.'/api/events.php';
 
     // Misc/Utilities
-    require __DIR__ . '/api/misc.php';
+    require __DIR__.'/api/misc.php';
 });
 
 // TERMS & PRIVACY (Public)
 // =============================================================
-Route::get('terms', function(){ return view('policy.terms'); })->name('terms');
-Route::get('policy', function(){ return view('policy.privacy_policy'); })->name('policy');
+Route::get('terms', function () {
+    return view('policy.terms');
+})->name('terms');
+Route::get('policy', function () {
+    return view('policy.privacy_policy');
+})->name('policy');
 
 // UTILITY ROUTES
 // =============================================================
-Route::get('/clear', function() {
-    \Artisan::call('config:cache'); \Artisan::call('view:clear');
-    \Artisan::call('route:clear');  \Artisan::call('cache:clear');
-    dd("Cache is cleared");
+Route::get('/clear', function () {
+    \Artisan::call('config:cache');
+    \Artisan::call('view:clear');
+    \Artisan::call('route:clear');
+    \Artisan::call('cache:clear');
+    dd('Cache is cleared');
 });
 
 // CATCH-ALL ROUTE (Must be last)
 // =============================================================
-//Route::get('{/anypath}', [\App\Http\Controllers\PagesController::class, 'home'])->where('path', '.*');
+// Route::get('{/anypath}', [\App\Http\Controllers\PagesController::class, 'home'])->where('path', '.*');
