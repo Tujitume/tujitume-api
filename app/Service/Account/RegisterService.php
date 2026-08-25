@@ -16,6 +16,7 @@ use App\Service\Misc\ErrorLogService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rules\Password;
 
@@ -457,11 +458,32 @@ class RegisterService
 
             DB::commit();
 
+            $invitationUrl = rtrim(config('app.app_url'), '/')
+                .'/organization-invitations/accept?token='.$invitationToken;
+
+            try {
+                Mail::send('organization_team_invitation', [
+                    'teamMember' => $user,
+                    'organization' => $organization,
+                    'inviter' => $inviter,
+                    'role' => Role::find($data['role_id'])->name,
+                    'invitationUrl' => $invitationUrl,
+                    'expiresAt' => now()->addDays(7),
+                ], function ($message) use ($user, $organization): void {
+                    $message->to($user->email)
+                        ->subject("You've been invited to join {$organization->name}");
+                });
+            } catch (\Throwable $mailException) {
+                // The pending membership remains valid so the invite can be resent.
+                ErrorLogService::report($mailException, [
+                    'organization_id' => $organization->id,
+                    'team_member_id' => $user->id,
+                ]);
+            }
+
             return response()->json([
                 'message' => 'Team member invited successfully.',
                 'user' => new UserResource($user->load('organizationRoles.role')),
-                // Send this single-use value through the invitation email in production.
-                'invitation_token' => $invitationToken,
                 'invitation_expires_at' => now()->addDays(7)->toISOString(),
             ], 201);
         } catch (\Throwable $e) {

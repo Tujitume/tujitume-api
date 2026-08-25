@@ -186,7 +186,7 @@ class ProgramController extends Controller
 
                 "impact_objectives" => "nullable|string",
                 "social_impact_areas" => "nullable|array",
-                "program_brief_pdf" => "required|file|mimes:pdf,docx|max:2048",
+                //"program_brief_pdf" => "required|file|mimes:pdf,docx|max:2048",
                 'start_date' => 'required|date',
                 'application_deadline' => 'required|date|after:today',
                 'currency' => 'nullable|string',
@@ -211,9 +211,9 @@ class ProgramController extends Controller
                 //'end_date' => 'nullable|date|after:start_date',
             ]);
 
-            $programUser = User::with('program_profile')->find(Auth::id());
-            if(!$programUser->program_profile){
-                return response()->json(['message' => 'Program profile not found, Forbidden.'], 403);
+            $orgUser = User::with('organization')->find(Auth::id());
+            if(!$orgUser->organization){
+                return response()->json(['message' => 'Organization profile not found, Forbidden.'], 403);
             }
 
             if($validated['program_type'] == 'multi_round' && $validated['total_rounds'] == 1){
@@ -234,7 +234,7 @@ class ProgramController extends Controller
             // Auto-set fields
             $validated['user_id'] = Auth::id();
             $validated['status'] = 'draft';
-            $validated['funder_type'] = $programUser->program_profile->org_type; //draft
+            $validated['funder_type'] = $orgUser->organization->organization_type; //draft
             $validated['visible'] = 1;
             $validated['currency'] = $validated['currency'] ?? 'KES';
             $validated['available_amount'] = $validated['total_program_amount'];

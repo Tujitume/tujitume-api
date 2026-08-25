@@ -21,8 +21,8 @@ class ProgramMiddleware
         $method = $request->method();;
         $route_name = $lastSegment = $this->getLastRouteSegment(Route::current()?->uri());
 
-        $user = Auth::user()->load('program_profile.role');
-        $role = $user->program_profile?->role?->name ?? 'admin';
+        $user = Auth::user()->load('organizationRole.role');
+        $role = $user->organizationRole->role?->name;
         $editorForbidden = ['delete-program', 'create-program', 'update-profile','delete/role-user','delete-user'];
         $viewerForbidden = [ 'accept', 'reject', 'update-program', 'visibility','store-watchlist','delete/role-user','delete-user'];
 
