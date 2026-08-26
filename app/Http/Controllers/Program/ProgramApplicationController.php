@@ -116,7 +116,7 @@ class ProgramApplicationController extends Controller
                 ->whereNot('status', 'draft')
                 ->latest()->get();
         }
-        else if ($user->user_type_id == 2){
+        else if ($user->user_type_id == 4){
             $watchlistPitchIds = ProgramWatchlist::where('program_owner_id', $user->id)->pluck('pitch_id')->toArray();
             $pitches = ProgramApplication::with(['program', 'currentRound', 'program_milestones'])
                 ->where('program_owner_id', $user->id)
@@ -642,9 +642,9 @@ class ProgramApplicationController extends Controller
     // H e l p e r s
     public function get_role()
     {
-        $user = Auth::user()->load('program_profile.role');
-        $user->role = $user->program_profile?->role?->name ?? 'super-admin';
-        $user->program_owner_id = $user->program_profile?->program_owner_id;
+        $user = Auth::user()->load('organizationRole.role');
+        $user->role = $user->organizationRole?->role?->name ?? 'super-admin';
+        $user->program_owner_id = $user->organizationOwnerId();
         return $user;
     }
 

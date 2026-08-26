@@ -169,9 +169,9 @@ class WalletController extends Controller
 
             $role = null;
 
-            if($seller->user_type_id == 2){
-                $seller->load('program_profile.role');
-                $role = $seller->program_profile?->role?->name ?? null;
+            if($seller->user_type_id == 4){
+                $seller->load('organizationRole.role');
+                $role = $seller->organizationRole?->role?->name ?? null;
             }
             else if($seller->user_type_id == 3){
                 $seller->load('capital_profile.role');
@@ -256,11 +256,11 @@ class WalletController extends Controller
             $user_id = $user->id;
 
             //Role user check
-            if($user->user_type_id == 2) {
-                $user->load('program_profile.role');
-                $role = $user->program_profile?->role?->name ?? null;
+            if($user->user_type_id == 4) {
+                $user->load('organizationRole.role');
+                $role = $user->organizationRole?->role?->name ?? null;
                 if ($role) {
-                    $user_id = $user->program_profile?->program_owner_id ?? $user->id;
+                    $user_id = $user->organizationOwnerId();
                 }
             }
             else if($user->user_type_id == 3) {
@@ -423,7 +423,7 @@ class WalletController extends Controller
 
             //NotificationService
             $link = 'account';
-            if($user->user_type_id == 2 || $user->user_type_id == 3){
+            if($user->user_type_id == 4 || $user->user_type_id == 3){
                 $link = 'overview/account';
             }
             $text = 'Hi, your wallet was credited by USD $'. $amountUsd .' from deposit.';
@@ -504,7 +504,7 @@ class WalletController extends Controller
                 });
                 //NotificationService
                 $link = 'account';
-                if($user->user_type_id == 2 || $user->user_type_id == 3){
+                if($user->user_type_id == 4 || $user->user_type_id == 3){
                     $link = 'overview/account';
                 }
                 $text = 'Hi, your wallet was credited by USD $'. $netAmount .' from deposit.';

@@ -406,6 +406,7 @@ class RegisterService
             'role_id' => ['required', 'integer', 'exists:roles,id'],
             'email' => ['required', 'email', 'unique:users,email'],
             'first_name' => ['required', 'string', 'max:255'],
+            'last_name' => ['required', 'string', 'max:255'],
             'image' => ['nullable', 'image', 'mimes:jpeg,png,jpg,gif,svg', 'max:2048'],
         ]);
 

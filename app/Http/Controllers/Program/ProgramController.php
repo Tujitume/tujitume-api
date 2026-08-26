@@ -10,7 +10,6 @@ use App\Models\Finance\BalanceLog;
 use App\Models\Programs\Program;
 use App\Models\Programs\ProgramApplication;
 use App\Models\Programs\ProgramMilestone;
-use App\Models\Programs\ProgramProfile;
 use App\Models\Programs\ProgramWallet;
 use App\Models\Programs\ProgramWatchlist;
 use App\Models\Programs\Rounds\ProgramRound;
@@ -53,9 +52,9 @@ class ProgramController extends Controller
 
     public function get_role()
     {
-        $user = Auth::user()->load('program_profile.role');
-        $user->role = $user->program_profile?->role?->name ?? 'super-admin';
-        $user->program_owner_id = $user->program_profile?->program_owner_id;
+        $user = Auth::user()->load('organizationRole.role');
+        $user->role = $user->organizationRole?->role?->name ?? 'super-admin';
+        $user->program_owner_id = null;
         return $user;
     }
     // C O R E  Methods
@@ -65,7 +64,7 @@ class ProgramController extends Controller
             if(Auth::check()){
                 $user_id = Auth::id();
                 $user = User::select('user_type_id','id')->where('id',$user_id)->first();
-                if($user->user_type_id == 2){  //Program
+                if($user->user_type_id == 4){  //Program
                     $user = $this->get_role();
 
                     if (in_array($user->role, ['editor', 'viewer', 'admin'])) {
@@ -685,9 +684,7 @@ class ProgramController extends Controller
             $data = $request->except(['_token', 'id', 'role_id']);
             $user = User::findOrFail($request->id);
             $user->update($data); // performs mass update
-            $program_profile = ProgramProfile::where('user_id', $user->id)->update([
-                'role_id' => $request->role_id
-            ]);
+            $user->organizationRole()->update(['role_id' => $request->role_id]);
             return response()->json(['message' => 'User updated.'], 200);
         }
         catch (\Exception $e) {
@@ -710,8 +707,7 @@ class ProgramController extends Controller
             //Balance logs
             BalanceLog::where('changed_by', $user->id)->delete();
 
-            $programProfile = $user->program_profile;
-            if (!$programProfile || Auth::id() !== $programProfile->user_id || $programProfile->role_id) {
+            if (Auth::id() !== $user->id) {
                 return response()->json(['message' => 'Unauthorized'], 403);
             }
 
@@ -731,19 +727,9 @@ class ProgramController extends Controller
             }
 
 
-            $program_profiles = ProgramProfile::where('user_id',$request->id)
-                ->orWhere('program_owner_id',$request->id)->get();
-
             ProgramApplication::where('user_id',$request->id)->delete();
 
-            if($user->user_type_id == 2){ //Program
-                foreach ($program_profiles as $profile) {
-                    if ($profile->user_id === $user->id) {
-                        continue; // skip owner
-                    }
-                    $profile->user?->delete();
-                    $profile->delete();
-                }
+            if($user->user_type_id == 4){ // Program organization
                 $user->delete();
 
                 //Delete Programs/files/pitches/bookings/Messages
@@ -781,8 +767,8 @@ class ProgramController extends Controller
             $user = User::find($request->id);
             User::where('id',$request->id)->delete();
 
-            if($user->user_type_id == 2) //Program
-                ProgramProfile::where('user_id',$request->id)->delete();
+            if($user->user_type_id == 4) // Program organization
+                $user->organizationRole()->delete();
             else
                 CapitalProfile::where('user_id',$request->id)->delete();
 
@@ -809,8 +795,8 @@ class ProgramController extends Controller
                 return response()->json(['message' => 'Invalid or expired link'], 403);
             }
 
-            $user = User::with('program_profile')->where('email',$email)->first();
-            $user?->program_profile?->delete();
+            $user = User::with('organizationRole')->where('email',$email)->first();
+            $user?->organizationRole?->delete();
             $user?->delete();
 
             return redirect()->away('https://beta.tujitume.com?registerModal=open');
@@ -830,7 +816,7 @@ class ProgramController extends Controller
     public function update_profile(Request $request)
     {
         try{
-            $user = Auth::user()->load('program_profile');
+            $user = Auth::user()->load('organization');
             $request->validate([
                 'fname' => 'required|string|max:255', // Org name
                 'interested_cats' => 'array', // Focus Sectors
@@ -848,18 +834,11 @@ class ProgramController extends Controller
                 'website' => $request->website,
             ]);
 
-            // Prepare Program data
-            $programProfileData = [
-                'org_type' => $request->org_type,
-                'mission'  => $request->mission,
-                'regions'  => $request->regions,
-            ];
-
-            // Update or create CapitalProfile
-            $user->program_profile()->updateOrCreate(
-                ['user_id' => $user->id],
-                $programProfileData
-            );
+            $user->organization?->update([
+                'organization_type' => $request->org_type,
+                'description' => $request->mission,
+                'target_regions' => $request->regions,
+            ]);
 
             //Update Image
             $image=$request->file('image');

@@ -119,7 +119,7 @@ class WithdrawalService
 
     private function notifyWithdrawal(User $user, float $amountUsd): void
     {
-        $link = in_array($user->user_type_id, [2, 3]) ? 'overview/account' : 'account';
+        $link = in_array($user->user_type_id, [4, 3]) ? 'overview/account' : 'account';
         $text = "Hi, your wallet was debited by USD \${$amountUsd} from withdraw.";
 
         $this->notification->create($user->id, $user->id, $text, $link, 'withdraw');

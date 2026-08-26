@@ -12,7 +12,6 @@ use App\Models\Capital\CapitalWatchlist;
 use App\Models\Capital\StartupPitches;
 use App\Models\Communication\Messages;
 use App\Models\Finance\BalanceLog;
-use App\Models\Programs\ProgramProfile;
 use App\Models\Services\ServiceBooking;
 use App\Models\Shared\Watchlist;
 use App\Service\Account\AccountDeletionEligibilityService;
@@ -806,8 +805,8 @@ class CapitalController extends Controller
             $user = User::find($request->id);
             User::where('id',$request->id)->delete();
 
-            if($user->user_type_id == 2) //Program
-                ProgramProfile::where('user_id',$request->id)->delete();
+            if($user->user_type_id == 4) // Program organization
+                $user->organizationRole()->delete();
             else
                 CapitalProfile::where('user_id',$request->id)->delete();
 

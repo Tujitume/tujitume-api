@@ -6,7 +6,6 @@ use App\Http\Controllers\Controller;
 use App\Models\ApplicationRoundHistory;
 use App\Models\Programs\Program;
 use App\Models\Programs\ProgramApplication;
-use App\Models\Programs\ProgramProfile;
 use App\Models\Programs\Rounds\ApplicationRoundResponse;
 use App\Models\Programs\Rounds\ProgramRound;
 use App\Models\Programs\Rounds\RoundCustomQuestion;
@@ -56,7 +55,7 @@ class ProgramRoundController extends Controller
     {
         $userId = auth()->id();
 
-        $roleUser = ProgramProfile::where('user_id', $userId)->where('program_owner_id', $round->program->user_id)->first();
+        $roleUser = auth()->user()?->organization_id === $round->program->user?->organization_id;
 
 
         if ($round->program->user_id !== $userId && !$roleUser) {

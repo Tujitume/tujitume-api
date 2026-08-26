@@ -26,7 +26,7 @@ class ProgramMiddleware
         $editorForbidden = ['delete-program', 'create-program', 'update-profile','delete/role-user','delete-user'];
         $viewerForbidden = [ 'accept', 'reject', 'update-program', 'visibility','store-watchlist','delete/role-user','delete-user'];
 
-        if($user->user_type_id == 2) {
+        if($user->user_type_id == 4) {
             if($role == 'editor')
             {
                 if(in_array($route_name, $editorForbidden)){

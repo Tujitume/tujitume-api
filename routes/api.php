@@ -25,52 +25,52 @@ Route::post('/lipr-callback-program-supplier', [MpesaCallbackController::class, 
 
 // PUBLIC ROUTES (No Auth Required)
 // =============================================================
-require __DIR__.'/api/public.php';
+require __DIR__.'/api/v1/public.php';
 
 // AUTHENTICATION ROUTES
 // =============================================================
-require __DIR__.'/api/auth.php';
+require __DIR__.'/api/v1/auth.php';
 
 // PROTECTED ROUTES (Auth Required)
 // =============================================================
 Route::middleware(['auth:sanctum', 'extend-token', 'throttle:api'])->group(function () {
 
     // Account & Security
-    require __DIR__.'/api/account.php';
+    require __DIR__. '/api/v1/account.php';
 
     // Organizations
-    require __DIR__.'/api/organization.php';
+    require __DIR__.'/api/v1/organization.php';
 
     // Business & Listings
-    require __DIR__.'/api/business.php';
+    require __DIR__.'/api/v1/business.php';
 
-    require __DIR__.'/api/milestones.php';
+    require __DIR__.'/api/v1/milestones.php';
 
-    require __DIR__.'/api/dealroom.php';
+    require __DIR__. '/api/v1/dealroom.php';
 
     // Services
-    require __DIR__.'/api/services.php';
+    require __DIR__. '/api/v1/services.php';
 
     // Programs
-    require __DIR__.'/api/programs.php';
+    require __DIR__.'/api/v1/programs.php';
 
     // Capital
-    require __DIR__.'/api/capital.php';
+    require __DIR__. '/api/v1/capital.php';
 
     // Payments & Wallet
-    require __DIR__.'/api/payments.php';
+    require __DIR__.'/api/v1/payments.php';
 
     // Social & Communication
-    require __DIR__.'/api/social.php';
+    require __DIR__.'/api/v1/social.php';
 
     // AI Routes
-    require __DIR__.'/api/ai.php';
+    require __DIR__. '/api/v1/ai.php';
 
     // Events
-    require __DIR__.'/api/events.php';
+    require __DIR__.'/api/v1/events.php';
 
     // Misc/Utilities
-    require __DIR__.'/api/misc.php';
+    require __DIR__.'/api/v1/misc.php';
 });
 
 // TERMS & PRIVACY (Public)

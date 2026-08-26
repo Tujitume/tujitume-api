@@ -58,7 +58,7 @@ class ScheduleMeetingController extends Controller
             $dateTime = Carbon::createFromFormat('Y-m-d H:i', $request->date.' '. $request->time);
             $formatted = $dateTime->format('F j, g:i A'); // â†’ July 1, 2:00 PM
 
-            if($host->user_type_id == 2 || $host->user_type_id == 3){
+            if($host->user_type_id == 4 || $host->user_type_id == 3){
                 $linkForSme = 'meeting';
                 $linkForOrg = 'overview/settings/security';
             }
@@ -356,9 +356,9 @@ class ScheduleMeetingController extends Controller
    #____________________________H e l p e r s________________________
     public function get_role()
     {
-        $user = Auth::user()->load('program_profile.role');
-        $user->role = $user->program_profile?->role?->name ?? 'super-admin';
-        $user->program_owner_id = $user->program_profile?->program_owner_id;
+        $user = Auth::user()->load('organizationRole.role');
+        $user->role = $user->organizationRole?->role?->name ?? 'super-admin';
+        $user->program_owner_id = $user->organizationOwnerId();
         return $user;
     }
 

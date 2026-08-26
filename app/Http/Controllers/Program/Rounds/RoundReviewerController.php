@@ -108,7 +108,7 @@ class RoundReviewerController extends Controller
             if($request->reviewer_type == 'internal') {
 
                 $userId = $validated['user_id'];
-                $user = User::with('program_profile')->find($userId);
+                $user = User::with('organizationRole')->find($userId);
 
                 // Check if already assigned
                 $exists = $round->reviewers()->where('user_id', $userId)->exists();
@@ -126,9 +126,9 @@ class RoundReviewerController extends Controller
                 ]);
 
                 //$user->update(['user_type_id' => 6, // internal reviewer]);
-                $user->program_profile()->updateOrCreate(
+                $user->organizationRole()->updateOrCreate(
                     ['user_id' => $userId],
-                    ['role_id' => 10004] // internal reviewer
+                    ['organization_id' => $round->program->user->organization_id, 'role_id' => 10004]
                 );
 
             }

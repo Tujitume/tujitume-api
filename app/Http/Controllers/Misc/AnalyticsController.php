@@ -277,9 +277,9 @@ class AnalyticsController extends Controller
 
     public function get_role()
     {
-        $user = Auth::user()->load('program_profile.role');
-        $user->role = $user->program_profile?->role?->name ?? 'super-admin';
-        $user->program_owner_id = $user->program_profile?->program_owner_id;
+        $user = Auth::user()->load('organizationRole.role');
+        $user->role = $user->organizationRole?->role?->name ?? 'super-admin';
+        $user->program_owner_id = $user->organizationOwnerId();
         return $user;
     }
 

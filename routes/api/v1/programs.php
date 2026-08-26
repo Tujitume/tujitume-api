@@ -33,7 +33,7 @@ use App\Http\Controllers\Program\SupplierDirectoryController;
 use App\Http\Controllers\Misc\AnalyticsController;
 use App\Http\Controllers\Misc\MatchController;
 
-Route::prefix('/program')->middleware(['program'])->group(function(){
+Route::prefix('/programs')->middleware(['program'])->group(function(){
     //Program
     Route::get('programs', [ProgramController::class, 'index']);
     Route::get('public-programs', [ProgramController::class, 'public_programs']);

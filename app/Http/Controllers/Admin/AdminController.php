@@ -9,7 +9,6 @@ use App\Models\Business\Listing;
 use App\Models\Capital\CapitalProfile;
 use App\Models\Communication\Messages;
 use App\Models\Finance\BalanceLog;
-use App\Models\Programs\ProgramProfile;
 use App\Models\Services\ServiceMessages;
 use App\Models\Services\Services;
 use App\Models\Shared\ErrorLog;
@@ -219,16 +218,8 @@ class AdminController extends Controller
                 }
 
             }
-            else if($type == 2){
-                // Delete all Program owner files & Program profile
-                $program_pro = ProgramProfile::where('user_id', $id)->first();
-                if($program_pro && $program_pro->document){
-                    $filePath = public_path($program_pro->document);
-                    if (file_exists($filePath)) {
-                        unlink($filePath);
-                    }
-                }
-                $program_pro->delete();
+            else if($type == 4){
+                // Delete program resources owned by the organization account.
 
                 $programs = Program::where('user_id', $id)->get();
                 foreach ($programs as $program) {

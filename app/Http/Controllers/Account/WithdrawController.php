@@ -137,7 +137,7 @@ class WithdrawController extends Controller
 
             //NotificationService
             $link = 'account';
-            if($user->user_type_id == 2 || $user->user_type_id == 3){
+            if($user->user_type_id == 4 || $user->user_type_id == 3){
                 $link = 'overview/account';
             }
             $text = 'Hi, your wallet was debited by USD $'. $amountUsd .' from withdraw.';
@@ -256,7 +256,7 @@ class WithdrawController extends Controller
 
             //NotificationService
             $link = 'account';
-            if($user->user_type_id == 2 || $user->user_type_id == 3){
+            if($user->user_type_id == 4 || $user->user_type_id == 3){
                 $link = 'overview/account';
             }
             $text = 'Hi, your wallet was debited by USD $'. $amountUsd .' from withdraw.';
@@ -371,7 +371,7 @@ class WithdrawController extends Controller
 
             //NotificationService
             $link = 'account';
-            if($user->user_type_id == 2 || $user->user_type_id == 3){
+            if($user->user_type_id == 4 || $user->user_type_id == 3){
                 $link = 'overview/account';
             }
             $text = 'Hi, your wallet was debited by USD $'. $amountUsd .' from withdraw.';
@@ -452,7 +452,7 @@ class WithdrawController extends Controller
                 });
                 //NotificationService
                 $link = 'account';
-                if($user->user_type_id == 2 || $user->user_type_id == 3){
+                if($user->user_type_id == 4 || $user->user_type_id == 3){
                     $link = 'overview/account';
                 }
                 $text = 'Hi, your wallet was debited by USD $'. $payout_amount .' from withdraw.';

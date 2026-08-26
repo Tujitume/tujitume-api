@@ -15,7 +15,6 @@ use App\Models\Finance\BalanceLog;
 use App\Models\Finance\LiprPayment;
 use App\Models\Finance\Transactions;
 use App\Models\Programs\Program;
-use App\Models\Programs\ProgramProfile;
 use App\Models\Misc\Setting;
 use App\Models\Services\ServiceBooking;
 use App\Models\Services\ServiceMessages;
@@ -64,11 +63,11 @@ class AccountController extends Controller
             $lipr = $user->lipr_wallet ? 1 : 0;
 
             //Role User check
-            if($user->user_type_id == 2){
-                $user->load('program_profile.role');
-                $role = $user->program_profile?->role?->name ?? null;
+            if($user->user_type_id == 4){
+                $user->load('organizationRole.role');
+                $role = $user->organizationRole?->role?->name ?? null;
                 if($role){
-                    $owner_id = $user->program_profile?->program_owner_id;
+                    $owner_id = $user->organizationOwnerId();
                     $owner = User::findOrFail($owner_id);
                     $userBalance = $owner->balance?->balance ?? 0;
 
@@ -134,10 +133,10 @@ class AccountController extends Controller
             $user = Auth::user();
             $user_id = $user->id;
 
-            if($user->user_type_id == 2){
-                $role = $user->program_profile?->role?->name;
+            if($user->user_type_id == 4){
+                $role = $user->organizationRole?->role?->name;
                 if($role){
-                    $user_id = $user->program_profile?->program_owner_id;
+                    $user_id = $user->organizationOwnerId();
                 }
             }
             else if($user->user_type_id == 3){

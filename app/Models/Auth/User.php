@@ -104,6 +104,14 @@ class User extends Authenticatable
         return $this->hasMany(OrganizationUserRole::class);
     }
 
+    /** Return the organization account that owns shared organization resources. */
+    public function organizationOwnerId(): int
+    {
+        $this->loadMissing('organization');
+
+        return $this->organization?->owner_user_id ?? $this->id;
+    }
+
     public function workspaces()
     {
         return $this->hasManyThrough(Workspace::class, Organization::class, 'id', 'organization_id', 'organization_id', 'id');

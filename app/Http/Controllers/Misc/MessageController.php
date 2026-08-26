@@ -96,16 +96,18 @@ class MessageController extends Controller
             $to_id = $validated['to_id'];
 
             // Program Editor
-            if($user->user_type_id == 2) { //Program From
-                $role = $user->program_profile?->role?->name;
+            if($user->user_type_id == 4) { // Organization program member
+                $user->loadMissing('organizationRole.role');
+                $role = $user->organizationRole?->role?->name;
                 if($role == 'editor' || $role == 'admin'){
-                    $from_id = $user->program_profile?->program_owner_id ?? $user->id;
+                    $from_id = $user->organizationOwnerId();
                 }
             }
-            else if ($userTo->user_type_id == 2) { //Program To
-                $role = $userTo->program_profile?->role?->name;
+            else if ($userTo->user_type_id == 4) { // Organization program member
+                $userTo->loadMissing('organizationRole.role');
+                $role = $userTo->organizationRole?->role?->name;
                 if ($role == 'editor' || $role == 'admin') {
-                    $to_id = $userTo->program_profile?->program_owner_id ?? $userTo->id;
+                    $to_id = $userTo->organizationOwnerId();
                 }
             }
 
@@ -318,18 +320,23 @@ class MessageController extends Controller
             $toId   = $validated['to_id'];
 
             $resolveOwnerId = function (User $user, string $type) {
-                $profile = $type === 'program'   ? $user->program_profile   : $user->capital_profile;
+                if ($type === 'program') {
+                    $user->loadMissing('organizationRole.role');
+                    $role = $user->organizationRole?->role?->name;
+                    return in_array($role, ['editor', 'admin']) ? $user->organizationOwnerId() : $user->id;
+                }
+
+                $profile = $user->capital_profile;
                 $role    = $profile?->role?->name;
-                $ownerKey = $type === 'program'  ? 'program_owner_id'       : 'capital_owner_id';
-                return ($role === 'editor' || $role === 'admin') ? ($profile?->$ownerKey ?? $user->id) : $user->id;
+                return ($role === 'editor' || $role === 'admin') ? ($profile?->capital_owner_id ?? $user->id) : $user->id;
             };
 
-            if ($authUser->user_type_id === 2) $fromId = $resolveOwnerId($authUser, 'program');
+            if ($authUser->user_type_id === 4) $fromId = $resolveOwnerId($authUser, 'program');
             if ($authUser->user_type_id === 3) $fromId = $resolveOwnerId($authUser, 'capital');
 
             if ($request->filled('to_id')) {
                 $userTo = User::findOrFail($toId);
-                if ($userTo->user_type_id === 2) $toId = $resolveOwnerId($userTo, 'program');
+                if ($userTo->user_type_id === 4) $toId = $resolveOwnerId($userTo, 'program');
                 if ($userTo->user_type_id === 3) $toId = $resolveOwnerId($userTo, 'capital');
             }
 

@@ -32,7 +32,7 @@ Route::get('/saveStripe/{token}', [WalletController::class, 'onboardingSuccess']
 # A D M I N
 Route::get('admin/login', function () {return view('admin.login');})->name('loginA');
 
-require __DIR__ . '/api/admin.php';
+require __DIR__ . '/api/v1/admin.php';
 
 # Unused
 Route::post('/login-from-token', function (Request $request) {

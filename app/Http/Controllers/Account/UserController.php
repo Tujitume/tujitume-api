@@ -16,7 +16,6 @@ use App\Models\Finance\BalanceLog;
 use App\Models\Organizations\Organization;
 use App\Models\Programs\Program;
 use App\Models\Programs\ProgramApplication;
-use App\Models\Programs\ProgramProfile;
 use App\Models\Services\ServiceBooking;
 use App\Models\Services\ServiceBookingMilestone;
 use App\Models\Services\ServiceMessages;
@@ -239,12 +238,9 @@ class UserController extends Controller
             $success = $user->save();
 
             // Activating role based users
-            if ($user->user_type_id == 2) {
-                $programProfile = $user->program_profile;
-
-                if ($programProfile && in_array($programProfile->role_id, [10001, 10002, 10003])) {
-                    $programProfile->update(['active' => 1]);
-                }
+            if ($user->user_type_id == 4) {
+                $user->organizationRole()->whereIn('role_id', [10001, 10002, 10003])
+                    ->update(['status' => 'active', 'accepted_at' => now()]);
             }
 
             $message = $success ? 'Password reset Success!' : 'Password reset Failed!';
@@ -478,10 +474,14 @@ class UserController extends Controller
     {
         $data = $request->validate([
             'token' => ['required', 'string', 'size:64'],
+            'display_name' => ['required', 'string', 'max:255'],
+            'image' => ['required', 'file', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
+            'phone' => ['required', 'string', 'max:20'],
             'password' => ['required', 'confirmed', Password::min(8)->mixedCase()->numbers()],
         ]);
 
         try {
+
             $membership = DB::transaction(function () use ($data): OrganizationUserRole {
                 $membership = OrganizationUserRole::query()
                     ->with('user')
@@ -493,7 +493,17 @@ class UserController extends Controller
                     abort(422, 'This invitation is invalid or has expired.');
                 }
 
+                $uploadedImage = null;
+
+                $image = $data['image'] ?? null;
+
+                if ($image) {
+                    $uploadedImage = $this->imageUpload->save($image, 'images/users');
+                }
+
                 $membership->user->update([
+                    'display_name' => $data['display_name'],
+                    'image' => $uploadedImage,
                     'password' => Hash::make($data['password']),
                 ]);
 
@@ -707,8 +717,6 @@ class UserController extends Controller
         })->pluck('id');
 
         $this->deleteProgramApplications($applicationIds->all());
-        $this->deleteOwnedProgramProfiles($user);
-
         Program::where('user_id', $userId)
             ->get()
             ->each(function (Program $program): void {
@@ -786,32 +794,6 @@ class UserController extends Controller
         DB::table('milestone_verifications')->whereIn('milestone_id', $milestoneIds)->delete();
         DB::table('milestone_completion_submissions')->whereIn('milestone_id', $milestoneIds)->delete();
         DB::table('program_milestones')->whereIn('id', $milestoneIds)->delete();
-    }
-
-    private function deleteOwnedProgramProfiles(User $user): void
-    {
-        $profiles = ProgramProfile::with('user')
-            ->where('user_id', $user->id)
-            ->orWhere('program_owner_id', $user->id)
-            ->get();
-
-        foreach ($profiles as $profile) {
-            $this->deleteLocalFile($profile->document);
-
-            if ($profile->user_id !== $user->id) {
-                BalanceLog::where('changed_by', $profile->user_id)->delete();
-                ServiceMessages::where('to_id', $profile->user_id)
-                    ->orWhere('from_id', $profile->user_id)
-                    ->delete();
-                Messages::where('to_id', $profile->user_id)
-                    ->orWhere('from_id', $profile->user_id)
-                    ->delete();
-
-                $profile->user?->delete();
-            }
-
-            $profile->delete();
-        }
     }
 
     private function deleteLocalFile(?string $path): void

@@ -202,7 +202,7 @@ class AuthController extends Controller
         }
 
         // G R A N T
-        if(isset($request->user_type_id) && $request->user_type_id == 2)
+        if(isset($request->user_type_id) && $request->user_type_id == 4)
         {
 
             if ($request->has('role_id')) {
@@ -211,7 +211,7 @@ class AuthController extends Controller
                     'email' => ['required', 'email', 'max:255'],
                     'fname' => ['required', 'string', 'max:255'],
                     'user_type_id' => ['required', 'integer', 'in:1,2,3,4,5'],
-                    'program_owner_id' => ['required', 'integer'],
+                    'organization_id' => ['required', 'integer', 'exists:organizations,id'],
                 ]);
                 $register = $regService->programRoleUserRegister($data);
                 return $register;
@@ -238,7 +238,7 @@ class AuthController extends Controller
                 'document' => ['nullable', 'file', 'mimes:pdf,doc,docx', 'max:2048'],
                 //For adding role based users
                 'role_id' => ['nullable', 'integer'], // optional, integer
-                'program_owner_id' => ['nullable', 'integer'],
+                'organization_id' => ['nullable', 'integer', 'exists:organizations,id'],
             ]);
             $register = $regService->programRegister($data);
             return $register;
