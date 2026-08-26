@@ -402,6 +402,7 @@ class RegisterService
     public function registerOrgRoleUser(Request $request)
     {
         $data = $request->validate([
+            'user_type_id' => ['required', 'integer', 'in:4,6'],
             'organization_id' => ['required', 'integer', 'exists:organizations,id'],
             'role_id' => ['required', 'integer', 'exists:roles,id'],
             'email' => ['required', 'email', 'unique:users,email'],
@@ -439,7 +440,7 @@ class RegisterService
                 'first_name' => $data['first_name'],
                 'email' => $data['email'],
                 'password' => null,
-                'user_type_id' => 4,
+                'user_type_id' => $data['user_type_id'] ?? 4, // Default to organization user
                 'organization_id' => $organization->id,
                 'image' => $uploadedImage,
             ]);

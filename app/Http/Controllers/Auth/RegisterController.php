@@ -30,11 +30,12 @@ class RegisterController extends Controller
     public function registerRoleUser(Request $request)
     {
         $request->validate([
-            'user_type_id' => ['required', 'integer', 'in:4'],
+            'user_type_id' => ['required', 'integer', 'in:4,6'],
             'organization_id' => ['required', 'integer', 'exists:organizations,id'],
-            'role_id' => ['required', 'integer', 'exists:roles,id'],
+            'role_id' => ['required_if:user_type_id,4', 'integer', 'exists:roles,id'],
             'email' => ['required', 'email'],
             'first_name' => ['required', 'string', 'max:255'],
+            'last_name' => ['required', 'string', 'max:255'],
         ]);
 
         return $this->registerService->registerOrgRoleUser($request);

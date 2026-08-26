@@ -68,7 +68,7 @@ class OrganizationController extends Controller
         $reviewerMemberships = OrganizationUserRole::query()
             ->where('organization_id', $organization->id)
             ->where('role_id', 10004)
-            ->where('status', 'active')
+            //->where('status', 'active')
             ->with([
                 'role:id,name,access_types',
                 'user:id,user_type_id,first_name,last_name,display_name,email,phone,image,organization_id',
