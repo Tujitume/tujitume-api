@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Model;
 class MECheckpoint extends Model
 {
     use HasFactory;
+    protected static function newFactory() { return \Database\Factories\MECheckpointFactory::new(); }
     protected $fillable = [
         'app_id', 'program_id', 'checkpoint_name', 'type', 'due_date',
         'requirement', 'require_site_visit', 'kpis_to_track','meeting_required', 'meeting_id',

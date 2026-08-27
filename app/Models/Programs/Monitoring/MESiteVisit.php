@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Model;
 class MESiteVisit extends Model
 {
     use HasFactory;
+    protected static function newFactory() { return \Database\Factories\MESiteVisitFactory::new(); }
 
     protected $fillable = [
         'checkpoint_id', 'app_id', 'reviewer_id', 'inspector', 'start_date',

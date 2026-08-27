@@ -8,6 +8,10 @@ use Illuminate\Database\Eloquent\Model;
 
 class SupplierDirectory extends Model
 {
+    use HasFactory;
+
+    protected static function newFactory() { return \Database\Factories\SupplierDirectoryFactory::new(); }
+
     protected $table = 'supplier_directories';
 
     protected $fillable = [

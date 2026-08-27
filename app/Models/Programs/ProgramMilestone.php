@@ -13,6 +13,8 @@ class ProgramMilestone extends Model
 {
     use HasFactory;
 
+    protected static function newFactory() { return \Database\Factories\ProgramMilestoneFactory::new(); }
+
     use HasS3Files;
 
     protected function privateFileFields(): array
@@ -111,7 +113,7 @@ class ProgramMilestone extends Model
     public function isEditableByApplicant(): bool
     {
         return $this->is_template
-            && $this->planning_mode === 'hybrid'
+            && $this->application?->planning_mode === 'hybrid'
             && !empty($this->allowed_edits);
     }
 

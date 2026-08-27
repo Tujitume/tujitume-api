@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Model;
 class ApplicationScore extends Model
 {
     use HasFactory;
+    protected static function newFactory() { return \Database\Factories\ApplicationScoreFactory::new(); }
 
     protected $fillable = [
         'application_id',

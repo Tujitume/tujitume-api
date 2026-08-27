@@ -81,7 +81,7 @@ return new class extends Migration
             $table->enum('knockout_status', ['pending', 'passed', 'failed'])->default('pending');
 
 
-            $table->enum('planning_mode', ['locked', 'hybrid'])->de();
+            $table->enum('planning_mode', ['locked', 'hybrid'])->default('locked');
 
             $table->text('rejection_reason')->nullable();
             // new

@@ -15,6 +15,8 @@ class Program extends Model
 {
     use HasFactory;
 
+    protected static function newFactory() { return \Database\Factories\ProgramFactory::new(); }
+
     use HasS3Files;
 
     protected function privateFileFields(): array

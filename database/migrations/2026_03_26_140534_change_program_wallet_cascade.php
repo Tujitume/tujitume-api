@@ -11,6 +11,12 @@ return new class extends Migration
      */
     public function up(): void
     {
+        // SQLite cannot alter foreign keys. Its test schema already enforces
+        // the original relationship, so no alteration is necessary there.
+        if (Schema::getConnection()->getDriverName() === 'sqlite') {
+            return;
+        }
+
         Schema::table('program_wallets', function (Blueprint $table) {
             // Drop existing foreign key with RESTRICT
             $table->dropForeign(['program_id']);
@@ -28,6 +34,10 @@ return new class extends Migration
      */
     public function down(): void
     {
+        if (Schema::getConnection()->getDriverName() === 'sqlite') {
+            return;
+        }
+
         Schema::table('program_wallets', function (Blueprint $table) {
             // Drop CASCADE foreign key
             $table->dropForeign(['program_id']);

@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Model;
 class MESubmission extends Model
 {
     use HasFactory;
+    protected static function newFactory() { return \Database\Factories\MESubmissionFactory::new(); }
 
     protected $fillable = [
         'checkpoint_id', 'app_id', 'submitted_by', 'written_report',

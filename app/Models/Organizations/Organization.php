@@ -12,6 +12,11 @@ class Organization extends Model
 {
     use HasFactory;
 
+    protected static function newFactory()
+    {
+        return \Database\Factories\OrganizationFactory::new();
+    }
+
     protected $fillable = [
         'owner_user_id', 'name', 'display_name', 'legal_name', 'organization_type',
         'year_established', 'description', 'email', 'phone', 'website', 'country',

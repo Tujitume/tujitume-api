@@ -59,6 +59,7 @@ class Kernel extends HttpKernel
         'auth' => \App\Http\Middleware\Authenticate::class,
         'extend-token' => \App\Http\Middleware\ExtendTokenExpiry::class,
         'program' => \App\Http\Middleware\ProgramMiddleware::class,
+        'program.response' => \App\Http\Middleware\StandardizeProgramMutationResponse::class,
         'capital' => \App\Http\Middleware\CapitalMiddleware::class,
         'auth.basic' => \Illuminate\Auth\Middleware\AuthenticateWithBasicAuth::class,
         'auth.session' => \Illuminate\Session\Middleware\AuthenticateSession::class,

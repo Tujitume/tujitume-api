@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 class ProgramWallet extends Model
 {
     use HasFactory;
+    protected static function newFactory() { return \Database\Factories\ProgramWalletFactory::new(); }
     protected $fillable = [
         'program_id',
         'application_id',

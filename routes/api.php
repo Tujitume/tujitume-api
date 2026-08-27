@@ -12,65 +12,67 @@ use Illuminate\Support\Facades\Route;
 | Routes organized into modules for better maintainability
 */
 
-// THIRD PARTY CALLBACKS (Public)
-// =============================================================
-Route::post('/lipr-callback', [MpesaPollingController::class, 'callback']);
-Route::post('/stripe-callback', [CheckoutStripeController::class, 'callback']);
+Route::prefix('v1')->group(function () {
+    // THIRD PARTY CALLBACKS (Public)
+    // =============================================================
+    Route::post('/lipr-callback', [MpesaPollingController::class, 'callback']);
+    Route::post('/stripe-callback', [CheckoutStripeController::class, 'callback']);
 
-// programs
-Route::post('/lipr-callback-program-escrow', [MpesaCallbackController::class, 'callbackProgramEscrow']);
+    // programs
+    Route::post('/lipr-callback-program-escrow', [MpesaCallbackController::class, 'callbackProgramEscrow']);
 
-Route::post('/lipr-callback-program-direct', [MpesaCallbackController::class, 'callbackProgramDirectDisburse']);
-Route::post('/lipr-callback-program-supplier', [MpesaCallbackController::class, 'callbackForProgramSupplier']);
+    Route::post('/lipr-callback-program-direct', [MpesaCallbackController::class, 'callbackProgramDirectDisburse']);
+    Route::post('/lipr-callback-program-supplier', [MpesaCallbackController::class, 'callbackForProgramSupplier']);
 
-// PUBLIC ROUTES (No Auth Required)
-// =============================================================
-require __DIR__.'/api/v1/public.php';
+    // PUBLIC ROUTES (No Auth Required)
+    // =============================================================
+    require __DIR__ . '/api/v1/public.php';
 
-// AUTHENTICATION ROUTES
-// =============================================================
-require __DIR__.'/api/v1/auth.php';
+    // AUTHENTICATION ROUTES
+    // =============================================================
+    require __DIR__ . '/api/v1/auth.php';
 
-// PROTECTED ROUTES (Auth Required)
-// =============================================================
-Route::middleware(['auth:sanctum', 'extend-token', 'throttle:api'])->group(function () {
+    // PROTECTED ROUTES (Auth Required)
+    // =============================================================
+    Route::middleware(['auth:sanctum', 'extend-token', 'throttle:api'])->group(function () {
 
-    // Account & Security
-    require __DIR__. '/api/v1/account.php';
+        // Account & Security
+        require __DIR__ . '/api/v1/account.php';
 
-    // Organizations
-    require __DIR__.'/api/v1/organization.php';
+        // Organizations
+        require __DIR__ . '/api/v1/organization.php';
 
-    // Business & Listings
-    require __DIR__.'/api/v1/business.php';
+        // Business & Listings
+        require __DIR__ . '/api/v1/business.php';
 
-    require __DIR__.'/api/v1/milestones.php';
+        require __DIR__ . '/api/v1/milestones.php';
 
-    require __DIR__. '/api/v1/dealroom.php';
+        require __DIR__ . '/api/v1/dealroom.php';
 
-    // Services
-    require __DIR__. '/api/v1/services.php';
+        // Services
+        require __DIR__ . '/api/v1/services.php';
 
-    // Programs
-    require __DIR__.'/api/v1/programs.php';
+        // Programs
+        require __DIR__ . '/api/v1/programs.php';
 
-    // Capital
-    require __DIR__. '/api/v1/capital.php';
+        // Capital
+        require __DIR__ . '/api/v1/capital.php';
 
-    // Payments & Wallet
-    require __DIR__.'/api/v1/payments.php';
+        // Payments & Wallet
+        require __DIR__ . '/api/v1/payments.php';
 
-    // Social & Communication
-    require __DIR__.'/api/v1/social.php';
+        // Social & Communication
+        require __DIR__ . '/api/v1/social.php';
 
-    // AI Routes
-    require __DIR__. '/api/v1/ai.php';
+        // AI Routes
+        require __DIR__ . '/api/v1/ai.php';
 
-    // Events
-    require __DIR__.'/api/v1/events.php';
+        // Events
+        require __DIR__ . '/api/v1/events.php';
 
-    // Misc/Utilities
-    require __DIR__.'/api/v1/misc.php';
+        // Misc/Utilities
+        require __DIR__ . '/api/v1/misc.php';
+    });
 });
 
 // TERMS & PRIVACY (Public)
@@ -81,6 +83,7 @@ Route::get('terms', function () {
 Route::get('policy', function () {
     return view('policy.privacy_policy');
 })->name('policy');
+
 
 // UTILITY ROUTES
 // =============================================================

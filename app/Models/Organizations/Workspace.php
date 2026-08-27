@@ -8,6 +8,11 @@ use Illuminate\Database\Eloquent\Model;
 class Workspace extends Model
 {
     use HasFactory;
+
+    protected static function newFactory()
+    {
+        return \Database\Factories\WorkspaceFactory::new();
+    }
     
     // Allow mass assignment for all attributes
     protected $guarded = [];
