@@ -95,6 +95,6 @@ Route::get('/clear', function () {
     dd('Cache is cleared');
 });
 
-// CATCH-ALL ROUTE (Must be last)
+// CATCH-ALL ROUTE  (Must be last)
 // =============================================================
 // Route::get('{/anypath}', [\App\Http\Controllers\PagesController::class, 'home'])->where('path', '.*');
