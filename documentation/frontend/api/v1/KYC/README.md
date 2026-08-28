@@ -1,49 +1,296 @@
 # KYC / KYB API
 
-All endpoints are under `/api/v1/kyc`, require a Sanctum bearer token, and return JSON. KYC is available only to business owners (`user_type_id: 1`), service providers (`3`), and organization users (`4`). Mutations return `{ "success": true, "message": "…", "data": { … } }`.
+The KYC API prepares and submits verification for the authenticated account. Base path: `/api/v1/kyc`. It supports business owners (`user_type_id` 1), service providers (3), and organization users (4). Requests use JSON except document uploads, which use multipart form data.
+
+## Authentication
+
+Every endpoint requires Laravel Sanctum authentication.
+
+```http
+Authorization: Bearer <token>
+Accept: application/json
+```
+
+Organization users must belong to an organization. An organization owner can manage its KYC; an active member needs `kyc` in their role's `access_types`. Other user types receive `403`.
+
+## Lifecycle
+
+`draft` → `submitted` → `under_review` → `verified`. A review workflow can also set `rejected`.
+
+| Status | Description | Editable |
+| --- | --- | --- |
+| `draft` | Being prepared. | Yes |
+| `submitted` | Sent for verification. | No |
+| `under_review` | Being reviewed. | No |
+| `verified` | Successfully verified. | No |
+| `rejected` | Rejected by review. | Yes; updating resets it to `draft`. |
+
+There is one KYC record per user and applicable flow. `POST /kyc` returns the existing record; it cannot restart a verified record.
 
 ## Endpoints
 
-| Method | Endpoint | Purpose |
+| Method | Endpoint | Description |
 | --- | --- | --- |
-| GET | `/kyc` | Read the caller’s current KYC record; 404 if not started. |
-| GET | `/kyc/status` | Read `{started,status,verification_type}`. |
-| POST | `/kyc` | Start or retrieve the caller’s draft (201). |
-| PATCH | `/kyc` | Update a draft or rejected record. |
-| POST | `/kyc/documents` | Upload/replace one private document (multipart). |
-| DELETE | `/kyc/documents/{document}` | Delete a caller-owned document. |
-| POST | `/kyc/submit` | Validate and submit for review. |
+| GET | `/kyc` | Get current KYC record. |
+| GET | `/kyc/status` | Get current KYC status. |
+| POST | `/kyc` | Start KYC. |
+| PATCH | `/kyc` | Update KYC. |
+| POST | `/kyc/documents` | Upload a document. |
+| DELETE | `/kyc/documents/{document}` | Delete a document. |
+| POST | `/kyc/submit` | Submit KYC. |
 
-`GET /kyc` returns `id`, `verification_type`, `status`, `submitted_at`, rejected `rejection_reason`, `details`, `people`, and document metadata. Storage paths and URLs are never returned. Documents live on the private `kyc` disk; there is no public-download endpoint.
+## Response formats
 
-## Authorization and lifecycle
-
-Lifecycle: `draft → submitted → under_review → verified` or `rejected`. Only drafts/rejected records can be changed, submitted, or have documents changed. Updating a rejected record restores draft status. Verified records cannot be overwritten. There is one record per user/flow, preventing duplicate submissions.
-
-Organization accounts need an organization. The owner can manage KYB; an active member needs `kyc` in their role `access_types`. Callers cannot access another account’s record/document. Admin/reviewer users have no self-service KYC route permission.
-
-## PATCH fields
-
-Send fields only for the caller’s flow; inappropriate fields return 422. Entrepreneur: `legal_name`, `id_type` (`national_id`, `passport`, `drivers_license`, `other`), `id_number`, `id_issuing_country` (ISO-2), future `id_expiry_date`, `nationality`, `physical_address`, `county_region`, `tax_pin`, `is_registered_business`, and, when registered, `business_legal_name`, `business_registration_number`, `registration_country`, `legal_structure`.
-
-Provider: `legal_name`, `id_type`, `id_number`, `phone`, `email`, `physical_address`, `tax_pin`, `operates_through_business`, `requires_professional_licence`; an entity needs `business_legal_name`, `business_type`, and `business_registration_number`.
-
-Organization: `legal_name`, `registration_number`, `registration_country`, `legal_structure`, `tax_pin`, `physical_address`, `county_region`, plus `authorized_representative` containing `full_legal_name`, `role_title`, `id_type`, `id_number`, `phone`, `email`, and `authorization_confirmation`.
-
-Structures: `sole_proprietor`, `partnership`, `limited_company`, `ngo`, `foundation`, `cooperative`, `other`. Starting pre-fills known user/organization/listing data; clients provide missing verification data only.
-
-`people` replaces the people list (max 50). Each item has `full_legal_name`, `relationship_role` (`owner`, `partner`, `director`, `trustee`, `shareholder`, `beneficial_owner`), optional 0–100 `ownership_percentage`, `is_beneficial_owner`, optional nationality/ID, and `requires_identity_verification`. Sole proprietors need an owner, companies a director, and NGO/foundations a director or trustee. Ownership percentages are required for ownership roles in companies/partnerships but not NGO/foundations. Individual IDs/documents are required only when individual verification is requested.
-
-Example:
+Mutating endpoints use the common envelope:
 
 ```json
-{"legal_name":"Jane Doe","id_type":"passport","id_number":"P1234567","id_issuing_country":"KE","id_expiry_date":"2028-01-01","nationality":"KE","physical_address":"1 Main St","county_region":"Nairobi","tax_pin":"A123456789Z","is_registered_business":false,"legal_structure":"sole_proprietor","people":[{"full_legal_name":"Jane Doe","relationship_role":"owner","is_beneficial_owner":true,"requires_identity_verification":false}]}
+{"success":true,"message":"KYC draft updated.","data":{}}
 ```
 
-## Documents and submit
+| Field | Type | Nullable | Description |
+| --- | --- | --- | --- |
+| `success` | boolean | No | Whether the mutation succeeded. |
+| `message` | string | No | Result message. |
+| `data` | object/null | Yes | Endpoint-specific response data. |
 
-Upload multipart `document_type` and `file`; `person_id` is allowed only for `person_identity`. PDF/JPEG/PNG only, maximum 10 MB. Reuploading the same document type/person replaces it. Required on submission: entrepreneur—`id_passport_copy`, `proof_of_address`, `tax_pin_document` (+ `business_registration_certificate` if registered); provider—identity/address (+ entity certificate and `professional_licence` when applicable); organization—`registration_certificate`, `tax_compliance_certificate`, `proof_of_address`, `directors_trustees_document`, `authorization_letter_resolution`. Provider `portfolio_work_sample` and `reference` are optional and never gate identity KYC.
+`GET /kyc` is a Laravel JSON resource and is wrapped in `data`.
 
-Example: `curl -H "Authorization: Bearer TOKEN" -F "document_type=id_passport_copy" -F "file=@passport.pdf" https://api.example.test/api/v1/kyc/documents`
+```json
+{
+  "data": {
+    "id": 12,
+    "verification_type": "entrepreneur",
+    "status": "draft",
+    "submitted_at": null,
+    "rejection_reason": null,
+    "details": {},
+    "people": [],
+    "documents": [],
+    "created_at": "2026-08-28T10:00:00.000000Z",
+    "updated_at": "2026-08-28T10:00:00.000000Z"
+  }
+}
+```
 
-Status codes: 200 success, 201 start/upload, 401 unauthenticated, 403 unauthorized type/org role, 404 absent/foreign resource, 409 lifecycle conflict, 422 validation or incomplete submit. Validation follows Laravel: `{ "message": "…", "errors": { "field": ["…"] } }`.
+| Field | Type | Nullable | Description |
+| --- | --- | --- | --- |
+| `id` | integer | No | KYC record ID. |
+| `verification_type` | string | No | `entrepreneur`, `service_provider`, or `organization`. |
+| `status` | string | No | Lifecycle status. |
+| `submitted_at` | datetime | Yes | Submission timestamp. |
+| `rejection_reason` | string | Yes | Returned only when status is `rejected`. |
+| `details` | object | Yes | Flow-specific fields. |
+| `people` | array | No | People records. |
+| `documents` | array | No | Safe document metadata. No URL or storage path is exposed. |
+
+## GET `/kyc`
+
+Returns the authenticated user's record, details, people, and document metadata.
+
+**Authentication:** Required. **Success:** `200 OK`, with the KYC resource above. If KYC has not started, it returns:
+
+```json
+{"success":false,"message":"KYC has not been started.","errors":null}
+```
+
+## GET `/kyc/status`
+
+Returns lightweight state, including when KYC has not started.
+
+```json
+{
+  "success": true,
+  "message": "KYC status retrieved.",
+  "data": {"started": true, "status": "draft", "verification_type": "entrepreneur"}
+}
+```
+
+| Field | Type | Nullable | Description |
+| --- | --- | --- | --- |
+| `started` | boolean | No | Whether a KYC record exists. |
+| `status` | string | Yes | Current status; `null` when not started. |
+| `verification_type` | string | Yes | Applicable flow; `null` when not started. |
+
+## POST `/kyc`
+
+Starts a KYC record or returns the existing one, pre-filling known onboarding values where available. No request body is required.
+
+**Authentication:** Required. **Success:** `201 Created`.
+
+```json
+{"success":true,"message":"KYC draft prepared.","data":{"id":12,"verification_type":"entrepreneur","status":"draft","details":{},"people":[],"documents":[]}}
+```
+
+## PATCH `/kyc`
+
+Updates a `draft` or `rejected` record. Start KYC first. All fields are optional during an update; submission validates the required fields for the applicable flow. Sending a field not applicable to the flow returns `422`.
+
+```http
+PATCH /api/v1/kyc
+Authorization: Bearer <token>
+Accept: application/json
+Content-Type: application/json
+```
+
+### Business Owner KYC
+
+| Field | Type | Required on submit | Validation / allowed values |
+| --- | --- | --- | --- |
+| `legal_name` | string | Yes | Max 255. |
+| `id_type` | string | Yes | `national_id`, `passport`, `drivers_license`, `other`. |
+| `id_number` | string | Yes | Max 100. |
+| `id_issuing_country` | string | Yes | Exactly 2 characters. |
+| `id_expiry_date` | date | Yes | After today. |
+| `nationality` | string | Yes | Exactly 2 characters. |
+| `physical_address` | string | Yes | Max 255. |
+| `county_region` | string | Yes | Max 255. |
+| `tax_pin` | string | Yes | Max 100. |
+| `is_registered_business` | boolean | No | Enables registered-business requirements. |
+| `business_legal_name` | string | Conditional | Required when registered. |
+| `business_registration_number` | string | Conditional | Required when registered. |
+| `registration_country` | string | Conditional | Exactly 2 characters; required when registered. |
+| `legal_structure` | string | Conditional | Required when registered; structure enum below. |
+
+### Service Provider KYC
+
+| Field | Type | Required on submit | Validation / allowed values |
+| --- | --- | --- | --- |
+| `legal_name` | string | Yes | Max 255. |
+| `id_type` | string | Yes | Identity type enum. |
+| `id_number` | string | Yes | Max 100. |
+| `phone` | string | Yes | Max 50. |
+| `email` | string | Yes | Valid email, max 255. |
+| `physical_address` | string | Yes | Max 255. |
+| `tax_pin` | string | Yes | Max 100. |
+| `operates_through_business` | boolean | No | Enables entity requirements. |
+| `business_legal_name` | string | Conditional | Required when operating through a business. |
+| `business_type` | string | Conditional | Structure enum; required when operating through a business. |
+| `business_registration_number` | string | Conditional | Required when operating through a business. |
+| `requires_professional_licence` | boolean | No | Requires `professional_licence` at submission when true. |
+
+### Organization KYB
+
+| Field | Type | Required on submit | Validation / allowed values |
+| --- | --- | --- | --- |
+| `legal_name` | string | Yes | Max 255. |
+| `registration_number` | string | Yes | Max 100. |
+| `registration_country` | string | Yes | Exactly 2 characters. |
+| `legal_structure` | string | Yes | Structure enum. |
+| `tax_pin` | string | Yes | Max 100. |
+| `physical_address` | string | Yes | Max 255. |
+| `county_region` | string | Yes | Max 255. |
+| `authorized_representative` | object | Yes | See below. |
+
+Structure values: `sole_proprietor`, `partnership`, `limited_company`, `ngo`, `foundation`, `cooperative`, `other`.
+
+### `authorized_representative`
+
+```json
+{"full_legal_name":"Jane Doe","role_title":"Director","id_type":"passport","id_number":"P1234567","phone":"+254700000000","email":"jane@example.com","authorization_confirmation":true}
+```
+
+| Field | Type | Required | Validation |
+| --- | --- | --- | --- |
+| `full_legal_name` | string | Yes | Max 255. |
+| `role_title` | string | Yes | Max 255. |
+| `id_type` | string | Yes | Identity type enum. |
+| `id_number` | string | Yes | Max 100. |
+| `phone` | string | Yes | Max 50. |
+| `email` | string | Yes | Valid email, max 255. |
+| `authorization_confirmation` | boolean | Yes | Must be true at submission. |
+
+## People
+
+`people` is an optional replacement array, maximum 50 items. Supplying it replaces the entire people list.
+
+```json
+{"full_legal_name":"Jane Doe","relationship_role":"director","ownership_percentage":50,"is_beneficial_owner":true,"nationality":"KE","id_type":"national_id","id_number":"12345678","requires_identity_verification":true}
+```
+
+| Field | Type | Required | Validation / rule |
+| --- | --- | --- | --- |
+| `full_legal_name` | string | Yes | Max 255. |
+| `relationship_role` | string | Yes | `owner`, `partner`, `director`, `trustee`, `shareholder`, `beneficial_owner`. |
+| `ownership_percentage` | number | No* | Between 0 and 100. |
+| `is_beneficial_owner` | boolean | Yes | Boolean. |
+| `nationality` | string | No | Exactly 2 characters. |
+| `id_type` | string | No* | Identity type enum. |
+| `id_number` | string | No* | Max 100. |
+| `requires_identity_verification` | boolean | Yes | Boolean. |
+
+For limited companies and partnerships, an owner, partner, shareholder, or beneficial owner requires `ownership_percentage`. A sole proprietor needs an owner; a limited company needs a director; an NGO/foundation needs a director or trustee. When `requires_identity_verification` is true, `id_type`, `id_number`, and a `person_identity` document are required to submit.
+
+## POST `/kyc/documents`
+
+Uploads to the current draft/rejected record. Re-uploading a document with the same type and person replaces it. Files are stored privately; the API never returns a public URL or storage path.
+
+```http
+POST /api/v1/kyc/documents
+Authorization: Bearer <token>
+Accept: application/json
+Content-Type: multipart/form-data
+```
+
+| Form field | Type | Required | Validation |
+| --- | --- | --- | --- |
+| `document_type` | string | Yes | Allowed values below. |
+| `person_id` | integer | Conditional | Required for `person_identity`; only valid for that type; must be a current KYC person. |
+| `file` | file | Yes | PDF, JPEG, or PNG; maximum 10,240 KB. |
+
+Allowed types: `id_passport_copy`, `proof_of_address`, `tax_pin_document`, `business_registration_certificate`, `professional_licence`, `portfolio_work_sample`, `reference`, `registration_certificate`, `tax_compliance_certificate`, `directors_trustees_document`, `authorization_letter_resolution`, `person_identity`.
+
+```json
+{"success":true,"message":"KYC document uploaded.","data":{"id":45,"document_type":"id_passport_copy","original_filename":"passport.pdf"}}
+```
+
+Required at submission:
+
+| Flow | Documents |
+| --- | --- |
+| Business owner | `id_passport_copy`, `proof_of_address`, `tax_pin_document`; plus `business_registration_certificate` if registered. |
+| Service provider | `id_passport_copy`, `proof_of_address`; plus business certificate if operating through an entity and licence if required. |
+| Organization | `registration_certificate`, `tax_compliance_certificate`, `proof_of_address`, `directors_trustees_document`, `authorization_letter_resolution`. |
+
+`portfolio_work_sample` and `reference` are optional provider documents and do not block submission.
+
+## DELETE `/kyc/documents/{document}`
+
+Deletes a document owned by the current KYC record. The `document` path parameter is its integer ID. Foreign/nonexistent documents return `404`; a non-editable KYC state returns `409`.
+
+```json
+{"success":true,"message":"KYC document deleted.","data":null}
+```
+
+## POST `/kyc/submit`
+
+Validates required flow fields, people requirements, and required documents, then changes status to `submitted`. No request body is required.
+
+```json
+{"success":true,"message":"KYC submitted for review.","data":{"id":12,"verification_type":"entrepreneur","status":"submitted","submitted_at":"2026-08-28T10:15:00.000000Z"}}
+```
+
+## Errors
+
+Validation failures use Laravel's standard shape:
+
+```json
+{"message":"The given data was invalid.","errors":{"legal_name":["This field is required before submission."]}}
+```
+
+| Status | Meaning |
+| --- | --- |
+| `200` | Successful GET, update, submit, or delete. |
+| `201` | KYC started or document uploaded. |
+| `401` | Missing/invalid authentication. |
+| `403` | Unsupported account type or unauthorized organization member. |
+| `404` | KYC not started, or document/person is absent or belongs to another KYC record. |
+| `409` | Operation attempted while KYC is not editable, or verified KYC was started again. |
+| `422` | Validation, incomplete submission, or conditional document/person rule failure. |
+
+## Typical frontend flow
+
+1. `POST /kyc` to create/load the draft.
+2. `PATCH /kyc` with the applicable flow fields and optional `people`.
+3. `POST /kyc/documents` for every required document.
+4. `GET /kyc/status` to check state.
+5. `POST /kyc/submit` once complete.
