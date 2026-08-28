@@ -45,6 +45,10 @@ class StandardizeProgramMutationResponse
         }
 
         unset($payload['message'], $payload['status']);
-        return ApiResponseResource::success($message, $payload ?: null, $status);
+        $data = array_key_exists('data', $payload) && count($payload) === 1
+            ? $payload['data']
+            : ($payload ?: null);
+
+        return ApiResponseResource::success($message, $data, $status);
     }
 }

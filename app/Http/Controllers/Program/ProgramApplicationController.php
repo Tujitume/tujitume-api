@@ -261,9 +261,13 @@ class ProgramApplicationController extends Controller
         DB::beginTransaction();
 
         try{
-//            if(!$program || $program ->status != 'open') {
-//                return response()->json(['message' => 'This program is not open for applications.'], 400);
-//            }
+            if (auth()->user()?->user_type_id !== 1) {
+                return response()->json(['message' => 'Only business owners can submit applications.'], 403);
+            }
+
+            if ($program->status !== 'published') {
+                return response()->json(['message' => 'Program is not open for applications.'], 422);
+            }
 
             $validated = $request->validate([
                 // Required: Business info
@@ -308,6 +312,11 @@ class ProgramApplicationController extends Controller
 
             ]);
 
+            if (! \App\Models\Business\Listing::where('id', $validated['business_id'])
+                ->where('user_id', auth()->id())->exists()) {
+                return response()->json(['message' => 'Business does not belong to the authenticated user.'], 403);
+            }
+
             // Auto-set fields
             $validated['program_id'] = $program->id;  $validated['program_owner_id'] = $program->user_id;
             $validated['user_id'] = auth()->id(); $validated['status'] = 'pending';
@@ -338,7 +347,7 @@ class ProgramApplicationController extends Controller
 
             $exists = ProgramApplication::where('program_id', $program->id)->where('user_id', Auth::id())->exists();
             if($exists) {
-                //return response()->json(['message' => 'You have already applied for this program.'], 400);
+                return response()->json(['message' => 'You already have an active application for this program.'], 409);
             }
 
 
@@ -371,7 +380,8 @@ class ProgramApplicationController extends Controller
                 ->where('question_type', 'knockout')
                 ->pluck('id')->toArray();
 
-            $answered = ApplicationRoundResponse::whereIn('question_id', $ko_questionIds)->count();
+            $answered = ApplicationRoundResponse::where('application_id', $application->id)
+                ->whereIn('question_id', $ko_questionIds)->count();
 
             if($answered < count($ko_questionIds)) {
                 return response()->json(['message' => 'All knockout questions must be answered.'], 422);
@@ -393,7 +403,10 @@ class ProgramApplicationController extends Controller
             $info=[ 'program'=>$program->program_title, 'SME'=>$smeName ];
             $this->emailService->send('New Program Pitch', 'opportunities.program_pitch', $info, $go_email);
 
-            return response()->json(['message' => 'Program Application Successful.'], 200);
+            return response()->json([
+                'message' => 'Application submitted successfully.',
+                'data' => $application->fresh(),
+            ], 201);
         }
         catch (ValidationException $e) {
             return response()->json([
@@ -421,9 +434,9 @@ class ProgramApplicationController extends Controller
         }
 
         // Check application status
-        if ($pitch->status !== 'submitted') {
+        if ($pitch->status !== 'pending') {
             return response()->json([
-                'error' => 'Can only accept submitted applications. Current status: ' . $pitch->status
+                'error' => 'Can only accept pending applications. Current status: ' . $pitch->status
             ], 422);
         }
 

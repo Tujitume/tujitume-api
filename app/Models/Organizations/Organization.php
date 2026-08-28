@@ -4,6 +4,7 @@ namespace App\Models\Organizations;
 
 use App\Models\Auth\OrganizationUserRole;
 use App\Models\Auth\User;
+use App\Models\Kyc\KycVerification;
 use App\Models\ProgramIndustry;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -40,7 +41,6 @@ class Organization extends Model
     {
         return $this->hasMany(Workspace::class, 'organization_id', 'id');
     }
-    
 
     public function userRoles()
     {
@@ -57,5 +57,10 @@ class Organization extends Model
     public function programIndustry()
     {
         return $this->belongsTo(ProgramIndustry::class, 'program_industry_id');
+    }
+
+    public function kycVerifications()
+    {
+        return $this->hasMany(KycVerification::class, 'organization_id');
     }
 }

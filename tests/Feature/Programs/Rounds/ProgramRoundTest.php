@@ -1,6 +1,14 @@
 <?php
 
-use App\Models\Programs\Rounds\ProgramRound;
-
 uses(Tests\Feature\Programs\ProgramTestCase::class);
-it('belongs to its program', function () { $round = ProgramRound::factory()->create(['program_id' => $this->program->id]); expect($round->program->is($this->program))->toBeTrue(); });
+
+describe('Round endpoints', function () {
+    it('requires authentication to list rounds', function () {
+        assertProgramUnauthenticated('GET', "{$this->program->id}/rounds");
+    });
+
+    it('returns validation errors when an owner creates an incomplete round', function () {
+        $this->actingAsOrgOwner()->postJson("/api/v1/programs/{$this->program->id}/rounds", [])
+            ->assertStatus(422)->assertJson(['success' => false])->assertJsonStructure(['errors']);
+    });
+});

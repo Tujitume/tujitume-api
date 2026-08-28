@@ -1,6 +1,12 @@
 <?php
 
-use App\Models\Programs\ProgramApplication;
-use App\Models\Programs\ProgramMilestone;
 uses(Tests\Feature\Programs\ProgramTestCase::class);
-it('identifies editable hybrid templates', function () { $application = ProgramApplication::factory()->create(['planning_mode' => 'hybrid']); $milestone = ProgramMilestone::factory()->create(['app_id' => $application->id, 'allowed_edits' => ['title']]); expect($milestone->canApplicantEdit('title'))->toBeTrue()->and($milestone->canApplicantEdit('amount'))->toBeFalse(); });
+
+describe('Milestone templates', function () {
+    it('requires authentication to create a template', function () {
+        assertProgramUnauthenticated('POST', "applications/{$this->application->id}/milestones/templates");
+    });
+    it('rejects an applicant attempting owner template creation', function () {
+        $this->actingAsApplicant()->postJson("/api/v1/programs/applications/{$this->application->id}/milestones/templates", [])->assertStatus(403)->assertJson(['success' => false]);
+    });
+});

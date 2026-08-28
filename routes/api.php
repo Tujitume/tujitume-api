@@ -26,52 +26,55 @@ Route::prefix('v1')->group(function () {
 
     // PUBLIC ROUTES (No Auth Required)
     // =============================================================
-    require __DIR__ . '/api/v1/public.php';
+    require __DIR__.'/api/v1/public.php';
 
     // AUTHENTICATION ROUTES
     // =============================================================
-    require __DIR__ . '/api/v1/auth.php';
+    require __DIR__.'/api/v1/auth.php';
 
     // PROTECTED ROUTES (Auth Required)
     // =============================================================
     Route::middleware(['auth:sanctum', 'extend-token', 'throttle:api'])->group(function () {
 
         // Account & Security
-        require __DIR__ . '/api/v1/account.php';
+        require __DIR__.'/api/v1/account.php';
+
+        // KYC / KYB (sensitive account verification)
+        require __DIR__.'/api/v1/kyc.php';
 
         // Organizations
-        require __DIR__ . '/api/v1/organization.php';
+        require __DIR__.'/api/v1/organization.php';
 
         // Business & Listings
-        require __DIR__ . '/api/v1/business.php';
+        require __DIR__.'/api/v1/business.php';
 
-        require __DIR__ . '/api/v1/milestones.php';
+        require __DIR__.'/api/v1/milestones.php';
 
-        require __DIR__ . '/api/v1/dealroom.php';
+        require __DIR__.'/api/v1/dealroom.php';
 
         // Services
-        require __DIR__ . '/api/v1/services.php';
+        require __DIR__.'/api/v1/services.php';
 
         // Programs
-        require __DIR__ . '/api/v1/programs.php';
+        require __DIR__.'/api/v1/programs.php';
 
         // Capital
-        require __DIR__ . '/api/v1/capital.php';
+        require __DIR__.'/api/v1/capital.php';
 
         // Payments & Wallet
-        require __DIR__ . '/api/v1/payments.php';
+        require __DIR__.'/api/v1/payments.php';
 
         // Social & Communication
-        require __DIR__ . '/api/v1/social.php';
+        require __DIR__.'/api/v1/social.php';
 
         // AI Routes
-        require __DIR__ . '/api/v1/ai.php';
+        require __DIR__.'/api/v1/ai.php';
 
         // Events
-        require __DIR__ . '/api/v1/events.php';
+        require __DIR__.'/api/v1/events.php';
 
         // Misc/Utilities
-        require __DIR__ . '/api/v1/misc.php';
+        require __DIR__.'/api/v1/misc.php';
     });
 });
 
@@ -83,7 +86,6 @@ Route::get('terms', function () {
 Route::get('policy', function () {
     return view('policy.privacy_policy');
 })->name('policy');
-
 
 // UTILITY ROUTES
 // =============================================================

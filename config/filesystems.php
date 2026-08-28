@@ -36,6 +36,14 @@ return [
             'throw' => false,
         ],
 
+        // Identity documents are deliberately kept outside the public disk.
+        'kyc' => [
+            'driver' => 'local',
+            'root' => storage_path('app/private/kyc'),
+            'visibility' => 'private',
+            'throw' => true,
+        ],
+
         'public' => [
             'driver' => 'local',
             'root' => storage_path('app/public'),

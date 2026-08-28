@@ -1,6 +1,6 @@
 <?php
 
-use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\CheckoutStripeController;
 /*
 |--------------------------------------------------------------------------
 | Program Routes
@@ -9,8 +9,13 @@ use Illuminate\Support\Facades\Route;
 | Already wrapped in: middleware(['auth:sanctum', 'extend-token', 'throttle:api'])
 */
 
-use App\Http\Controllers\CheckoutStripeController;
+use App\Http\Controllers\Misc\AnalyticsController;
+use App\Http\Controllers\Misc\MatchController;
 use App\Http\Controllers\Program\ApplicationRoundProgressController;
+use App\Http\Controllers\Program\MEAnalyticsController;
+use App\Http\Controllers\Program\MEController;
+use App\Http\Controllers\Program\MilestonePreAgreementController;
+use App\Http\Controllers\Program\MilestoneVerificationController;
 use App\Http\Controllers\Program\ProgramApplicationController;
 use App\Http\Controllers\Program\ProgramController;
 use App\Http\Controllers\Program\ProgramDealRoomController;
@@ -20,21 +25,16 @@ use App\Http\Controllers\Program\ProgramMilestoneController;
 use App\Http\Controllers\Program\ProgramServiceController;
 use App\Http\Controllers\Program\ProgramSupplierController;
 use App\Http\Controllers\Program\ProgramWalletController;
-use App\Http\Controllers\Program\MEAnalyticsController;
-use App\Http\Controllers\Program\MEController;
-use App\Http\Controllers\Program\MilestonePreAgreementController;
-use App\Http\Controllers\Program\MilestoneVerificationController;
 use App\Http\Controllers\Program\Rounds\ApplicationScoreController;
 use App\Http\Controllers\Program\Rounds\ProgramRoundController;
 use App\Http\Controllers\Program\Rounds\RoundDocumentController;
 use App\Http\Controllers\Program\Rounds\RoundQuestionController;
 use App\Http\Controllers\Program\Rounds\RoundReviewerController;
 use App\Http\Controllers\Program\SupplierDirectoryController;
-use App\Http\Controllers\Misc\AnalyticsController;
-use App\Http\Controllers\Misc\MatchController;
+use Illuminate\Support\Facades\Route;
 
-Route::prefix('/programs')->middleware(['program'])->group(function(){
-    //Program
+Route::prefix('/programs')->middleware(['program', 'program.response'])->group(function () {
+    // Program
     Route::get('programs', [ProgramController::class, 'index']);
     Route::get('public-programs', [ProgramController::class, 'public_programs']);
     Route::get('get_program/{id}', [ProgramController::class, 'get_program']);
@@ -60,30 +60,28 @@ Route::prefix('/programs')->middleware(['program'])->group(function(){
     Route::get('/{program_id}/sme/applications', [ProgramApplicationController::class, 'application_info']);
     Route::get('/my-applications/awarded', [ProgramApplicationController::class, 'smeAwarded']);
 
-
-    Route::post('/{program}/applications',[ProgramApplicationController::class,'store_application']);
+    Route::post('/{program}/applications', [ProgramApplicationController::class, 'store_application']);
     Route::post('applications/{pitch}/accept', [ProgramApplicationController::class, 'accept']);
-    //Route::post('applications/{pitch}/reject', [ProgramApplicationController::class, 'reject']);
-
+    // Route::post('applications/{pitch}/reject', [ProgramApplicationController::class, 'reject']);
 
     Route::post('program-milestone', [CheckoutStripeController::class, 'programDisbursement']);
     Route::post('program-milestone-release-bulk', [ProgramController::class, 'release_fst_milestone']);
     Route::post('match-score/{program_id}', [MatchController::class, 'score']);
 
     Route::post('update-profile', [ProgramController::class, 'update_profile']);
-    Route::post('update-user',[ProgramController::class,'update_user']);
+    Route::post('update-user', [ProgramController::class, 'update_user']);
 
-    Route::post('delete-user',[ProgramController::class,'delete_user']);
-    Route::post('delete/role-user',[ProgramController::class,'delete_roleUser']);
+    Route::post('delete-user', [ProgramController::class, 'delete_user']);
+    Route::post('delete/role-user', [ProgramController::class, 'delete_roleUser']);
 
-    Route::get('accept-invitation',[ProgramController::class,'update_user']);
+    Route::get('accept-invitation', [ProgramController::class, 'update_user']);
 
-    # *** Program New Routes
+    // *** Program New Routes
     Route::get('/{program}/wallets', [ProgramWalletController::class, 'show']);
     Route::post('wallets/{wallet}/deposit', [ProgramWalletController::class, 'deposit']);
     Route::post('wallets/{wallet}/deposit-status', [ProgramWalletController::class, 'deposit_status']);
 
-    //Route::apiResource('applications/{application}/milestones', ProgramMilestoneController::class)->shallow();
+    // Route::apiResource('applications/{application}/milestones', ProgramMilestoneController::class)->shallow();
 
     Route::post('applications/{application}/planning-mode', [ProgramApplicationController::class, 'setPlanningMode']);
 
@@ -99,7 +97,6 @@ Route::prefix('/programs')->middleware(['program'])->group(function(){
     Route::patch('verifications/{verification}/reject', [MilestoneVerificationController::class, 'reject']);
     Route::patch('verifications/{verification}/request-audit', [MilestoneVerificationController::class, 'requestAudit']);
 
-
     Route::get('milestones/{milestone}/disbursement-data', [ProgramDisbursementController::class, 'disbursementData']);
     Route::apiResource('milestones/{milestone}/disbursements', ProgramDisbursementController::class)->shallow();
     // Payment status actions
@@ -113,16 +110,14 @@ Route::prefix('/programs')->middleware(['program'])->group(function(){
     // dealroom application info
     Route::get('dealroom/applications/{application}', [ProgramDealRoomController::class, 'show_application']);
 
-
-
-    # Completion submissions for milestone
+    // Completion submissions for milestone
     Route::post('milestones/{milestone}/completions', [MilestoneVerificationController::class, 'store_completion']);
     Route::get('milestones/{milestone}/completions', [MilestoneVerificationController::class, 'index_completions']);
     Route::patch('completions/{completion}/approve', [MilestoneVerificationController::class, 'approve_completion']);
     Route::patch('completions/{completion}/reject', [MilestoneVerificationController::class, 'reject_completion']);
 
-    # G R A N T   R O U N D S
-    //Route::get('rounds/{round}', [ProgramRoundController::class, 'show']); //added by owen
+    // G R A N T   R O U N D S
+    // Route::get('rounds/{round}', [ProgramRoundController::class, 'show']); //added by owen
     Route::apiResource('/{program}/rounds', ProgramRoundController::class)->shallow();
     Route::get('rounds/{round}', [ProgramRoundController::class, 'showRound']);
     Route::patch('rounds/{round}', [ProgramRoundController::class, 'update']);
@@ -143,10 +138,9 @@ Route::prefix('/programs')->middleware(['program'])->group(function(){
     Route::get('rounds/{round}/rounds-history', [ProgramApplicationController::class, 'roundsHistoryByRound']);
     Route::get('applications/{application}/rounds', [ApplicationRoundProgressController::class, 'index']);
 
-
     // Questions & Answers
     Route::apiResource('rounds/{round}/questions', RoundQuestionController::class)->shallow();
-    Route::patch('questions/{question}', [RoundQuestionController::class, 'update']); //added by owen
+    Route::patch('questions/{question}', [RoundQuestionController::class, 'update']); // added by owen
 
     Route::prefix('applications/{application_id}/rounds/{round_id}')->group(function () {
         Route::post('/answer', [RoundQuestionController::class, 'submitAnswer']);
@@ -154,10 +148,10 @@ Route::prefix('/programs')->middleware(['program'])->group(function(){
         Route::delete('/answers/{question_id}', [RoundQuestionController::class, 'deleteAnswer']);
     });
 
-    Route::get('reviewer/assigned-rounds', [RoundReviewerController::class, 'rounds']); //added by owen
+    Route::get('reviewer/assigned-rounds', [RoundReviewerController::class, 'rounds']); // added by owen
 
     Route::apiResource('rounds/{round}/reviewers', RoundReviewerController::class)->shallow();
-    Route::patch('reviewers/{reviewer}', [RoundReviewerController::class, 'update']); //added by owen
+    Route::patch('reviewers/{reviewer}', [RoundReviewerController::class, 'update']); // added by owen
 
     // ROUND REQUIRED DOCUMENTS
     Route::post('applications/{application_id}/rounds/{round_id}/documents', [RoundDocumentController::class, 'store']);
@@ -167,14 +161,11 @@ Route::prefix('/programs')->middleware(['program'])->group(function(){
     Route::patch('documents/{document_id}/reject', [RoundDocumentController::class, 'reject']);
     Route::delete('documents/{document_id}', [RoundDocumentController::class, 'destroy']);
 
-
     // Scoring rounds
     Route::post('applications/{application}/scores', [ApplicationScoreController::class, 'store']);
     Route::post('rounds/{round}/finalize', [ProgramRoundController::class, 'finalize']); // Process advancement
     Route::post('applications/{application}/advance', [ProgramRoundController::class, 'advanceManual']); // Manual advance
     Route::post('applications/{application}/reject', [ProgramRoundController::class, 'rejectManual']);
-
-
 
     // Funding Setup & Supplier Directory
     Route::get('supplier-directory/{supplierId}/assigned-milestones', [SupplierDirectoryController::class, 'assignedMilestones']);
@@ -182,7 +173,7 @@ Route::prefix('/programs')->middleware(['program'])->group(function(){
     // Add supplier to milestone
     Route::post('milestones/{milestone}/assign-suppliers', [SupplierDirectoryController::class, 'assignToMilestone']);
 
-    //old route
+    // old route
     Route::apiResource('milestones/{milestone}/suppliers', ProgramSupplierController::class)->shallow();
 
     Route::prefix('applications/{application_id}/milestones')->group(function () {
@@ -224,32 +215,28 @@ Route::prefix('/programs')->middleware(['program'])->group(function(){
     // M&E Routes
     Route::prefix('monitoring')->group(function () {
         // Checkpoints
-        Route::get('/applications/{app}/checkpoints',      [MEController::class, 'indexCheckpoints']);
-        Route::post('/applications/{app}/checkpoints',     [MEController::class, 'storeCheckpoint']);
-        Route::patch('/checkpoints/{checkpoint}',             [MEController::class, 'updateCheckpoint']);
-        Route::delete('/checkpoints/{checkpoint}',            [MEController::class, 'deleteCheckpoint']);
+        Route::get('/applications/{app}/checkpoints', [MEController::class, 'indexCheckpoints']);
+        Route::post('/applications/{app}/checkpoints', [MEController::class, 'storeCheckpoint']);
+        Route::patch('/checkpoints/{checkpoint}', [MEController::class, 'updateCheckpoint']);
+        Route::delete('/checkpoints/{checkpoint}', [MEController::class, 'deleteCheckpoint']);
 
         // Submissions
-        Route::post('/checkpoints/{checkpoint}/submit',       [MEController::class, 'submit']);
-        Route::post('/submissions/{submission}/verify',       [MEController::class, 'verify']);
+        Route::post('/checkpoints/{checkpoint}/submit', [MEController::class, 'submit']);
+        Route::post('/submissions/{submission}/verify', [MEController::class, 'verify']);
         Route::post('/submissions/{submission}/request-changes', [MEController::class, 'requestChanges']);
 
         Route::delete('/checkpoints/{checkpoint}/submissions', [MEController::class, 'deleteSubmissions']);
 
-        
         // Site Visits
         Route::post('/checkpoints/{checkpoint}/site-visit/assign', [MEController::class, 'assignSiteVisit']);
-        Route::post('/site-visits/{visit}/submit',            [MEController::class, 'submitSiteVisit']);
-        Route::get('/site-visits/{visit}',                    [MEController::class, 'showSiteVisit']);
-        Route::get('/reviewer/{reviewer_id}/site-visits',     [MEController::class, 'SiteVisits']);
+        Route::post('/site-visits/{visit}/submit', [MEController::class, 'submitSiteVisit']);
+        Route::get('/site-visits/{visit}', [MEController::class, 'showSiteVisit']);
+        Route::get('/reviewer/{reviewer_id}/site-visits', [MEController::class, 'SiteVisits']);
 
-        
-        
         // Analytics
-        Route::get('/applications/{app}/analytics/overview',    [MEAnalyticsController::class, 'meOverview']);
-        Route::get('/applications/{app}/analytics/impact',         [MEAnalyticsController::class, 'applicationImpact']);
+        Route::get('/applications/{app}/analytics/overview', [MEAnalyticsController::class, 'meOverview']);
+        Route::get('/applications/{app}/analytics/impact', [MEAnalyticsController::class, 'applicationImpact']);
 
-        });
+    });
 
 });
-

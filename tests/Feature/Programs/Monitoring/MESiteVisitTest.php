@@ -1,5 +1,9 @@
 <?php
 
-use App\Models\Programs\Monitoring\MESiteVisit;
 uses(Tests\Feature\Programs\ProgramTestCase::class);
-it('creates a scheduled site visit', function () { expect(MESiteVisit::factory()->create()->status)->toBe('scheduled'); });
+
+describe('Monitoring site visits', function () {
+    it('requires authentication to assign a site visit', function () {
+        assertProgramUnauthenticated('POST', 'monitoring/checkpoints/999999/site-visit/assign');
+    });
+});

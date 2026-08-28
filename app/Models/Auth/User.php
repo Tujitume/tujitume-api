@@ -7,6 +7,7 @@ use App\Models\Business\Listing;
 use App\Models\Capital\CapitalProfile;
 use App\Models\Communication\Notifications;
 use App\Models\Finance\Transactions;
+use App\Models\Kyc\KycVerification;
 use App\Models\Misc\Event;
 use App\Models\Organizations\Organization;
 use App\Models\Organizations\Workspace;
@@ -156,6 +157,11 @@ class User extends Authenticatable
     public function settings()
     {
         return $this->hasOne(UserSetting::class);
+    }
+
+    public function kycVerifications()
+    {
+        return $this->hasMany(KycVerification::class);
     }
 
     // Helper to get settings with defaults

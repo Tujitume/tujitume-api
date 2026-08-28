@@ -12,6 +12,7 @@
 */
 
 uses(Tests\TestCase::class)->in('Feature/UserResourceTest.php');
+uses(Tests\TestCase::class, Illuminate\Foundation\Testing\RefreshDatabase::class)->in('Feature/KYC');
 
 /*
 |--------------------------------------------------------------------------
@@ -42,4 +43,11 @@ expect()->extend('toBeOne', function () {
 function something()
 {
     // ..
+}
+
+/** Assert that Program API routes are protected before controller execution. */
+function assertProgramUnauthenticated(string $method, string $uri): void
+{
+    $response = test()->json($method, '/api/v1/programs/'.$uri);
+    $response->assertStatus(401)->assertJsonStructure(['message']);
 }

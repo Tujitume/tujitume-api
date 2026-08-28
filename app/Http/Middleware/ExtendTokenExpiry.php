@@ -10,14 +10,15 @@ class ExtendTokenExpiry
     public function handle(Request $request, Closure $next)
     {
         $response = $next($request);
-        
+
         // Extend token expiry on successful requests
-        if ($request->user() && $response->getStatusCode() < 400) {
-            $request->user()->currentAccessToken()->forceFill([
+        $token = $request->user()?->currentAccessToken();
+        if ($token && $response->getStatusCode() < 400) {
+            $token->forceFill([
                 'last_used_at' => now(),
             ])->save();
         }
-        
+
         return $response;
     }
 }

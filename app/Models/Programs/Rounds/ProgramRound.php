@@ -11,8 +11,13 @@ use Illuminate\Database\Eloquent\Model;
 class ProgramRound extends Model
 {
     use HasFactory;
-    protected static function newFactory() { return \Database\Factories\ProgramRoundFactory::new(); }
-    protected  $guarded = [];
+
+    protected static function newFactory()
+    {
+        return \Database\Factories\ProgramRoundFactory::new();
+    }
+
+    protected $guarded = [];
 
     protected $casts = [
         'scoring_criteria' => 'array',
@@ -32,7 +37,7 @@ class ProgramRound extends Model
     public function reviewers()
     {
         return $this->belongsToMany(User::class, 'round_reviewers', 'round_id', 'user_id')
-            ->select('users.id', 'users.fname', 'users.lname', 'users.email', 'users.image')
+            ->select('users.id', 'users.first_name', 'users.last_name', 'users.email', 'users.image')
             ->withPivot(['reviewer_type', 'max_apps_assigned', 'expertise_tags'])
             ->withTimestamps();
     }
@@ -92,5 +97,4 @@ class ProgramRound extends Model
     {
         return $this->uploadedDocuments()->where('verification_status', 'verified');
     }
-
 }

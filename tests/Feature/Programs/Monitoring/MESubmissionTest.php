@@ -1,5 +1,9 @@
 <?php
 
-use App\Models\Programs\Monitoring\MESubmission;
 uses(Tests\Feature\Programs\ProgramTestCase::class);
-it('creates a submitted monitoring submission', function () { expect(MESubmission::factory()->create()->status)->toBe('submitted'); });
+
+describe('Monitoring submissions', function () {
+    it('requires authentication to submit evidence', function () {
+        assertProgramUnauthenticated('POST', 'monitoring/checkpoints/999999/submit');
+    });
+});

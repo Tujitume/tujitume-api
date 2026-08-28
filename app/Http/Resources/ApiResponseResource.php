@@ -2,8 +2,8 @@
 
 namespace App\Http\Resources;
 
-use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
 class ApiResponseResource extends JsonResource
@@ -31,12 +31,12 @@ class ApiResponseResource extends JsonResource
             'errors' => $errors,
         ], $status);
     }
+
     /**
      * Transform the resource into an array.
      *
      * @return array<string, mixed>
      */
-
     public function __construct(
         public readonly string $message,
         public readonly mixed $data = null,
@@ -44,8 +44,8 @@ class ApiResponseResource extends JsonResource
     ) {
         $resource = [
             'message' => $message,
-            'data'    => $data,
-            'status'  => $status,
+            'data' => $data,
+            'status' => $status,
         ];
 
         parent::__construct($resource);
@@ -59,5 +59,10 @@ class ApiResponseResource extends JsonResource
             'data' => $this->resource['data'],
             'status' => $this->resource['status'],
         ];
+    }
+
+    public function withResponse(Request $request, JsonResponse $response): void
+    {
+        $response->setStatusCode($this->resource['status']);
     }
 }
