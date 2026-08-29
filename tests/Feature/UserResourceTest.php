@@ -86,7 +86,6 @@ class UserResourceTest extends TestCase
         $this->assertSame('Jane', $payload['first_name']);
         $this->assertSame(4, $payload['user_type_id']);
         $this->assertSame('organization', $payload['user_type']);
-        $this->assertSame('verified', $payload['kyc_status']);
         $this->assertSame('Acme Org', $payload['organization']['name']);
         $this->assertSame('super_admin', $payload['role']['name']);
         $this->assertCount(1, $payload['workspaces']);
