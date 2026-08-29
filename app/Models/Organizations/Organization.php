@@ -59,8 +59,8 @@ class Organization extends Model
         return $this->belongsTo(ProgramIndustry::class, 'program_industry_id');
     }
 
-    public function kycVerifications()
+    public function kycVerification()
     {
-        return $this->hasMany(KycVerification::class, 'organization_id');
+        return $this->hasOne(KycVerification::class, 'organization_id');
     }
 }

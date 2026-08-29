@@ -113,9 +113,15 @@ Returns lightweight state, including when KYC has not started.
 
 ## POST `/kyc`
 
-Starts a KYC record or returns the existing one, pre-filling known onboarding values where available. No request body is required.
+Starts a KYC record or returns the existing one, pre-filling known onboarding values where available. The request body is empty.
 
 **Authentication:** Required. **Success:** `201 Created`.
+
+**Example JSON body:**
+
+```json
+{}
+```
 
 ```json
 {"success":true,"message":"KYC draft prepared.","data":{"id":12,"verification_type":"entrepreneur","status":"draft","details":{},"people":[],"documents":[]}}
@@ -183,6 +189,85 @@ Content-Type: application/json
 
 Structure values: `sole_proprietor`, `partnership`, `limited_company`, `ngo`, `foundation`, `cooperative`, `other`.
 
+### Request body example: business owner
+
+```json
+{
+  "legal_name": "Jane Doe",
+  "id_type": "passport",
+  "id_number": "P1234567",
+  "id_issuing_country": "KE",
+  "id_expiry_date": "2028-01-01",
+  "nationality": "KE",
+  "physical_address": "1 Main Street",
+  "county_region": "Nairobi",
+  "tax_pin": "A123456789Z",
+  "is_registered_business": true,
+  "business_legal_name": "Jane Doe Enterprises",
+  "business_registration_number": "BN-12345",
+  "registration_country": "KE",
+  "legal_structure": "sole_proprietor",
+  "people": [
+    {
+      "full_legal_name": "Jane Doe",
+      "relationship_role": "owner",
+      "is_beneficial_owner": true,
+      "requires_identity_verification": false
+    }
+  ]
+}
+```
+
+### Request body example: service provider
+
+```json
+{
+  "legal_name": "Alex Consulting Ltd",
+  "id_type": "national_id",
+  "id_number": "12345678",
+  "phone": "+254700000000",
+  "email": "alex@example.com",
+  "physical_address": "Nairobi",
+  "tax_pin": "A123456789Z",
+  "operates_through_business": true,
+  "business_legal_name": "Alex Consulting Ltd",
+  "business_type": "limited_company",
+  "business_registration_number": "C-12345",
+  "requires_professional_licence": true
+}
+```
+
+### Request body example: organization
+
+```json
+{
+  "legal_name": "Community Foundation",
+  "registration_number": "NGO-123",
+  "registration_country": "KE",
+  "legal_structure": "foundation",
+  "tax_pin": "A123456789Z",
+  "physical_address": "Nairobi",
+  "county_region": "Nairobi",
+  "authorized_representative": {
+    "full_legal_name": "Jane Doe",
+    "role_title": "Director",
+    "id_type": "passport",
+    "id_number": "P1234567",
+    "phone": "+254700000000",
+    "email": "jane@example.com",
+    "authorization_confirmation": true
+  },
+  "people": [
+    {
+      "full_legal_name": "Trustee One",
+      "relationship_role": "trustee",
+      "is_beneficial_owner": false,
+      "requires_identity_verification": false
+    }
+  ]
+}
+```
+
 ### `authorized_representative`
 
 ```json
@@ -239,6 +324,16 @@ Content-Type: multipart/form-data
 
 Allowed types: `id_passport_copy`, `proof_of_address`, `tax_pin_document`, `business_registration_certificate`, `professional_licence`, `portfolio_work_sample`, `reference`, `registration_certificate`, `tax_compliance_certificate`, `directors_trustees_document`, `authorization_letter_resolution`, `person_identity`.
 
+### Multipart request body
+
+This endpoint does not accept a JSON request body. Send the following fields as multipart form data:
+
+```json
+{
+  "document_type": "id_passport_copy"
+}
+```
+
 ```json
 {"success":true,"message":"KYC document uploaded.","data":{"id":45,"document_type":"id_passport_copy","original_filename":"passport.pdf"}}
 ```
@@ -263,7 +358,104 @@ Deletes a document owned by the current KYC record. The `document` path paramete
 
 ## POST `/kyc/submit`
 
-Validates required flow fields, people requirements, and required documents, then changes status to `submitted`. No request body is required.
+Validates required flow fields, people requirements, and required documents, then changes status to `submitted`. The request body is empty.
+
+**Example JSON body:**
+
+```json
+{}
+```
+
+### Pre-submit payload: business owner KYC
+
+Save this payload with `PATCH /api/v1/kyc` before uploading the required entrepreneur documents and calling `POST /kyc/submit`.
+
+```json
+{
+  "legal_name": "Jane Doe",
+  "id_type": "passport",
+  "id_number": "P1234567",
+  "id_issuing_country": "KE",
+  "id_expiry_date": "2028-01-01",
+  "nationality": "KE",
+  "physical_address": "1 Main Street",
+  "county_region": "Nairobi",
+  "tax_pin": "A123456789Z",
+  "is_registered_business": true,
+  "business_legal_name": "Jane Doe Enterprises",
+  "business_registration_number": "BN-12345",
+  "registration_country": "KE",
+  "legal_structure": "sole_proprietor",
+  "people": [
+    {
+      "full_legal_name": "Jane Doe",
+      "relationship_role": "owner",
+      "is_beneficial_owner": true,
+      "requires_identity_verification": false
+    }
+  ]
+}
+```
+
+Required uploads: `id_passport_copy`, `proof_of_address`, `tax_pin_document`, and `business_registration_certificate`.
+
+### Pre-submit payload: service provider KYC
+
+Save this payload with `PATCH /api/v1/kyc` before uploading documents and submitting.
+
+```json
+{
+  "legal_name": "Alex Consulting Ltd",
+  "id_type": "national_id",
+  "id_number": "12345678",
+  "phone": "+254700000000",
+  "email": "alex@example.com",
+  "physical_address": "Nairobi",
+  "tax_pin": "A123456789Z",
+  "operates_through_business": true,
+  "business_legal_name": "Alex Consulting Ltd",
+  "business_type": "limited_company",
+  "business_registration_number": "C-12345",
+  "requires_professional_licence": true
+}
+```
+
+Required uploads: `id_passport_copy`, `proof_of_address`, `business_registration_certificate`, and `professional_licence`.
+
+### Pre-submit payload: organization KYB
+
+Save this payload with `PATCH /api/v1/kyc` before uploading documents and submitting.
+
+```json
+{
+  "legal_name": "Community Foundation",
+  "registration_number": "NGO-123",
+  "registration_country": "KE",
+  "legal_structure": "foundation",
+  "tax_pin": "A123456789Z",
+  "physical_address": "Nairobi",
+  "county_region": "Nairobi",
+  "authorized_representative": {
+    "full_legal_name": "Jane Doe",
+    "role_title": "Director",
+    "id_type": "passport",
+    "id_number": "P1234567",
+    "phone": "+254700000000",
+    "email": "jane@example.com",
+    "authorization_confirmation": true
+  },
+  "people": [
+    {
+      "full_legal_name": "Trustee One",
+      "relationship_role": "trustee",
+      "is_beneficial_owner": false,
+      "requires_identity_verification": false
+    }
+  ]
+}
+```
+
+Required uploads: `registration_certificate`, `tax_compliance_certificate`, `proof_of_address`, `directors_trustees_document`, and `authorization_letter_resolution`.
 
 ```json
 {"success":true,"message":"KYC submitted for review.","data":{"id":12,"verification_type":"entrepreneur","status":"submitted","submitted_at":"2026-08-28T10:15:00.000000Z"}}

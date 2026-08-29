@@ -14,6 +14,8 @@ class UserResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
+        $this->loadMissing('currentKycVerification');
+
         $userTypeId = (int) ($this->user_type_id ?? 0);
 
         $isInvestor = $userTypeId === 2;
@@ -123,6 +125,7 @@ class UserResource extends JsonResource
             'phone' => $this->phone,
             'image' => $this->image,
             'completed_onboarding' => (bool) ($this->completed_onboarding ?? false),
+            'kyc_status' => $this->kycVerification?->status ?? 'not_started',
             'organization_id' => $this->organization_id,
             'stripe_connect_id' => $stripeAccountId,
             'lipr_wallet_account' => $liprWallet,

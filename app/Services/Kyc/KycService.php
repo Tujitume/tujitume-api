@@ -124,9 +124,43 @@ class KycService
             'entrepreneur' => $v->entrepreneurDetails, 'service_provider' => $v->serviceProviderDetails, 'organization' => $v->organizationDetails
         };
         $required = match ($v->verification_type) {
-            'entrepreneur' => ['legal_name', 'id_type', 'id_number', 'id_issuing_country', 'id_expiry_date', 'nationality', 'physical_address', 'county_region', 'tax_pin'],
-            'service_provider' => ['legal_name', 'id_type', 'id_number', 'phone', 'email', 'physical_address', 'tax_pin'],
-            'organization' => ['legal_name', 'registration_number', 'registration_country', 'legal_structure', 'tax_pin', 'physical_address', 'county_region', 'representative_full_legal_name', 'representative_role_title', 'representative_id_type', 'representative_id_number', 'representative_phone', 'representative_email'],
+            'entrepreneur' => [
+                'legal_name', 
+                'id_type', 
+                'id_number',
+                'id_issuing_country', 
+                'id_expiry_date', 
+                'nationality',
+                'physical_address', 
+                'county_region',
+                'tax_pin'
+            ],
+
+            'service_provider' => [
+                'legal_name', 
+                'id_type', 
+                'id_number', 
+                'phone', 
+                'email', 
+                'physical_address', 
+                'tax_pin'
+            ],
+
+            'organization' => [
+                'legal_name',
+                'registration_number',
+                'registration_country',
+                'legal_structure', 
+                'tax_pin', 
+                'physical_address',
+                'county_region', 
+                'representative_full_legal_name',
+                'representative_role_title', 
+                'representative_id_type',
+                'representative_id_number',
+                'representative_phone', 
+                'representative_email'
+            ],
         };
         $errors = [];
         foreach ($required as $field) {

@@ -33,7 +33,10 @@ return new class extends Migration
             $table->unsignedBigInteger('file_size');
             $table->timestamp('uploaded_at');
             $table->timestamps();
-            $table->unique(['kyc_verification_id', 'document_type', 'kyc_person_id']);
+            $table->unique(
+                ['kyc_verification_id', 'document_type', 'kyc_person_id'],
+                'kyc_docs_verification_type_person_unique'
+            );
         });
     }
 

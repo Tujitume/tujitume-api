@@ -46,8 +46,7 @@ return new class extends Migration
             $table->string('lipr_wallet_account', 200)->nullable();
             $table->string('stripe_connect_id')->nullable();        // Stripe Connect
             $table->string('stripe_customer_id')->nullable();
-            $table->enum('kyc_status', ['pending', 'submitted', 'verified', 'rejected'])->default('pending');
-
+            
             $table->unsignedBigInteger('organization_id')->nullable(); // ← no constrained()
 
             $table->timestamps();

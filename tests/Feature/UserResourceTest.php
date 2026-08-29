@@ -8,6 +8,7 @@ use App\Models\Auth\Role;
 use App\Models\Auth\User;
 use App\Models\Auth\UserSetting;
 use App\Models\Auth\UserType;
+use App\Models\Kyc\KycVerification;
 use App\Models\Organizations\Organization;
 use App\Models\Organizations\Workspace;
 use Tests\TestCase;
@@ -33,6 +34,9 @@ class UserResourceTest extends TestCase
             'user_type_id' => 4,
             'organization_id' => 7,
         ]);
+        $user->setRelation('currentKycVerification', new KycVerification([
+            'status' => 'verified',
+        ]));
 
         $user->setRelation('user_type', new UserType([
             'id' => 4,
@@ -82,6 +86,7 @@ class UserResourceTest extends TestCase
         $this->assertSame('Jane', $payload['first_name']);
         $this->assertSame(4, $payload['user_type_id']);
         $this->assertSame('organization', $payload['user_type']);
+        $this->assertSame('verified', $payload['kyc_status']);
         $this->assertSame('Acme Org', $payload['organization']['name']);
         $this->assertSame('super_admin', $payload['role']['name']);
         $this->assertCount(1, $payload['workspaces']);

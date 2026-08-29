@@ -1,0 +1,130 @@
+{
+  "info": {
+    "_postman_id": "7e0f3cc8-8b3d-4f73-a7e9-50e4960c9b72",
+    "name": "Tujitume API v1 - KYC / KYB",
+    "description": "KYC/KYB API collection. Set base_url and bearer_token before use. Use one account type per run: entrepreneur (1), service provider (3), or organization (4).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:8000/api/v1", "type": "string" },
+    { "key": "bearer_token", "value": "", "type": "string" },
+    { "key": "document_id", "value": "", "type": "string" },
+    { "key": "person_id", "value": "", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "KYC - Shared",
+      "item": [
+        {
+          "name": "Get current KYC",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{bearer_token}}", "type": "string" }] },
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": "{{base_url}}/kyc"
+          }
+        },
+        {
+          "name": "Get KYC status",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{bearer_token}}", "type": "string" }] },
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": "{{base_url}}/kyc/status"
+          }
+        },
+        {
+          "name": "Start KYC",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{bearer_token}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{}", "options": { "raw": { "language": "json" } } },
+            "url": "{{base_url}}/kyc"
+          }
+        },
+        {
+          "name": "Submit KYC",
+          "request": {
+            "description": "This endpoint intentionally has no request payload. First call Start KYC, update the draft with the account-type PATCH request, and upload every document required for that flow. This request validates the stored draft and changes its status to submitted.",
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{bearer_token}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": "{{base_url}}/kyc/submit"
+          }
+        }
+      ]
+    },
+    {
+      "name": "KYC - Update by account type",
+      "item": [
+        {
+          "name": "Update entrepreneur KYC",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{bearer_token}}", "type": "string" }] },
+            "method": "PATCH",
+            "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"legal_name\": \"Jane Doe\",\n  \"id_type\": \"passport\",\n  \"id_number\": \"P1234567\",\n  \"id_issuing_country\": \"KE\",\n  \"id_expiry_date\": \"2028-01-01\",\n  \"nationality\": \"KE\",\n  \"physical_address\": \"1 Main Street\",\n  \"county_region\": \"Nairobi\",\n  \"tax_pin\": \"A123456789Z\",\n  \"is_registered_business\": true,\n  \"business_legal_name\": \"Jane Doe Enterprises\",\n  \"business_registration_number\": \"BN-12345\",\n  \"registration_country\": \"KE\",\n  \"legal_structure\": \"sole_proprietor\",\n  \"people\": [{\n    \"full_legal_name\": \"Jane Doe\",\n    \"relationship_role\": \"owner\",\n    \"is_beneficial_owner\": true,\n    \"requires_identity_verification\": false\n  }]\n}", "options": { "raw": { "language": "json" } } },
+            "url": "{{base_url}}/kyc"
+          }
+        },
+        {
+          "name": "Update service provider KYC",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{bearer_token}}", "type": "string" }] },
+            "method": "PATCH",
+            "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"legal_name\": \"Alex Consulting Ltd\",\n  \"id_type\": \"national_id\",\n  \"id_number\": \"12345678\",\n  \"phone\": \"+254700000000\",\n  \"email\": \"alex@example.com\",\n  \"physical_address\": \"Nairobi\",\n  \"tax_pin\": \"A123456789Z\",\n  \"operates_through_business\": true,\n  \"business_legal_name\": \"Alex Consulting Ltd\",\n  \"business_type\": \"limited_company\",\n  \"business_registration_number\": \"C-12345\",\n  \"requires_professional_licence\": true\n}", "options": { "raw": { "language": "json" } } },
+            "url": "{{base_url}}/kyc"
+          }
+        },
+        {
+          "name": "Update organization KYB",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{bearer_token}}", "type": "string" }] },
+            "method": "PATCH",
+            "header": [{ "key": "Accept", "value": "application/json" }, { "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"legal_name\": \"Community Foundation\",\n  \"registration_number\": \"NGO-123\",\n  \"registration_country\": \"KE\",\n  \"legal_structure\": \"foundation\",\n  \"tax_pin\": \"A123456789Z\",\n  \"physical_address\": \"Nairobi\",\n  \"county_region\": \"Nairobi\",\n  \"authorized_representative\": {\n    \"full_legal_name\": \"Jane Doe\",\n    \"role_title\": \"Director\",\n    \"id_type\": \"passport\",\n    \"id_number\": \"P1234567\",\n    \"phone\": \"+254700000000\",\n    \"email\": \"jane@example.com\",\n    \"authorization_confirmation\": true\n  },\n  \"people\": [{\n    \"full_legal_name\": \"Trustee One\",\n    \"relationship_role\": \"trustee\",\n    \"is_beneficial_owner\": false,\n    \"requires_identity_verification\": false\n  }]\n}", "options": { "raw": { "language": "json" } } },
+            "url": "{{base_url}}/kyc"
+          }
+        }
+      ]
+    },
+    {
+      "name": "KYC - Documents",
+      "item": [
+        {
+          "name": "Upload KYC document",
+          "request": {
+            "description": "In Postman, select a local PDF, JPEG, or PNG file for the file field. Maximum size: 10 MB.",
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{bearer_token}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "body": { "mode": "formdata", "formdata": [{ "key": "document_type", "value": "id_passport_copy", "type": "text" }, { "key": "file", "type": "file", "src": [] }] },
+            "url": "{{base_url}}/kyc/documents"
+          }
+        },
+        {
+          "name": "Upload person identity document",
+          "request": {
+            "description": "Use only when the person's requires_identity_verification value is true. Replace person_id with a returned KYC person ID.",
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{bearer_token}}", "type": "string" }] },
+            "method": "POST",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "body": { "mode": "formdata", "formdata": [{ "key": "document_type", "value": "person_identity", "type": "text" }, { "key": "person_id", "value": "{{person_id}}", "type": "text" }, { "key": "file", "type": "file", "src": [] }] },
+            "url": "{{base_url}}/kyc/documents"
+          }
+        },
+        {
+          "name": "Delete KYC document",
+          "request": {
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{bearer_token}}", "type": "string" }] },
+            "method": "DELETE",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": "{{base_url}}/kyc/documents/{{document_id}}"
+          }
+        }
+      ]
+    }
+  ]
+}

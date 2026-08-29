@@ -16,6 +16,7 @@ use App\Models\Services\Services;
 use App\Models\Users\InvestorProfile;
 use App\Models\Users\ServiceProviderProfile;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
@@ -159,9 +160,15 @@ class User extends Authenticatable
         return $this->hasOne(UserSetting::class);
     }
 
-    public function kycVerifications()
+    public function kycVerification()
     {
-        return $this->hasMany(KycVerification::class);
+        return $this->hasOne(KycVerification::class);
+    }
+
+    /** The most recently created KYC verification is the user's current KYC state. */
+    public function currentKycVerification(): HasOne
+    {
+        return $this->hasOne(KycVerification::class)->latestOfMany();
     }
 
     // Helper to get settings with defaults
