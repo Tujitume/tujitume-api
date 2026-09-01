@@ -30,6 +30,7 @@ use App\Http\Controllers\Program\Rounds\ProgramRoundController;
 use App\Http\Controllers\Program\Rounds\RoundDocumentController;
 use App\Http\Controllers\Program\Rounds\RoundQuestionController;
 use App\Http\Controllers\Program\Rounds\RoundReviewerController;
+use App\Http\Controllers\Program\ReviewerOrderController;
 use App\Http\Controllers\Program\SupplierDirectoryController;
 use Illuminate\Support\Facades\Route;
 
@@ -153,6 +154,14 @@ Route::prefix('/programs')->middleware(['program', 'program.response'])->group(f
 
     Route::apiResource('rounds/{round}/reviewers', RoundReviewerController::class)->shallow();
     Route::patch('reviewers/{reviewer}', [RoundReviewerController::class, 'update']); // added by owen
+
+    // ─── REVIEWER ORDERS ──────────────────────────────────────────────────
+    Route::get('reviewer/orders', [ReviewerOrderController::class, 'myOrders']);
+    Route::get('rounds/{round}/reviewer-orders', [ReviewerOrderController::class, 'roundOrders']);
+    Route::post('reviewer-orders/{order}/deliver', [ReviewerOrderController::class, 'deliver']);
+    Route::post('reviewer-orders/{order}/request-modification', [ReviewerOrderController::class, 'requestModification']);
+    Route::post('reviewer-orders/{order}/approve', [ReviewerOrderController::class, 'approve']);
+    Route::get('reviewer-orders/{order}/payment-status', [ReviewerOrderController::class, 'paymentStatus']);
 
     // ROUND REQUIRED DOCUMENTS
     Route::post('applications/{application_id}/rounds/{round_id}/documents', [RoundDocumentController::class, 'store']);

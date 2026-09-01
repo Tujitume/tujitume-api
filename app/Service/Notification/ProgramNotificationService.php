@@ -416,6 +416,63 @@ class ProgramNotificationService
                 'link'          => $this->link('dashboard.programOrg.programsDiscover'),
             ],
 
+            // ── REVIEWER EVENTS ──────────────────────────────────────────────────
+            'reviewer.scoring_complete' => [
+                'title'         => 'Round Scoring Complete',
+                'message'       => "{$data['reviewer_name']} has completed scoring for {$data['round_name']}. Please review and finalize.",
+                'email_subject' => 'Round Scoring Complete — Ready to Finalize',
+                'email_view'    => $this->view_base . 'reviewer_scoring_complete',
+                'link'          => 'overview/programs/rounds/' . ($data['order_id'] ?? ''),
+            ],
+
+            'reviewer.work_delivered' => [
+                'title'         => 'Reviewer Work Submitted',
+                'message'       => "{$data['reviewer_name']} has submitted their {$data['order_type']} work for {$data['program_title']}.",
+                'email_subject' => 'Reviewer Work Submitted for Review',
+                'email_view'    => $this->view_base . 'reviewer_work_delivered',
+                'link'          => 'overview/programs/reviewer-orders/' . ($data['order_id'] ?? ''),
+            ],
+
+            'reviewer.modification_requested' => [
+                'title'         => 'Modification Requested',
+                'message'       => "A modification has been requested for your work on {$data['program_title']}.",
+                'email_subject' => 'Modification Requested — Action Required',
+                'email_view'    => $this->view_base . 'reviewer_modification_requested',
+                'link'          => 'overview/reviewer/orders/' . ($data['order_id'] ?? ''),
+            ],
+
+            'reviewer.work_approved' => [
+                'title'         => 'Work Approved 🎉',
+                'message'       => "Your work on {$data['program_title']} has been approved. Payment of {$data['fee']} is being processed.",
+                'email_subject' => 'Work Approved — Payment Processing',
+                'email_view'    => $this->view_base . 'reviewer_work_approved',
+                'link'          => 'overview/reviewer/orders/' . ($data['order_id'] ?? ''),
+            ],
+
+            'reviewer.payment_initiated' => [
+                'title'         => 'Payment Initiated',
+                'message'       => "Payment for your work on {$data['round_name']} has been initiated.",
+                'email_subject' => 'Payment Initiated',
+                'email_view'    => $this->view_base . 'reviewer_payment_initiated',
+                'link'          => 'overview/reviewer/orders/' . ($data['order_id'] ?? ''),
+            ],
+
+            'reviewer.payment_completed' => [
+                'title'         => 'Payment Received 💰',
+                'message'       => "Payment of {$data['amount']} {$data['currency']} for {$data['program_title']} has been transferred to your wallet.",
+                'email_subject' => 'Payment Received Successfully',
+                'email_view'    => $this->view_base . 'reviewer_payment_completed',
+                'link'          => 'overview/reviewer/orders/' . ($data['order_id'] ?? ''),
+            ],
+
+            'reviewer.payment_failed' => [
+                'title'         => 'Payment Failed',
+                'message'       => "Payment to reviewer {$data['reviewer_name']} failed for {$data['program_title']}. Please retry.",
+                'email_subject' => 'Reviewer Payment Failed — Action Required',
+                'email_view'    => $this->view_base . 'reviewer_payment_failed',
+                'link'          => 'overview/programs/reviewer-orders/' . ($data['order_id'] ?? ''),
+            ],
+
             default => throw new \InvalidArgumentException("Unknown event type: {$event}"),
         };
     }

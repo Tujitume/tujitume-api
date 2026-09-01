@@ -13,14 +13,26 @@ use App\Models\Programs\Monitoring\MESiteVisit;
 use App\Models\Programs\Monitoring\MESiteVisitFile;
 use App\Models\Programs\Monitoring\MESubmission;
 use App\Models\Programs\Monitoring\MESubmissionFile;
+use App\Models\ReviewerOrder;
 use App\Service\Misc\ErrorLogService;
+use App\Service\Notification\ProgramNotificationService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 
 class MEController extends Controller
 {
+    protected $fileUpload;
+    protected $programNotification;
+
+    public function __construct()
+    {
+        parent::__construct();
+        $this->programNotification = new ProgramNotificationService();
+    }
+
     // ─── CHECKPOINTS ────────────────────────────────────────────────────
 
     // GET /program/applications/{app}/me/checkpoints
@@ -385,6 +397,7 @@ class MEController extends Controller
                 'inspector'   => 'nullable|string',
                 'objective'   => 'nullable|string',
                 'kpi_targets' => 'nullable|array',
+                'reviewer_fee' => 'nullable|numeric|min:0',
             ]);
 
             $validated['checkpoint_id'] = $checkpoint->id;
@@ -393,6 +406,23 @@ class MEController extends Controller
             $siteVisit = MESiteVisit::updateOrCreate(
                 ['checkpoint_id' => $checkpoint->id],
                 $validated
+            );
+
+            // Create ReviewerOrder for site visit
+            ReviewerOrder::updateOrCreate(
+                ['site_visit_id' => $siteVisit->id],
+                [
+                    'organization_id' => $checkpoint->application->program->user->organization_id,
+                    'reviewer_id'     => $validated['reviewer_id'],
+                    'program_id'      => $checkpoint->application->program_id,
+                    'order_type'      => 'site_visit',
+                    'site_visit_id'   => $siteVisit->id,
+                    'fee_usd'         => $validated['reviewer_fee'] ?? 0,
+                    'currency'        => 'USD',
+                    'work_status'     => 'assigned',
+                    'payment_status'  => 'unpaid',
+                    'deadline'        => $validated['start_date'] ?? null,
+                ]
             );
 
             // commit the transaction
@@ -450,6 +480,26 @@ class MEController extends Controller
             unset($validated['files']);
 
             $visit->update(array_merge($validated, ['status' => 'completed']));
+
+            // Auto-mark reviewer order as delivered when site visit submitted
+            $order = ReviewerOrder::where('site_visit_id', $visit->id)->first();
+            if ($order) {
+                $order->update([
+                    'work_status'  => 'delivered',
+                    'delivered_at' => now(),
+                ]);
+
+                // Notify program owner
+                $this->programNotification->send('reviewer.work_delivered', [
+                    $visit->checkpoint->application->program->owner
+                ], [
+                    'program_title' => $visit->checkpoint->application->program->program_title,
+                    'reviewer_name' => Auth::user()->first_name . ' ' . Auth::user()->last_name,
+                    'order_type'    => 'site_visit',
+                    'round_name'    => null,
+                    'order_id'      => $order->id,
+                ]);
+            }
 
             DB::commit();
 

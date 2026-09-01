@@ -11,4 +11,5 @@ Route::prefix('kyc')->group(function () {
     Route::post('submit', [KycController::class, 'submit'])->name('kyc.submit');
     Route::post('documents', [KycController::class, 'upload'])->name('kyc.documents.upload');
     Route::delete('documents/{document}', [KycController::class, 'destroyDocument'])->name('kyc.documents.destroy');
+    Route::post('submit', [KycController::class, 'submit'])->name('kyc.submit');
 });

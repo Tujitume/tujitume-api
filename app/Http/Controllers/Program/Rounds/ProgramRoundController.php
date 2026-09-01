@@ -10,11 +10,13 @@ use App\Models\Programs\Rounds\ApplicationRoundResponse;
 use App\Models\Programs\Rounds\ProgramRound;
 use App\Models\Programs\Rounds\RoundCustomQuestion;
 use App\Models\Programs\Rounds\RoundRequiredDocument;
+use App\Models\ReviewerOrder;
 use App\Service\Program\KnockoutEvaluator;
 use App\Service\Program\RoundFinalizationService;
 use App\Service\Program\RoundHelperService;
 use App\Service\Program\RoundHistoryService;
 use App\Service\Misc\ErrorLogService;
+use App\Service\Notification\ProgramNotificationService;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -28,9 +30,12 @@ class ProgramRoundController extends Controller
      */
 
     protected $roundHistory;
+    protected $programNotification;
+
     public function __construct()
     {
         $this->roundHistory = new RoundHistoryService();
+        $this->programNotification = new ProgramNotificationService();
         parent::__construct();
     }
     public function index(Program $program){
@@ -622,6 +627,28 @@ class ProgramRoundController extends Controller
 
 
             DB::commit();
+
+            // ─── Trigger payment to all reviewers ──────────────────────────────
+            $reviewerOrders = ReviewerOrder::where('round_id', $round->id)
+                ->where('order_type', 'round_review')
+                ->whereIn('work_status', ['delivered', 'approved'])
+                ->where('payment_status', 'unpaid')
+                ->where('fee_usd', '>', 0)
+                ->get();
+
+            foreach ($reviewerOrders as $reviewerOrder) {
+                // Mark as pending — PO will be prompted to pay via frontend
+                $reviewerOrder->update(['payment_status' => 'pending']);
+
+                $this->programNotification->send('reviewer.payment_initiated', [
+                    $reviewerOrder->reviewer
+                ], [
+                    'program_title' => $round->program->program_title,
+                    'round_name'    => $round->round_name,
+                    'fee'           => $reviewerOrder->fee_usd,
+                    'order_id'      => $reviewerOrder->id,
+                ]);
+            }
 
             // notify
             $roundFinalize = new RoundFinalizationService();

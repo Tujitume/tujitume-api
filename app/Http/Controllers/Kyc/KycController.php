@@ -8,6 +8,7 @@ use App\Http\Requests\Kyc\UploadKycDocumentRequest;
 use App\Http\Resources\ApiResponseResource;
 use App\Http\Resources\Kyc\KycVerificationResource;
 use App\Models\Kyc\KycDocument;
+use App\Models\Kyc\KycVerification;
 use App\Services\Kyc\KycService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -52,6 +53,10 @@ class KycController extends Controller
     public function submit(Request $request)
     {
         $verification = $this->requireCurrent($request);
+        if(!$verification){
+            return ApiResponseResource::error('KYC has not been started.', null, 404);
+        }
+        
         $verification = $this->kyc->submit($verification);
 
         return ApiResponseResource::success('KYC submitted for review.', (new KycVerificationResource($verification))->resolve());
@@ -101,9 +106,12 @@ class KycController extends Controller
 
     private function requireCurrent(Request $request)
     {
+        
         $verification = $this->kyc->current($request->user());
-        abort_unless($verification, 404, 'KYC has not been started.');
-
+        
+        if(! $verification) {
+            return false;
+        }
         return $verification;
     }
 }

@@ -15,6 +15,7 @@ use App\Models\Programs\ProgramApplication;
 use App\Models\Programs\ProgramMilestone;
 use App\Models\Milestones\Milestones;
 use App\Models\Misc\Setting;
+use App\Models\ReviewerOrder;
 use App\Models\Services\ServiceBooking;
 use App\Models\Services\ServiceBookingMilestone;
 use App\Service\Balance\BalanceService;
@@ -140,7 +141,7 @@ class CheckoutMpesaController extends Controller
                     ->with('application') // eager load the owner
                     ->firstOrFail();
                 $amount = $milestone->amount;
-                $callbackUrl = "https://tujitume.com/api/lipr-callback-grant-direct";
+                $callbackUrl = "https://tujitume.com/api/lipr-callback-program-direct";
 
                 // Authorization: only program owner can disburse
                 if ($milestone->application->program_owner_id !== auth()->id()) {
@@ -153,7 +154,7 @@ class CheckoutMpesaController extends Controller
                     ->with('application') // eager load the owner
                     ->firstOrFail();
                 $amount = $milestone->application->total_amount_requested ?? $milestone->application->awarded_amount;
-                $callbackUrl = "https://tujitume.com/api/lipr-callback-grant-escrow";
+                $callbackUrl = "https://tujitume.com/api/lipr-callback-program-escrow";
 
                 // Authorization: only program owner can disburse
                 if ($milestone->application->program_owner_id !== auth()->id()) {
@@ -183,12 +184,38 @@ class CheckoutMpesaController extends Controller
                 $amount = $mileR->service->price;
                 //$destination_wallet_acc = $platform_wallet;
             }
+            else if ($request->purpose === 'reviewer_payment') {
+                $order = ReviewerOrder::where('id', $request->listing_id)
+                    ->with(['reviewer', 'program'])
+                    ->firstOrFail();
+
+                // Authorization: only program owner can initiate payment
+                if ($order->program->user_id !== Auth::id()) {
+                    throw new \Exception('Unauthorized', 403);
+                }
+
+                if ($order->payment_status === 'completed') {
+                    throw new \Exception('Already paid', 422);
+                }
+
+                if (!in_array($order->work_status, ['delivered', 'approved'])) {
+                    throw new \Exception('Reviewer has not delivered work yet', 422);
+                }
+
+                if (!$order->reviewer->lipr_wallet_account) {
+                    throw new \Exception('Reviewer does not have a LIPR wallet configured', 422);
+                }
+
+                $amount = $order->fee_usd;
+                $callbackUrl = 'https://tujitume.com/api/lipr-callback-reviewer-payment';
+            }
 
             if($request->purpose !== 'bids')
             {
                 if($request->purpose === "program_milestone_bulk"
                     || $request->purpose === "program_milestone"
-                    || $request->purpose === "capital_milestone"){
+                    || $request->purpose === "capital_milestone"
+                    || $request->purpose === "reviewer_payment"){
                     $amountKes = round($amount * $rate, 0); // USD * KES_RATE
                 }
                 else{
@@ -203,6 +230,11 @@ class CheckoutMpesaController extends Controller
 
             $destination_wallet_acc = 'escrow'; //sandbox
              //$platform_wallet; prod // Money goes to platform first
+
+            // Update fee_kes for reviewer_payment orders
+            if ($request->purpose === 'reviewer_payment') {
+                $order->update(['fee_kes' => $amountKes]);
+            }
 
             $base_path = config('services.lipr.base_path');
 

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Auth\User;
 use App\Models\Programs\Rounds\ProgramRound;
 use App\Models\Programs\Rounds\RoundReviewer;
+use App\Models\ReviewerOrder;
 use App\Service\Account\RegisterService;
 use App\Service\Misc\ErrorLogService;
 use Illuminate\Http\Request;
@@ -100,6 +101,8 @@ class RoundReviewerController extends Controller
                 'email' => 'required_if:reviewer_type,external|email',
                 'max_apps_assigned' => 'nullable|integer|min:1',
                 'expertise_tags' => 'nullable|array',
+                'reviewer_fee' => 'nullable|numeric|min:0',
+                'fee_currency' => 'nullable|string|max:10',
             ]);
 
             $userId = null;
@@ -122,6 +125,22 @@ class RoundReviewerController extends Controller
                     'reviewer_type' => $validated['reviewer_type'] ?? 'internal',
                     'max_apps_assigned' => $validated['max_apps_assigned'] ?? null,
                     'expertise_tags' => isset($validated['expertise_tags']) ? json_encode($validated['expertise_tags']) : null,
+                    'reviewer_fee' => $validated['reviewer_fee'] ?? null,
+                    'fee_currency' => $validated['fee_currency'] ?? 'USD',
+                ]);
+
+                // Create ReviewerOrder
+                ReviewerOrder::create([
+                    'organization_id' => $round->program->user->organization_id,
+                    'reviewer_id'     => $userId,
+                    'program_id'      => $round->program_id,
+                    'order_type'      => 'round_review',
+                    'round_id'        => $round->id,
+                    'fee_usd'         => $validated['reviewer_fee'] ?? 0,
+                    'currency'        => $validated['fee_currency'] ?? 'USD',
+                    'work_status'     => 'assigned',
+                    'payment_status'  => 'unpaid',
+                    'deadline'        => $round->close_date ?? null,
                 ]);
 
                 // $user->update(['user_type_id' => 6, // internal reviewer]);
@@ -144,6 +163,22 @@ class RoundReviewerController extends Controller
                     'reviewer_type' => 'external',
                     'max_apps_assigned' => $validated['max_apps_assigned'] ?? null,
                     'expertise_tags' => isset($validated['expertise_tags']) ? json_encode($validated['expertise_tags']) : null,
+                    'reviewer_fee' => $validated['reviewer_fee'] ?? null,
+                    'fee_currency' => $validated['fee_currency'] ?? 'USD',
+                ]);
+
+                // Create ReviewerOrder for external reviewer
+                ReviewerOrder::create([
+                    'organization_id' => $round->program->user->organization_id,
+                    'reviewer_id'     => $user->id,
+                    'program_id'      => $round->program_id,
+                    'order_type'      => 'round_review',
+                    'round_id'        => $round->id,
+                    'fee_usd'         => $validated['reviewer_fee'] ?? 0,
+                    'currency'        => $validated['fee_currency'] ?? 'USD',
+                    'work_status'     => 'assigned',
+                    'payment_status'  => 'unpaid',
+                    'deadline'        => $round->close_date ?? null,
                 ]);
 
             }

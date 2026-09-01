@@ -105,4 +105,21 @@ return [
         'completed' => 'success',
         'cancelled' => 'danger',
     ],
+
+    'reviewer_order' => [
+        'assigned'               => 'info',
+        'in_progress'            => 'warning',
+        'delivered'              => 'warning',
+        'modification_requested' => 'danger',
+        'approved'               => 'success',
+        'rejected'               => 'danger',
+    ],
+
+    'reviewer_payment' => [
+        'unpaid'          => 'info',
+        'pending'         => 'warning',
+        'leg1_processing' => 'warning',
+        'completed'       => 'success',
+        'failed'          => 'danger',
+    ],
 ];

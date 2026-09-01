@@ -38,7 +38,7 @@ class ProgramRound extends Model
     {
         return $this->belongsToMany(User::class, 'round_reviewers', 'round_id', 'user_id')
             ->select('users.id', 'users.first_name', 'users.last_name', 'users.email', 'users.image')
-            ->withPivot(['reviewer_type', 'max_apps_assigned', 'expertise_tags'])
+            ->withPivot(['reviewer_type', 'max_apps_assigned', 'expertise_tags', 'reviewer_fee', 'fee_currency'])
             ->withTimestamps();
     }
 
@@ -96,5 +96,10 @@ class ProgramRound extends Model
     public function verifiedDocuments()
     {
         return $this->uploadedDocuments()->where('verification_status', 'verified');
+    }
+
+    public function reviewerOrders()
+    {
+        return $this->hasMany(\App\Models\ReviewerOrder::class, 'round_id');
     }
 }

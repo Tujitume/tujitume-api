@@ -24,6 +24,10 @@ Route::prefix('v1')->group(function () {
     Route::post('/lipr-callback-program-direct', [MpesaCallbackController::class, 'callbackProgramDirectDisburse']);
     Route::post('/lipr-callback-program-supplier', [MpesaCallbackController::class, 'callbackForProgramSupplier']);
 
+    // Reviewer payment callbacks
+    Route::post('/lipr-callback-reviewer-payment', [MpesaCallbackController::class, 'callbackForReviewerPayment']);
+    Route::post('/lipr-callback-reviewer-payment-leg2', [MpesaCallbackController::class, 'callbackForReviewerPaymentLeg2']);
+
     // PUBLIC ROUTES (No Auth Required)
     // =============================================================
     require __DIR__.'/api/v1/public.php';

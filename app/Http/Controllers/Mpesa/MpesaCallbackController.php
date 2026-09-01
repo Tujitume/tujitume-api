@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Mpesa;
 use App\Http\Controllers\Controller;
 use App\Models\Finance\LiprPayment;
 use App\Models\Programs\ProgramMilestone;
+use App\Models\ReviewerOrder;
 use App\Models\Misc\Setting;
 use App\Service\Balance\BalanceService;
 use App\Service\Balance\CurrencyConverter;
@@ -12,6 +13,7 @@ use App\Service\LiprMpesa\ProgramDisbursementService;
 use App\Service\LiprMpesa\LiprAuthService;
 use App\Service\LiprMpesa\LiprW2W;
 use App\Service\Misc\ErrorLogService;
+use App\Service\Notification\ProgramNotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -28,6 +30,7 @@ class MpesaCallbackController extends Controller
         $this->liprW2W = new LiprW2W();
         $this->disbursementService = $disbursementService;
         $this->tujitume_lipr = Setting::where('key', 'platform_lipr_wallet')->first()?->value ?? null;
+        $this->programNotification = new ProgramNotificationService();
     }
 
     public function auth()
@@ -434,6 +437,161 @@ class MpesaCallbackController extends Controller
 
         } catch (\Exception $e) {
             ErrorLogService::report($e, ['input' => request()->except(['password', 'token'])]);
+            return response()->json(['message' => 'Something went wrong, please try again later.'], 500);
+        }
+    }
+
+    /**
+     * Callback for Reviewer Payment - Leg 1 (STK Push)
+     */
+    public function callbackForReviewerPayment(Request $request, CurrencyConverter $convert)
+    {
+        try {
+            Log::info('LIPR REVIEWER PAYMENT CALLBACK', [
+                'payload' => $request->all(),
+                'raw'     => $request->getContent(),
+            ]);
+
+            $payload     = !empty($request->all()) ? $request->all() : json_decode($request->getContent(), true) ?? [];
+            $transaction = $payload['transaction'] ?? [];
+
+            $referenceId   = $transaction['reference'] ?? null;
+            $transactionId = $transaction['id'] ?? null;
+            $status        = strtolower($transaction['transactionStatus'] ?? '');
+            $amount        = $transaction['amount'] ?? 0;
+            $orderId       = $payload['metadata']['listingId'] ?? null;
+
+            $kesToUsd  = $convert->KesToUsd();
+            $amountUsd = $kesToUsd * $amount;
+
+            // Record payment (Leg 1)
+            LiprPayment::create([
+                'reference_id'      => $referenceId,
+                'transaction_id'    => $transactionId,
+                'status'            => $status,
+                'amount'            => $amount,
+                'amount_usd'        => $amountUsd,
+            ]);
+
+            if ($status !== 'successful') {
+                // Payment failed — update order
+                ReviewerOrder::where('id', $orderId)
+                    ->update(['payment_status' => 'failed']);
+
+                return response()->json(['message' => 'Callback received'], 200);
+            }
+
+            $order    = ReviewerOrder::with('reviewer', 'program')->findOrFail($orderId);
+            $reviewer = $order->reviewer;
+
+            if (!$reviewer->lipr_wallet_account) {
+                Log::error('Reviewer has no LIPR wallet', ['reviewer_id' => $reviewer->id, 'order_id' => $orderId]);
+                return response()->json(['message' => 'Callback received'], 200);
+            }
+
+            // Idempotency check
+            if ($order->payment_status === 'completed') {
+                return response()->json(['message' => 'Callback received — already processed'], 200);
+            }
+
+            // ─── Leg 2: W2W Transfer to reviewer wallet ───────────────────
+
+            $tujitumeWallet = Setting::where('key', 'platform_lipr_wallet')->value('value');
+
+            $transfer = $this->liprW2W->send(
+                $amount,           // amount in KES
+                $reviewer->lipr_wallet_account,
+                $tujitumeWallet,
+                null               // no milestone context
+            );
+
+            if (!$transfer || !($transfer['success'] ?? false)) {
+                Log::error('W2W transfer failed for reviewer payment', [
+                    'order_id' => $orderId,
+                    'error'    => $transfer['error'] ?? 'unknown',
+                ]);
+                $order->update(['payment_status' => 'failed']);
+                return response()->json(['message' => 'Callback received'], 200);
+            }
+
+            // Update order with leg 2 reference
+            $order->update([
+                'payment_status' => 'leg1_processing',
+                'leg1_reference' => $referenceId,
+                'leg2_reference' => $transfer['reference'] ?? null,
+            ]);
+
+            return response()->json(['message' => 'Callback received'], 200);
+
+        } catch (\Exception $e) {
+            ErrorLogService::report($e, ['input' => $request->except(['password', 'token'])]);
+            return response()->json(['message' => 'Something went wrong, please try again later.'], 500);
+        }
+    }
+
+    /**
+     * Callback for Reviewer Payment - Leg 2 (W2W Confirmation)
+     */
+    public function callbackForReviewerPaymentLeg2(Request $request, CurrencyConverter $convert)
+    {
+        try {
+            Log::info('LIPR REVIEWER PAYMENT LEG2 CALLBACK', [
+                'payload' => $request->all(),
+                'raw'     => $request->getContent(),
+            ]);
+
+            $payload     = !empty($request->all()) ? $request->all() : json_decode($request->getContent(), true) ?? [];
+            $transaction = $payload['transaction'] ?? [];
+
+            $referenceId = $transaction['reference'] ?? null;
+            $status      = strtolower($transaction['transactionStatus'] ?? '');
+            $amount      = $transaction['amount'] ?? 0;
+            $orderId     = $payload['metadata']['listingId'] ?? null;
+
+            $order = ReviewerOrder::with('reviewer', 'program')->findOrFail($orderId);
+
+            // Idempotency
+            if ($order->payment_status === 'completed') {
+                return response()->json(['message' => 'Already processed'], 200);
+            }
+
+            if ($status === 'successful') {
+                DB::transaction(function () use ($order, $amount, $convert) {
+                    $order->update([
+                        'payment_status' => 'completed',
+                        'paid_at'        => now(),
+                        'work_status'    => 'approved',
+                        'approved_at'    => now(),
+                    ]);
+                });
+
+                // Notify reviewer that payment landed
+                $this->programNotification->send('reviewer.payment_completed', [
+                    $order->reviewer
+                ], [
+                    'program_title' => $order->program->program_title,
+                    'amount'        => $order->fee_usd,
+                    'currency'      => $order->currency,
+                    'order_id'      => $order->id,
+                ]);
+
+            } else {
+                // W2W failed — revert to failed
+                $order->update(['payment_status' => 'failed']);
+
+                $this->programNotification->send('reviewer.payment_failed', [
+                    $order->program->owner
+                ], [
+                    'program_title' => $order->program->program_title,
+                    'reviewer_name' => $order->reviewer->first_name,
+                    'order_id'      => $order->id,
+                ]);
+            }
+
+            return response()->json(['message' => 'Callback received'], 200);
+
+        } catch (\Exception $e) {
+            ErrorLogService::report($e, ['input' => $request->except(['password', 'token'])]);
             return response()->json(['message' => 'Something went wrong, please try again later.'], 500);
         }
     }

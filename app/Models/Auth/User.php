@@ -180,4 +180,9 @@ class User extends Authenticatable
             'accent_color' => '#14532d',
         ]);
     }
+
+    public function reviewerOrders()
+    {
+        return $this->hasMany(\App\Models\ReviewerOrder::class, 'reviewer_id');
+    }
 }

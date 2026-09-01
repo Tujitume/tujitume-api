@@ -27,4 +27,9 @@ class MESiteVisit extends Model
     public function checkpoint() { return $this->belongsTo(MECheckpoint::class, 'checkpoint_id'); }
     public function reviewer()   { return $this->belongsTo(User::class, 'reviewer_id'); }
     public function files()      { return $this->hasMany(MESiteVisitFile::class, 'site_visit_id'); }
+
+    public function reviewerOrder()
+    {
+        return $this->hasOne(\App\Models\ReviewerOrder::class, 'site_visit_id');
+    }
 }

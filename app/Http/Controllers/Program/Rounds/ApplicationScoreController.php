@@ -5,13 +5,20 @@ namespace App\Http\Controllers\Program\Rounds;
 use App\Http\Controllers\Controller;
 use App\Models\Programs\ProgramApplication;
 use App\Models\Programs\Rounds\ApplicationScore;
+use App\Models\ReviewerOrder;
 use App\Service\Misc\ErrorLogService;
+use App\Service\Notification\ProgramNotificationService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class ApplicationScoreController extends Controller
 {
+    public function __construct(
+        private ProgramNotificationService $notification,
+    ) {}
+
     /**
      * Submit score for application
      * POST /api/v1/program/applications/{application}/scores
@@ -92,6 +99,48 @@ class ApplicationScoreController extends Controller
             };
 
             $application->save();
+
+            // ─── Reviewer Order Status Updates ──────────────────────────────
+
+            // Update work_status to 'in_progress' on first score submission
+            ReviewerOrder::where('round_id', $round->id)
+                ->where('reviewer_id', Auth::id())
+                ->where('work_status', 'assigned')
+                ->update(['work_status' => 'in_progress']);
+
+            // Check if reviewer has scored all their assigned apps for this round
+            // Get all applications in this round that are being reviewed
+            $allAppsInRound = ProgramApplication::where('current_round_id', $round->id)
+                ->where('round_status', '!=', 'not_selected')
+                ->count();
+
+            $scoredByReviewer = ApplicationScore::where('round_id', $round->id)
+                ->where('reviewer_id', Auth::id())
+                ->count();
+
+            // If reviewer has scored all apps assigned to them, mark as delivered
+            if ($scoredByReviewer >= $allAppsInRound) {
+                $order = ReviewerOrder::where('round_id', $round->id)
+                    ->where('reviewer_id', Auth::id())
+                    ->first();
+
+                if ($order && $order->work_status === 'in_progress') {
+                    $order->update([
+                        'work_status'  => 'delivered',
+                        'delivered_at' => now(),
+                    ]);
+
+                    // Notify program owner
+                    $this->notification->send('reviewer.scoring_complete', [
+                        $round->program->owner
+                    ], [
+                        'program_title' => $round->program->program_title,
+                        'round_name'    => $round->round_name,
+                        'reviewer_name' => Auth::user()->first_name . ' ' . Auth::user()->last_name,
+                        'order_id'      => $order->id,
+                    ]);
+                }
+            }
 
             DB::commit();
 
