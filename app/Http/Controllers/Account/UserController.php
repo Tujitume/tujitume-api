@@ -565,7 +565,7 @@ class UserController extends Controller
         $type = $user->user_type_id;
 
         if ($id != Auth::id()) {
-            return response(['message' => 'Unauthorized.'], 401);
+            return response(['message' => 'Unauthorized.'], 403);
         }
 
         if ($user->balance?->balance > 0) {

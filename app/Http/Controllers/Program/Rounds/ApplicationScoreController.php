@@ -16,7 +16,7 @@ use Illuminate\Validation\ValidationException;
 class ApplicationScoreController extends Controller
 {
     public function __construct(
-        private ProgramNotificationService $notification,
+
     ) {}
 
     /**
@@ -131,7 +131,7 @@ class ApplicationScoreController extends Controller
                     ]);
 
                     // Notify program owner
-                    $this->notification->send('reviewer.scoring_complete', [
+                    $this->programNotification->send('reviewer.scoring_complete', [
                         $round->program->owner
                     ], [
                         'program_title' => $round->program->program_title,
