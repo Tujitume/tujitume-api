@@ -3,16 +3,18 @@
 namespace Tests\Feature;
 
 use App\Models\Auth\User;
-use App\Models\Organization;
-use App\Models\Program;
+use App\Models\Organizations\Organization;
+use App\Models\Programs\Program;
 use App\Models\Programs\Rounds\ProgramRound;
 use App\Models\ReviewerOrder;
 use App\Models\Programs\Monitoring\MESiteVisit;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Notification;
 use Tests\TestCase;
 
 class ReviewerPaymentTest extends TestCase
 {
+    use RefreshDatabase;
     protected $organization;
     protected $program;
     protected $programOwner;
@@ -38,16 +40,15 @@ class ReviewerPaymentTest extends TestCase
         // Create internal reviewer
         $this->internalReviewer = User::factory()
             ->create([
-                'user_type_id' => 6, // Internal reviewer
+                'user_type_id' => 4, // Internal reviewer
                 'organization_id' => $this->organization->id,
                 'lipr_wallet_account' => '254712345678',
             ]);
 
-        // Create external reviewer
+        // Create external reviewer (independent, no organization_id required)
         $this->externalReviewer = User::factory()
             ->create([
-                'user_type_id' => 7, // External reviewer
-                'organization_id' => $this->organization->id,
+                'user_type_id' => 6, // External reviewer
                 'lipr_wallet_account' => '254787654321',
             ]);
 
@@ -467,7 +468,6 @@ class ReviewerPaymentTest extends TestCase
         $otherReviewer = User::factory()
             ->create([
                 'user_type_id' => 6,
-                'organization_id' => $this->organization->id,
             ]);
 
         $order = ReviewerOrder::factory()

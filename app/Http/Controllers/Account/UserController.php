@@ -103,7 +103,7 @@ class UserController extends Controller
                 case 3: // Service Provider
                     return response()->json($funds->calculateCapitalFunds($user), 200);
 
-                case 4: // Org
+                case 4: // Org / Internal Reviewer (with role_id = 10004)
                     return response()->json([
                         'data' => new UserResource($user),
                     ], 200);
@@ -111,10 +111,7 @@ class UserController extends Controller
                 case 5: // Service Provider
                     // return $funds->calculateServiceProviderFunds($user);
 
-                case 6: // Internal Reviewer
-                    // return $this->getInternalReviewerDashboard($user);
-
-                case 7: // External Reviewer
+                case 6: // External Reviewer
                     // return $this->getExternalReviewerDashboard($user);
 
                 default:
@@ -668,7 +665,7 @@ class UserController extends Controller
             User::where('id', $id)->delete();
             DB::commit();
 
-            return response(['message' => 'Account removed. All documents deleted.'], 200);
+            return response(['message' => 'Account deleted. All documents deleted.'], 200);
         } catch (\Exception $e) {
             DB::rollBack();
 

@@ -496,4 +496,91 @@ class RegisterService
             return response()->json(['message' => 'Something went wrong, please try again later.'], 500);
         }
     }
+
+    // ─── External Reviewer ───────────────────────────────────────────────
+    public function registerExternalReviewer(Request $request)
+    {
+        $data = $request->validate([
+            'user_type_id' => ['required', 'integer', 'in:6'],
+            'organization_id' => ['required', 'integer', 'exists:organizations,id'],
+            'email' => ['required', 'email', 'unique:users,email'],
+            'first_name' => ['required', 'string', 'max:255'],
+            'last_name' => ['required', 'string', 'max:255'],
+            'image' => ['nullable', 'image', 'mimes:jpeg,png,jpg,gif,svg', 'max:2048'],
+        ]);
+
+        $organization = Organization::findOrFail($data['organization_id']);
+        $inviter = $request->user();
+        $isOrganizationOwner = $inviter?->id === $organization->owner_user_id;
+        $isOrganizationAdmin = $inviter?->organizationRole()
+            ->where('organization_id', $organization->id)
+            ->where('status', 'active')
+            ->whereHas('role', fn($query) => $query->where('name', 'super_admin'))
+            ->exists();
+
+        if (! $isOrganizationOwner && ! $isOrganizationAdmin) {
+            return response()->json(['message' => 'Only an organization super admin can invite reviewers.'], 403);
+        }
+
+        $uploadedImage = null;
+
+        DB::beginTransaction();
+        try {
+            $image = $data['image'] ?? null;
+
+            if ($image) {
+                $uploadedImage = $this->imageUpload->save($image, 'images/users');
+            }
+
+            $invitationToken = Str::random(64);
+
+            $user = User::create([
+                'first_name' => $data['first_name'],
+                'email' => $data['email'],
+                'password' => null,
+                'user_type_id' => $data['user_type_id'] ?? 4, // Default to organization user
+                'organization_id' => $organization->id,
+                'image' => $uploadedImage,
+            ]);
+
+            UserSetting::create(['user_id' => $user->id]);
+
+            DB::commit();
+
+            $invitationUrl = rtrim(config('app.app_url'), '/')
+                . '/organization-invitations/accept?token=' . $invitationToken;
+
+            try {
+                Mail::send('organization_team_invitation', [
+                    'teamMember' => $user,
+                    'organization' => $organization,
+                    'inviter' => $inviter,
+                    'role' => 'External Reviewer',
+                    'invitationUrl' => $invitationUrl,
+                    'expiresAt' => now()->addDays(7),
+                ], function ($message) use ($user, $organization): void {
+                    $message->to($user->email)
+                        ->subject("You've been invited to join Tujitume as an External Reviewer for {$organization->name}");
+                });
+            } catch (\Throwable $mailException) {
+                // The pending membership remains valid so the invite can be resent.
+                ErrorLogService::report($mailException, [
+                    'organization_id' => $organization->id,
+                    'team_member_id' => $user->id,
+                ]);
+            }
+
+            return response()->json([
+                'message' => 'Team member invited successfully.',
+                'user' => new UserResource($user->load('organizationRoles.role')),
+                'invitation_expires_at' => now()->addDays(7)->toISOString(),
+            ], 201);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            $this->deleteUploadedImage($uploadedImage);
+            ErrorLogService::report($e, ['input' => $request->except(['password', 'token'])]);
+
+            return response()->json(['message' => 'Something went wrong, please try again later.'], 500);
+        }
+    }
 }

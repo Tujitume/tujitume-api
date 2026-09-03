@@ -32,7 +32,7 @@ return new class extends Migration
 
             // ─── User Type ───────────────────────────────────────────────
             $table->unsignedTinyInteger('user_type_id')->nullable();
-            // 1=business_owner, 2=investor, 3=service_provider, 4=organization, 5=admin, 6=reviewer_internal, 7=reviewer_external
+            // 1=business_owner, 2=investor, 3=service_provider, 4=organization (incl. internal_reviewer role), 5=capital, 6=external_reviewer, 7=admin
 
             // ─── Onboarding ──────────────────────────────────────────────
             $table->unsignedTinyInteger('completed_onboarding')->default(0);
