@@ -24,8 +24,8 @@ Accept: application/json
 ## Key Concepts
 
 ### Reviewer Types
-- **Internal**: Organization team member (user_type_id = 6)
-- **External**: Freelancer invited specifically for a round (user_type_id = 7)
+- **Internal**: Organization team member (user_type_id = 4, role_id = 10004)
+- **External**: Independent contractor (user_type_id = 6)
 
 ### Work Types
 - **Round Review**: Reviewer scores applications for a round

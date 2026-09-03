@@ -27,7 +27,20 @@ class RegisterController extends Controller
         };
     }
 
-    public function registerRoleUser(Request $request)
+    public function registerExternalReviewer(Request $request)
+    {
+        $request->validate([
+            'user_type_id' => ['required', 'integer', 'in:6'],
+            'organization_id' => ['required', 'integer', 'exists:organizations,id'],
+            'email' => ['required', 'email'],
+            'first_name' => ['required', 'string', 'max:255'],
+            'last_name' => ['required', 'string', 'max:255'],
+        ]);
+
+        return $this->registerService->registerOrgRoleUser($request);
+    }
+
+    public function registerOrgTeamMember(Request $request)
     {
         $request->validate([
             'user_type_id' => ['required', 'integer', 'in:4,6'],

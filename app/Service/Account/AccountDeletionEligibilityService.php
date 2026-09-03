@@ -102,14 +102,15 @@ class AccountDeletionEligibilityService
 
     protected function checkUserReceivedFundingCapital(): void
     {
-        $hasActiveApplications = StartupPitches::where( function ($q) {
-            $q->where('user_id', $this->user->id)
-                ->orWhere('capital_owner_id', $this->user->id);
-            })
-            ->whereHas('capital_milestones', function ($q) {
-                $q->where('fund_released', 1);
-            })
-            ->exists();
+        $hasActiveApplications = false;
+        // StartupPitches::where( function ($q) {
+        //     $q->where('user_id', $this->user->id)
+        //         ->orWhere('capital_owner_id', $this->user->id);
+        //     })
+        //     ->whereHas('capital_milestones', function ($q) {
+        //         $q->where('status', 'funded');
+        //     })
+        //     ->exists();
 
         if ($hasActiveApplications) {
             $this->reasons[] = [

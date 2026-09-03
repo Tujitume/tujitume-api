@@ -156,7 +156,7 @@ class RoundReviewerController extends Controller
                     'fname' => $validated['name'],
                     'email' => $validated['email'],
                     'password' => $randomPassword,
-                    'user_type_id' => 7, // external reviewer
+                    'user_type_id' => 6, // external reviewer
                 ]);
 
                 $round->reviewers()->attach($user->id, [
