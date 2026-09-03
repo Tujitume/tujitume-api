@@ -21,9 +21,29 @@ class ProgramMiddleware
         $method = $request->method();;
         $route_name = $lastSegment = $this->getLastRouteSegment(Route::current()?->uri());
 
-        $user = Auth::user();
+        $user = Auth::user()->load('kycVerification');
         if (! $user) {
             return $next($request);
+        }
+
+        // KYC verification required for POST requests
+        $kycRequiredRoutes = [
+            'create-program',
+            'create-round',
+            'create-milestone',
+            'update-program',
+            // ...
+        ];
+
+        if (
+            $method === 'POST' &&
+            in_array($route_name, $kycRequiredRoutes) &&
+            $user->kycVerification?->status !== 'verified'
+        ) {
+            return response()->json([
+                'message' => 'KYC verification is required to perform this action.',
+                'status' => 403,
+            ], 403);
         }
 
         $user->load('organizationRole.role');
