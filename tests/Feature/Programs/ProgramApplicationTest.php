@@ -19,6 +19,7 @@ describe('Application endpoints', function () {
 
     it('submits an application for a published program and returns 201 created', function () {
         $applicant = \App\Models\Auth\User::factory()->create(['user_type_id' => 1]);
+        $this->createVerifiedKyc($applicant);
         $business = \App\Models\Business\Listing::create(['user_id' => $applicant->id, 'name' => 'GreenField Agri']);
 
         $this->actingAs($applicant, 'sanctum')->postJson("/api/v1/programs/{$this->program->id}/applications", applicationPayload($business->id))
@@ -33,6 +34,7 @@ describe('Application endpoints', function () {
 
     it('rejects a duplicate application with conflict status', function () {
         $applicant = \App\Models\Auth\User::factory()->create(['user_type_id' => 1]);
+        $this->createVerifiedKyc($applicant);
         $business = \App\Models\Business\Listing::create(['user_id' => $applicant->id, 'name' => 'GreenField Agri']);
         $this->actingAs($applicant, 'sanctum')->postJson("/api/v1/programs/{$this->program->id}/applications", applicationPayload($business->id))->assertCreated();
         $this->actingAs($applicant, 'sanctum')->postJson("/api/v1/programs/{$this->program->id}/applications", applicationPayload($business->id))

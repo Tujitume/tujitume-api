@@ -3,6 +3,7 @@
 namespace Tests\Feature\Programs;
 
 use App\Models\Auth\User;
+use App\Models\Kyc\KycVerification;
 use App\Models\Organizations\Organization;
 use App\Models\Organizations\Workspace;
 use App\Models\Programs\Program;
@@ -46,6 +47,10 @@ abstract class ProgramTestCase extends TestCase
         $this->orgUser->update(['organization_id' => $this->organization->id]);
         $this->applicantUser = User::factory()->create(['user_type_id' => 1]);
         $this->reviewerUser = User::factory()->create(['user_type_id' => 6]);
+
+        $this->createVerifiedKyc($this->orgUser, 'organization', $this->organization->id);
+        $this->createVerifiedKyc($this->applicantUser, 'entrepreneur');
+        $this->createVerifiedKyc($this->reviewerUser, 'service_provider');
         $this->program = Program::factory()->create(['user_id' => $this->orgUser->id, 'status' => 'published']);
         $this->wallet = ProgramWallet::factory()->create(['program_id' => $this->program->id, 'status' => 'active', 'balance' => 100000]);
         $this->round = ProgramRound::factory()->create(['program_id' => $this->program->id, 'round_number' => 1, 'status' => 'published', 'advancement_mode' => 'manual']);
@@ -69,6 +74,21 @@ abstract class ProgramTestCase extends TestCase
 
     protected function actingAsAdmin(): static
     {
-        return $this->actingAs(User::factory()->create(['user_type_id' => 5]), 'sanctum');
+        $admin = User::factory()->create(['user_type_id' => 5]);
+        $this->createVerifiedKyc($admin, 'service_provider');
+
+        return $this->actingAs($admin, 'sanctum');
+    }
+
+    protected function createVerifiedKyc(User $user, string $verificationType = 'entrepreneur', ?int $organizationId = null): KycVerification
+    {
+        return KycVerification::create([
+            'user_id' => $user->id,
+            'organization_id' => $organizationId,
+            'verification_type' => $verificationType,
+            'status' => 'verified',
+            'submitted_at' => now(),
+            'reviewed_at' => now(),
+        ]);
     }
 }

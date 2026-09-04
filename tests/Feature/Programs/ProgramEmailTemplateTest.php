@@ -19,6 +19,7 @@ describe('Program email template CRUD', function () {
 
     it('forbids another organization owner', function () {
         $otherOwner = \App\Models\Auth\User::factory()->create(['user_type_id' => 4]);
+        $this->createVerifiedKyc($otherOwner, 'organization');
         $this->actingAs($otherOwner, 'sanctum')->getJson("/api/v1/programs/{$this->program->id}/email-templates")
             ->assertForbidden();
     });
