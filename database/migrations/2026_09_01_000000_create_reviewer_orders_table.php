@@ -22,7 +22,7 @@ return new class extends Migration
             // ─── Scope (what they are being paid for) ─────────────────────
             $table->enum('order_type', ['round_review', 'site_visit']);
             $table->foreignId('round_id')->nullable()->constrained('program_rounds')->onDelete('set null');
-            $table->foreignId('site_visit_id')->nullable()->constrained('me_site_visits')->onDelete('set null');
+            $table->foreignId('site_visit_id')->nullable()->constrained('m_e_site_visits')->onDelete('set null');
 
             // ─── Pricing ──────────────────────────────────────────────────
             $table->decimal('fee_usd', 10, 2);                   // agreed fee in USD
