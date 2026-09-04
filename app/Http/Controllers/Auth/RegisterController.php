@@ -37,7 +37,7 @@ class RegisterController extends Controller
             'last_name' => ['required', 'string', 'max:255'],
         ]);
 
-        return $this->registerService->registerOrgRoleUser($request);
+        return $this->registerService->registerExternalReviewer($request);
     }
 
     public function registerOrgTeamMember(Request $request)

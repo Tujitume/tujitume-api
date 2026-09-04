@@ -97,8 +97,8 @@ class RoundReviewerController extends Controller
             $validated = $request->validate([
                 'reviewer_type' => 'required|in:internal,external',
                 'user_id' => 'required_if:reviewer_type,internal|exists:users,id',
-                'name' => 'required_if:reviewer_type,external|string|max:255',
-                'email' => 'required_if:reviewer_type,external|email',
+                //'name' => 'required_if:reviewer_type,external|string|max:255',
+                //'email' => 'required_if:reviewer_type,external|email',
                 'max_apps_assigned' => 'nullable|integer|min:1',
                 'expertise_tags' => 'nullable|array',
                 'reviewer_fee' => 'nullable|numeric|min:0',

@@ -330,7 +330,7 @@ class ProgramRoundController extends Controller
                 'knockout_questions.*.disqualify_if' => 'required|string|max:100',
 
                 'required_documents' => 'nullable|array',
-                'assignment_type' => 'sometimes|in:owner_only,internal,external',
+                'assignment_type' => 'sometimes|in:owner_only,internal,external,both',
                 'assignment_method' => 'sometimes|in:manual,round_robin,load_balanced',
                 'min_reviewers_required' => 'nullable|integer|min:1',
                 'advancement_mode' => 'sometimes|in:manual,score_threshold,fixed_quota',

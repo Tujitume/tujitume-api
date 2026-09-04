@@ -551,7 +551,7 @@ class RegisterService
                 . '/organization-invitations/accept?token=' . $invitationToken;
 
             try {
-                Mail::send('organization_team_invitation', [
+                Mail::send('external_reviewer_invitation', [
                     'teamMember' => $user,
                     'organization' => $organization,
                     'inviter' => $inviter,
