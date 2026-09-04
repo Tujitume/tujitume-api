@@ -105,11 +105,11 @@ class RoundReviewerController extends Controller
                 'fee_currency' => 'nullable|string|max:10',
             ]);
 
-            $userId = null;
             $randomPassword = null;
+            $userId = $validated['user_id'];
+
             if ($request->reviewer_type == 'internal') {
 
-                $userId = $validated['user_id'];
                 $user = User::with('organizationRole')->find($userId);
 
                 // Check if already assigned
@@ -151,14 +151,7 @@ class RoundReviewerController extends Controller
 
             } elseif ($request->reviewer_type == 'external') {
 
-                $randomPassword = substr(bin2hex(random_bytes(5)), 0, rand(8, 10));
-                $user = User::create([
-                    'fname' => $validated['name'],
-                    'email' => $validated['email'],
-                    'password' => $randomPassword,
-                    'user_type_id' => 6, // external reviewer
-                ]);
-
+                $user = User::with('organization')->find($userId);
                 $round->reviewers()->attach($user->id, [
                     'reviewer_type' => 'external',
                     'max_apps_assigned' => $validated['max_apps_assigned'] ?? null,
