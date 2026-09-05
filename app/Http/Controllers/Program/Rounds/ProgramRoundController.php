@@ -10,6 +10,7 @@ use App\Models\Programs\Rounds\ApplicationRoundResponse;
 use App\Models\Programs\Rounds\ProgramRound;
 use App\Models\Programs\Rounds\RoundCustomQuestion;
 use App\Models\Programs\Rounds\RoundRequiredDocument;
+use App\Models\ProgramEmailTemplate;
 use App\Models\ReviewerOrder;
 use App\Service\Program\KnockoutEvaluator;
 use App\Service\Program\RoundFinalizationService;
@@ -73,9 +74,77 @@ class ProgramRoundController extends Controller
                     'value' => $round->status,
                     'color' => config('status.program_round.' . $round->status, 'gray'),
                 ],
-                'reviewers' => $round->reviewers
+                'reviewers' => $round->reviewers,
+                'configuration_progress' => $this->configurationProgress($round),
             ]
         ], 200);
+    }
+
+    private function configurationProgress(ProgramRound $round): array
+    {
+        $steps = [
+            'setup' => $this->setupStepComplete($round),
+            'questions' => RoundCustomQuestion::where('round_id', $round->id)
+                ->where('question_type', '!=', 'knockout')
+                ->exists(),
+            'reviewers' => $round->assignment_type === 'owner_only'
+                || $round->reviewers()->count() >= max(1, (int) ($round->min_reviewers_required ?? 1)),
+            'notifications' => ProgramEmailTemplate::where('program_id', $round->program_id)
+                ->whereIn('event', ['round.advanced', 'round.not_selected'])
+                ->whereNotNull('body_html')
+                ->where('body_html', '!=', '')
+                ->pluck('event')
+                ->unique()
+                ->count() === 2,
+            'publish' => $round->status !== 'draft',
+        ];
+
+        $completed = collect($steps)
+            ->filter()
+            ->keys()
+            ->values()
+            ->all();
+
+        $stepOrder = array_keys($steps);
+        $activeStep = collect($stepOrder)->search(fn ($step) => !$steps[$step]);
+
+        return [
+            'steps' => $steps,
+            'completed_steps' => $completed,
+            'active_step' => $activeStep === false ? count($stepOrder) - 1 : $activeStep,
+            'active_step_id' => $activeStep === false ? end($stepOrder) : $stepOrder[$activeStep],
+        ];
+    }
+
+    private function setupStepComplete(ProgramRound $round): bool
+    {
+        if (!$round->round_name || !$round->open_date || !$round->close_date) {
+            return false;
+        }
+
+        $criteria = $round->scoring_criteria ?? [];
+        if (!empty($criteria)) {
+            foreach ($criteria as $criterion) {
+                if (empty($criterion['name'])) {
+                    return false;
+                }
+            }
+
+            if (($round->rubric_mode ?? 'weighted') === 'weighted') {
+                $totalWeight = collect($criteria)->sum(fn ($criterion) => (int) ($criterion['weight'] ?? 0));
+                if ($totalWeight !== 100) {
+                    return false;
+                }
+            }
+        }
+
+        foreach ($round->required_documents ?? [] as $document) {
+            if (empty($document['label'])) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     # get applications for a round
