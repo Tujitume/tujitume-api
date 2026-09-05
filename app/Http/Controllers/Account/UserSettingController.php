@@ -8,6 +8,7 @@ use App\Service\File\ImageUploadService;
 use App\Service\Misc\ErrorLogService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Validation\ValidationException;
 
 class UserSettingController extends Controller
@@ -21,6 +22,49 @@ class UserSettingController extends Controller
         );
 
         return response()->json(['data' => $settings->toFrontendArray()], 200);
+    }
+
+    // GET /user/settings/logo
+    public function logo()
+    {
+        try {
+            $settings = UserSetting::firstOrCreate(
+                ['user_id' => Auth::id()],
+                UserSetting::defaults()
+            );
+
+            if (!$settings->logo) {
+                return response()->json(['message' => 'No logo uploaded.'], 404);
+            }
+
+            if (str_starts_with($settings->logo, 'data:image/')) {
+                [$meta, $payload] = explode(',', $settings->logo, 2);
+                $mime = str_replace(['data:', ';base64'], '', $meta);
+
+                return response(base64_decode($payload), 200)
+                    ->header('Content-Type', $mime)
+                    ->header('Cache-Control', 'private, max-age=300');
+            }
+
+            $storageBaseUrl = rtrim((string) config('filesystems.disks.s3.url'), '/');
+
+            if (!$storageBaseUrl || !str_starts_with($settings->logo, $storageBaseUrl . '/')) {
+                return response()->json(['message' => 'Logo source is not supported.'], 422);
+            }
+
+            $logo = Http::timeout(10)->get($settings->logo);
+
+            if (!$logo->successful()) {
+                return response()->json(['message' => 'Unable to load logo.'], 404);
+            }
+
+            return response($logo->body(), 200)
+                ->header('Content-Type', $logo->header('Content-Type', 'image/png'))
+                ->header('Cache-Control', 'private, max-age=300');
+        } catch (\Exception $e) {
+            ErrorLogService::report($e, ['user_id' => Auth::id()]);
+            return response()->json(['message' => 'Something went wrong, please try again later.'], 500);
+        }
     }
 
     // PATCH /user/settings
