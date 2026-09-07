@@ -122,4 +122,6 @@ return [
         'completed'       => 'success',
         'failed'          => 'danger',
     ],
+
+    
 ];

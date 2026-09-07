@@ -15,6 +15,7 @@ return new class extends Migration
             $table->id();
 
             $table->unsignedBigInteger('user_id')->nullable();          // program admin / owner
+            $table->unsignedBigInteger('organization_id')->nullable();          // program admin / owner
 
             // Core program info
             $table->string('program_title', 255);
@@ -84,6 +85,7 @@ return new class extends Migration
 
 
             $table->foreign('user_id')->references('id')->on('users')->onDelete('restrict');
+            $table->foreign('organization_id')->references('id')->on('organizations')->onDelete('restrict');
 
             $table->timestamps();
         });

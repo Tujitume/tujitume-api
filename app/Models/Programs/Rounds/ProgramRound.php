@@ -5,6 +5,7 @@ namespace App\Models\Programs\Rounds;
 use App\Models\Auth\User;
 use App\Models\Programs\Program;
 use App\Models\Programs\ProgramApplication;
+use App\Models\Programs\Rounds\ReviewerApplicationAssignment;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
@@ -101,5 +102,10 @@ class ProgramRound extends Model
     public function reviewerOrders()
     {
         return $this->hasMany(\App\Models\ReviewerOrder::class, 'round_id');
+    }
+
+    public function reviewerApplicationAssignments()
+    {
+        return $this->hasMany(ReviewerApplicationAssignment::class, 'round_id');
     }
 }

@@ -12,7 +12,7 @@ use App\Http\Controllers\Business\SubscriptionController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\Misc\DownloadController;
 
-Route::prefix('/business')->group(function(){
+Route::prefix('/business')->middleware(['business'])->group(function(){
 
     Route::post('update-profile', [UserController::class, 'updateProfile']);
     Route::post('bulk-import', [BusinessController::class, 'bulk_import']);

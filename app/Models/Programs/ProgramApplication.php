@@ -7,6 +7,7 @@ use App\Models\AMAP\AmapTrigger;
 use App\Models\Auth\User;
 use App\Models\Business\Listing;
 use App\Models\Programs\Rounds\ApplicationRoundResponse;
+use App\Models\Programs\Rounds\ReviewerApplicationAssignment;
 use App\Models\Programs\Rounds\ApplicationScore;
 use App\Models\Programs\Rounds\ProgramRound;
 use App\Models\Programs\Rounds\RoundRequiredDocument;
@@ -211,6 +212,12 @@ class ProgramApplication extends Model
         $approvedAmount = $this->total_amount_requested;
 
         return abs($totalAllocated - $approvedAmount) < 0.01; // Account for floating point
+    }
+
+    // In ProgramApplication.php
+    public function reviewerAssignment()
+    {
+        return $this->hasOne(ReviewerApplicationAssignment::class, 'application_id');
     }
 
 }

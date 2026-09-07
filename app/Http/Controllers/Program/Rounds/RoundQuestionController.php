@@ -46,7 +46,7 @@ class RoundQuestionController extends Controller
         try {
             $validated = $request->validate([
                 'question_text'  => 'sometimes|required|string|max:500',
-                'question_type'  => 'sometimes|required|in:short_answer,long_text,multiple_choice,file_upload,budget_breakdown',
+                'question_type'  => 'sometimes|required|in:short_answer,long_text,multiple_choice,file_upload,budget_breakdown,knockout',
                 'options'        => 'nullable|array',
                 'is_required'    => 'nullable|boolean',
                 'display_order'  => 'sometimes|required|integer|min:1',
@@ -90,7 +90,7 @@ class RoundQuestionController extends Controller
         try {
             $validated = $request->validate([
                 'question_text' => 'required|string|max:500',
-                'question_type' => 'required|in:short_answer,long_text,multiple_choice,file_upload,budget_breakdown',
+                'question_type' => 'required|in:short_answer,long_text,multiple_choice,file_upload,budget_breakdown,knockout',
                 'options' => 'nullable|array', // For multiple choice
                 'is_required' => 'nullable|boolean',
                 'display_order' => 'required|integer|min:1',

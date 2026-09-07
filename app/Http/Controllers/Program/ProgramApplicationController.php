@@ -387,6 +387,11 @@ class ProgramApplicationController extends Controller
                 return response()->json(['message' => 'All knockout questions must be answered.'], 422);
             }
 
+            // After application saved — auto-assign to reviewer based on round method
+            // if ($round->assignment_type !== 'owner_only' && $round->assignment_method !== 'manual') {
+            //     $this->autoAssignNewApplication($application, $round);
+            // }
+
             $text = 'You have a new application pitch.';
             $this->notification->create(
                 $program->user_id, $application->user_id,$text,'dashboard.programOrg.applications','program'
@@ -725,6 +730,104 @@ class ProgramApplicationController extends Controller
 
             if (!empty($documents)) {
                 RoundRequiredDocument::insert($documents);
+            }
+
+        }
+    }
+
+    //_______________ Helper _______________________
+
+    private function autoAssignNewApplication(ProgramApplication $application, ProgramRound $round): void
+    {
+        $acceptedReviewers = DB::table('round_reviewers')
+            ->where('round_id', $round->id)
+            ->where('acceptance_status', 'accepted')
+            ->orderBy('queue_position')
+            ->get();
+
+        if ($acceptedReviewers->isEmpty()) return;
+
+        if ($round->assignment_method === 'manual') {
+            $reviewers = DB::table('round_reviewers')
+                ->where('round_id', $round->id)
+                ->where('acceptance_status', 'accepted')
+                ->whereNotNull('assigned_percentage')
+                ->orderBy('queue_position')
+                ->get();
+
+            if ($reviewers->isEmpty()) return;
+
+            // Pick reviewer based on percentage — whoever has received
+            // fewer apps than their percentage entitles them to
+            $totalApps = ProgramApplication::where('current_round_id', $round->id)->count();
+
+            foreach ($reviewers as $reviewer) {
+                $entitledCount  = floor(($reviewer->assigned_percentage / 100) * $totalApps);
+                $currentCount   = ReviewerApplicationAssignment::where('round_id', $round->id)
+                    ->where('reviewer_id', $reviewer->user_id)
+                    ->count();
+
+                if ($currentCount < $entitledCount) {
+                    ReviewerApplicationAssignment::create([
+                        'round_id'       => $round->id,
+                        'reviewer_id'    => $reviewer->user_id,
+                        'application_id' => $application->id,
+                        'status'         => 'assigned',
+                        'assigned_at'    => now(),
+                    ]);
+                    return;
+                }
+            }
+
+        } elseif ($round->assignment_method === 'round_robin') {
+            // Give to reviewer with lowest current assignment count
+            $reviewerWithLeast = $acceptedReviewers->map(function ($reviewer) use ($round) {
+                $count = ReviewerApplicationAssignment::where('round_id', $round->id)
+                    ->where('reviewer_id', $reviewer->user_id)
+                    ->count();
+                return ['reviewer_id' => $reviewer->user_id, 'count' => $count];
+            })->sortBy('count')->first();
+
+            ReviewerApplicationAssignment::create([
+                'round_id'       => $round->id,
+                'reviewer_id'    => $reviewerWithLeast['reviewer_id'],
+                'application_id' => $application->id,
+                'status'         => 'assigned',
+                'assigned_at'    => now(),
+            ]);
+        } elseif ($round->assignment_method === 'load_balanced') {
+            // Redistribute all unstarted assignments including new app
+            $allApps = ProgramApplication::where('current_round_id', $round->id)
+                ->whereIn('round_status', ['submitted', 'under_review'])
+                ->get();
+
+            $startedAppIds = ReviewerApplicationAssignment::where('round_id', $round->id)
+                ->whereIn('status', ['in_review', 'completed'])
+                ->pluck('application_id')
+                ->toArray();
+
+            $redistributable = $allApps->whereNotIn('id', $startedAppIds);
+
+            ReviewerApplicationAssignment::where('round_id', $round->id)
+                ->where('status', 'assigned')
+                ->delete();
+
+            $reviewerCount = $acceptedReviewers->count();
+            $chunks = $redistributable->values()->chunk(
+                (int) ceil($redistributable->count() / $reviewerCount)
+            );
+
+            foreach ($acceptedReviewers as $index => $reviewer) {
+                $chunk = $chunks[$index] ?? collect();
+                foreach ($chunk as $app) {
+                    ReviewerApplicationAssignment::create([
+                        'round_id'       => $round->id,
+                        'reviewer_id'    => $reviewer->user_id,
+                        'application_id' => $app->id,
+                        'status'         => 'assigned',
+                        'assigned_at'    => now(),
+                    ]);
+                }
             }
         }
     }

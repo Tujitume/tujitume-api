@@ -9,7 +9,7 @@ use App\Http\Controllers\Service\ServiceController;
 use App\Http\Controllers\Service\ServiceMilestoneController;
 use App\Http\Controllers\Service\ServiceOfferController;
 
-Route::prefix('/business')->group(function() {
+Route::prefix('/services')->middleware('services')->group(function() {
 
     Route::post('create-service', [ServiceController::class, 'storeService']);
 // --- MILESTONE

@@ -31,6 +31,10 @@ Route::prefix('admin')->group(function () { //->name('admin.')
         // Users / Disputes
         Route::get('/users', [AdminController::class, 'users'])->name('users');
         Route::post('/users/{id}/delete', [AdminController::class, 'deleteUser'])->name('del_users');
+        Route::get('/kyc', [AdminController::class, 'kycIndex'])->name('admin.kyc.index');
+        Route::post('/kyc/{kyc}/verify', [AdminController::class, 'verifyKyc'])->name('admin.kyc.verify');
+        Route::post('/kyc/{kyc}/reject', [AdminController::class, 'rejectKyc'])->name('admin.kyc.reject');
+        Route::get('/kyc/documents/{document}/download', [AdminController::class, 'downloadKycDocument'])->name('admin.kyc.documents.download');
         Route::get('/disputes/{dispute}/remove', [AdminController::class, 'removeDispute'])->name('remove_dispute');
         Route::get('/disputes', [AdminController::class, 'disputes'])->name('disputes');
 

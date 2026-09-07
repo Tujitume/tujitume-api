@@ -438,6 +438,7 @@ class RegisterService
 
             $user = User::create([
                 'first_name' => $data['first_name'],
+                'last_name' => $data['last_name'],
                 'email' => $data['email'],
                 'password' => null,
                 'user_type_id' => $data['user_type_id'] ?? 4, // Default to organization user
@@ -536,11 +537,16 @@ class RegisterService
 
             $user = User::create([
                 'first_name' => $data['first_name'],
+                'last_name' => $data['last_name'],
                 'email' => $data['email'],
                 'password' => null,
                 'user_type_id' => $data['user_type_id'] ?? 4, // Default to organization user
                 'organization_id' => $organization->id,
                 'image' => $uploadedImage,
+                
+                'invited_at' => now(),
+                'invitation_token_hash' => hash('sha256', $invitationToken),
+                'invitation_expires_at' => now()->addDays(7),
             ]);
 
             UserSetting::create(['user_id' => $user->id]);
@@ -571,7 +577,7 @@ class RegisterService
             }
 
             return response()->json([
-                'message' => 'Team member invited successfully.',
+                'message' => 'External reviewer invited successfully.',
                 'user' => new UserResource($user->load('organizationRoles.role')),
                 'invitation_expires_at' => now()->addDays(7)->toISOString(),
             ], 201);

@@ -20,6 +20,8 @@ return new class extends Migration
             $table->json('criterion_scores'); // [{criterion_name, score, comment}]
             $table->decimal('total_score', 5, 2);
             $table->text('overall_comment')->nullable();
+            $table->timestamp('review_started_at')->nullable();
+            $table->timestamp('review_completed_at')->nullable();
             $table->timestamp('scored_at');
             $table->timestamps();
 

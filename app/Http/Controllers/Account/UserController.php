@@ -479,16 +479,14 @@ class UserController extends Controller
 
         try {
 
-            $membership = DB::transaction(function () use ($data): OrganizationUserRole {
+            $user = null;
+
+            $membership = DB::transaction(function () use ($data, &$user) {
                 $membership = OrganizationUserRole::query()
                     ->with('user')
                     ->where('invitation_token_hash', hash('sha256', $data['token']))
                     ->lockForUpdate()
                     ->first();
-
-                if (! $membership || $membership->status !== 'pending' || $membership->invitation_expires_at?->isPast()) {
-                    abort(422, 'This invitation is invalid or has expired.');
-                }
 
                 $uploadedImage = null;
 
@@ -496,6 +494,36 @@ class UserController extends Controller
 
                 if ($image) {
                     $uploadedImage = $this->imageUpload->save($image, 'images/users');
+                }
+
+
+                // External Reviewer
+                if (! $membership) {
+                    $user = User::where(
+                        'invitation_token_hash',
+                        hash('sha256', $data['token'])
+                    )->lockForUpdate()->first();
+
+                    if (! $user) {
+                        abort(422, 'This invitation is invalid or has expired.');
+                    }
+
+                    $user->update([
+                        'display_name' => $data['display_name'],
+                        'image' => $uploadedImage,
+                        'password' => Hash::make($data['password']),
+                    ]);
+
+                    return [
+                        'external' => true,
+                        'message' => 'Invitation accepted successfully.',
+                    ];
+                }
+
+                // Organization User
+                if ($membership->status !== 'pending' || $membership->invitation_expires_at?->isPast()) 
+                {
+                    abort(422, 'This invitation is invalid or has expired.');
                 }
 
                 $membership->user->update([
@@ -517,7 +545,7 @@ class UserController extends Controller
 
             return response()->json([
                 'message' => 'Organization invitation accepted successfully.',
-                'user' => new UserResource($membership->user),
+                'user' => new UserResource($membership->user ?? $user),
             ]);
         } catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) {
             return response()->json(['message' => $e->getMessage()], $e->getStatusCode());

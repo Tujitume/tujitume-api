@@ -100,6 +100,15 @@ class ApplicationScoreController extends Controller
 
             $application->save();
 
+            // Mark assignment completed
+            ReviewerApplicationAssignment::where('round_id', $round->id)
+                ->where('application_id', $application->id)
+                ->where('reviewer_id', $userId)
+                ->update([
+                    'status'       => 'completed',
+                    'completed_at' => now(),
+                ]);
+
             // ─── Reviewer Order Status Updates ──────────────────────────────
 
             // Update work_status to 'in_progress' on first score submission

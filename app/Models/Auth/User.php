@@ -12,6 +12,7 @@ use App\Models\Misc\Event;
 use App\Models\Organizations\Organization;
 use App\Models\Organizations\Workspace;
 use App\Models\Programs\ProgramApplication;
+use App\Models\Programs\Rounds\ReviewerApplicationAssignment;
 use App\Models\Services\Services;
 use App\Models\Users\InvestorProfile;
 use App\Models\Users\ServiceProviderProfile;
@@ -40,7 +41,7 @@ class User extends Authenticatable
         'gender', 'dob', 'password', 'token', 'email_verified_at', 'user_type_id',
         'completed_onboarding', 'country', 'city', 'website',
         'lipr_wallet_account', 'stripe_connect_id', 'stripe_customer_id',
-        'organization_id',
+        'organization_id', 'invited_at','invitation_token_hash','invitation_expires_at'
     ];
 
     /**
@@ -184,5 +185,10 @@ class User extends Authenticatable
     public function reviewerOrders()
     {
         return $this->hasMany(\App\Models\ReviewerOrder::class, 'reviewer_id');
+    }
+
+    public function reviewerAssignments()
+    {
+        return $this->hasMany(ReviewerApplicationAssignment::class, 'reviewer_id');
     }
 }

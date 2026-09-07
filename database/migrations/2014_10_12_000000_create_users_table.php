@@ -49,6 +49,10 @@ return new class extends Migration
             
             $table->unsignedBigInteger('organization_id')->nullable(); // ← no constrained()
 
+            $table->timestamp('invited_at')->nullable();
+            $table->string('invitation_token_hash', 64)->nullable()->unique();
+            $table->timestamp('invitation_expires_at')->nullable();
+
             $table->timestamps();
         });
     }

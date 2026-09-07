@@ -212,7 +212,7 @@ class ProgramController extends Controller
 
             $orgUser = User::with('organization')->find(Auth::id());
             if(!$orgUser->organization){
-                return response()->json(['message' => 'Organization profile not found, Forbidden.'], 403);
+                return response()->json(['message' => 'Organization not found, Forbidden.'], 403);
             }
 
             if($validated['program_type'] == 'multi_round' && $validated['total_rounds'] == 1){
@@ -232,6 +232,7 @@ class ProgramController extends Controller
 
             // Auto-set fields
             $validated['user_id'] = Auth::id();
+            $validated['organization_id'] = $orgUser->organization->id;
             $validated['status'] = 'draft';
             $validated['funder_type'] = $orgUser->organization->organization_type; //draft
             $validated['visible'] = 1;

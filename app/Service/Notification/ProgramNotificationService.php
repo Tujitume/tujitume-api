@@ -8,6 +8,7 @@ class ProgramNotificationService
 {
     protected EmailService $emailService;
     protected NotificationService $notification;
+    protected string $view_base;
 
     public function __construct() {
         $this->emailService = new EmailService();
@@ -146,9 +147,9 @@ class ProgramNotificationService
 
             'round.scoring_assigned' => [
                 'title'         => 'New Applications to Review',
-                'message'       => "You have {$data['count']} applications to review for {$data['program_title']}",
+                'message'       => "You have applications assinged to review for {$data['program_title']}",
                 'email_subject' => 'Applications Assigned for Review',
-                'email_view'    => $this->view_base . 'reviewer_assigned',
+                'email_view'    => $this->view_base . 'reviewer_assigned_email',
                 // TODO: deep link to round review page when built
                 'link'          => $this->link('dashboard.programOrg.applications'),
             ],
@@ -471,6 +472,14 @@ class ProgramNotificationService
                 'email_subject' => 'Reviewer Payment Failed — Action Required',
                 'email_view'    => $this->view_base . 'reviewer_payment_failed',
                 'link'          => 'overview/programs/reviewer-orders/' . ($data['order_id'] ?? ''),
+            ],
+
+            'reviewer.declined' => [
+                'title'         => 'Reviewer Declined Assignment',
+                'message'       => "{$data['reviewer_name']} declined the review assignment for {$data['round_name']} in {$data['program_title']}.",
+                'email_subject' => 'Reviewer Declined Assignment — Action Required',
+                'email_view'    => $this->view_base . 'reviewer_declined',
+                'link'          => 'overview/programs/rounds',
             ],
 
             default => throw new \InvalidArgumentException("Unknown event type: {$event}"),

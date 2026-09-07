@@ -10,6 +10,7 @@ use App\Models\Programs\Rounds\ApplicationScore;
 use App\Models\Programs\Rounds\ProgramRound;
 use App\Models\Programs\Rounds\RoundCustomQuestion;
 use App\Models\Programs\Rounds\RoundRequiredDocument;
+use App\Models\Programs\Rounds\ReviewerApplicationAssignment;
 use App\Service\Program\RoundHelperService;
 use App\Service\Misc\ErrorLogService;
 use Illuminate\Http\Request;
@@ -164,6 +165,20 @@ class ApplicationRoundProgressController extends Controller
         if ($round->assignment_type !== 'owner_only' && !$round->reviewers()->exists()) {
             $errors['reviewers'] = 'At least one reviewer must be assigned before publishing.';
         }
+
+        // if ($round->assignment_type !== 'owner_only') {
+        //     $totalFees = DB::table('round_reviewers')
+        //         ->where('round_id', $round->id)
+        //         ->sum('reviewer_fee');
+
+        //     if ($totalFees > 0) {
+        //         $wallet = $round->program->wallet;
+        //         if (!$wallet || $wallet->balance < $totalFees) {
+        //             $errors['wallet'] = "Insufficient wallet balance to cover reviewer fees. Required: {$totalFees}, Available: " . ($wallet?->balance ?? 0);
+        //         }
+        //     }
+        // }
+
 
         if ($round->round_number > 1) {
             $previousRound = ProgramRound::where('program_id', $round->program_id)

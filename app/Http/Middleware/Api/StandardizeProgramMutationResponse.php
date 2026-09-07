@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Middleware;
+namespace App\Http\Middleware\Api;
 
 use App\Http\Resources\ApiResponseResource;
 use Closure;

@@ -11,6 +11,7 @@ use App\Http\Controllers\CheckoutStripeController;
 
 use App\Http\Controllers\Misc\AnalyticsController;
 use App\Http\Controllers\Misc\MatchController;
+use App\Http\Controllers\Organizations\ExternalReviewerController;
 use App\Http\Controllers\Program\ApplicationRoundProgressController;
 use App\Http\Controllers\Program\MEAnalyticsController;
 use App\Http\Controllers\Program\MEController;
@@ -247,6 +248,13 @@ Route::prefix('/programs')->middleware(['program', 'program.response'])->group(f
         Route::get('/applications/{app}/analytics/overview', [MEAnalyticsController::class, 'meOverview']);
         Route::get('/applications/{app}/analytics/impact', [MEAnalyticsController::class, 'applicationImpact']);
 
+
+        // Add to routes/api/programs.php
+        Route::post('rounds/{round}/reviewers/accept',   [RoundReviewerController::class, 'accept']);
+        Route::post('rounds/{round}/reviewers/decline',  [RoundReviewerController::class, 'decline']);
+        Route::post('rounds/{round}/reviewers/{reviewer}/assign-applications', [RoundReviewerController::class, 'assignApplications']);
+        Route::post('rounds/{round}/applications/{application}/start-review',  [RoundReviewerController::class, 'startReview']);
+        Route::get('rounds/{round}/my-applications',     [RoundReviewerController::class, 'myAssignedApplications']);
     });
 
 });

@@ -15,6 +15,8 @@ use App\Models\Shared\ErrorLog;
 
 use App\Models\Capital\CapitalOffer;
 use App\Models\Finance\Transactions;
+use App\Models\Kyc\KycDocument;
+use App\Models\Kyc\KycVerification;
 use App\Models\Programs\Program;
 use App\Models\Milestones\Dispute;
 use App\Models\Misc\Event;
@@ -29,6 +31,7 @@ use Hash;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Session;
+use Illuminate\Support\Facades\Storage;
 use Mail;
 use Response;
 use stdClass;
@@ -106,6 +109,88 @@ class AdminController extends Controller
         }
 
         return view('admin.users', compact('users'));
+    }
+
+    // ==================== KYC review ====================
+    public function kycIndex(Request $request)
+    {
+        $status = $request->query('status', 'submitted');
+        abort_unless(in_array($status, ['submitted', 'verified', 'all'], true), 404);
+
+        $query = KycVerification::query()
+            ->with([
+                'user',
+                'organization',
+                'entrepreneurDetails',
+                'serviceProviderDetails',
+                'organizationDetails',
+                'people.documents',
+                'documents',
+            ])
+            ->withCount(['documents', 'people'])
+            ->whereIn('status', ['submitted', 'verified']);
+
+        if ($status !== 'all') {
+            $query->where('status', $status);
+        }
+
+        $kycVerifications = $query
+            ->orderByDesc($status === 'verified' ? 'reviewed_at' : 'submitted_at')
+            ->orderByDesc('id')
+            ->paginate(25)
+            ->withQueryString();
+
+        $counts = KycVerification::query()
+            ->whereIn('status', ['submitted', 'verified'])
+            ->selectRaw("SUM(CASE WHEN status = 'submitted' THEN 1 ELSE 0 END) as submitted")
+            ->selectRaw("SUM(CASE WHEN status = 'verified' THEN 1 ELSE 0 END) as verified")
+            ->first();
+
+        return view('admin.kyc.index', compact('kycVerifications', 'status', 'counts'));
+    }
+
+    public function verifyKyc(KycVerification $kyc)
+    {
+        if ($kyc->status !== 'submitted') {
+            return back()->with('error', 'Only submitted KYC records can be verified.');
+        }
+
+        $kyc->update([
+            'status' => 'verified',
+            'reviewed_at' => now(),
+            'rejection_reason' => null,
+        ]);
+
+        return back()->with('success', 'KYC record marked as verified.');
+    }
+
+    public function rejectKyc(Request $request, KycVerification $kyc)
+    {
+        if ($kyc->status !== 'submitted') {
+            return back()->with('error', 'Only submitted KYC records can be rejected.');
+        }
+
+        $validated = $request->validate([
+            'rejection_reason' => ['required', 'string', 'max:2000'],
+        ]);
+
+        $kyc->update([
+            'status' => 'rejected',
+            'reviewed_at' => now(),
+            'rejection_reason' => $validated['rejection_reason'],
+        ]);
+
+        return back()->with('success', 'KYC record rejected and the reason saved.');
+    }
+
+    public function downloadKycDocument(KycDocument $document)
+    {
+        $disk = Storage::disk($document->disk);
+        abort_unless($disk->exists($document->path), 404, 'KYC document not found.');
+
+        return $disk->download($document->path, $document->original_filename, [
+            'Content-Type' => $document->mime_type,
+        ]);
     }
 
     public function listings_active()

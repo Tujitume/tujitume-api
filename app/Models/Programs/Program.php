@@ -6,6 +6,7 @@ use App\Models\AMAP\AmapFlag;
 use App\Models\AMAP\AmapTrigger;
 use App\Models\Auth\User;
 use App\Models\Programs\Rounds\ProgramRound;
+use App\Models\Organizations\Organization;
 use App\Models\Shared\Like;
 use App\Traits\HasS3Files;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -78,5 +79,10 @@ class Program extends Model
     public function supplierDirectory()
     {
         return $this->hasMany(SupplierDirectory::class, 'user_id', 'user_id');
+    }
+
+    public function organization()
+    {
+        return $this->belongsTo(Organization::class, 'organization_id');
     }
 }

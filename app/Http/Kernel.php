@@ -58,9 +58,6 @@ class Kernel extends HttpKernel
     protected $middlewareAliases = [
         'auth' => \App\Http\Middleware\Authenticate::class,
         'extend-token' => \App\Http\Middleware\ExtendTokenExpiry::class,
-        'program' => \App\Http\Middleware\ProgramMiddleware::class,
-        'program.response' => \App\Http\Middleware\StandardizeProgramMutationResponse::class,
-        'capital' => \App\Http\Middleware\CapitalMiddleware::class,
         'auth.basic' => \Illuminate\Auth\Middleware\AuthenticateWithBasicAuth::class,
         'auth.session' => \Illuminate\Session\Middleware\AuthenticateSession::class,
         'cache.headers' => \Illuminate\Http\Middleware\SetCacheHeaders::class,
@@ -71,5 +68,13 @@ class Kernel extends HttpKernel
         'signed' => \App\Http\Middleware\ValidateSignature::class,
         'throttle' => \Illuminate\Routing\Middleware\ThrottleRequests::class,
         'verified' => \Illuminate\Auth\Middleware\EnsureEmailIsVerified::class,
+
+        // Api middleware
+        'business' => \App\Http\Middleware\Api\BusinessMiddleware::class,
+        'services' => \App\Http\Middleware\Api\ServicesMiddleware::class,
+        'investor' => \App\Http\Middleware\Api\InvestorMiddleware::class,
+        'program' => \App\Http\Middleware\Api\ProgramMiddleware::class,
+        'program.response' => \App\Http\Middleware\Api\StandardizeProgramMutationResponse::class,
+        'capital' => \App\Http\Middleware\Api\CapitalMiddleware::class,
     ];
 }

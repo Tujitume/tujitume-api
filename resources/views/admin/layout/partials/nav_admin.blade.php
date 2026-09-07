@@ -17,6 +17,10 @@
 								<a href="users"><i class="fe fe-user-plus"></i> <span>Users</span></a>
 							</li>
 
+							<li class="{{ Request::is('admin/kyc*') ? 'active' : '' }}">
+								<a href="{{ route('admin.kyc.index') }}"><i class="fe fe-check-circle"></i> <span>KYC</span></a>
+							</li>
+
 							<li  class="{{ Request::is('admin/listings-active') ? 'active' : '' }}">
 								<a href="listings-active"><i style="font-size: 18px;" class="fa fa-list fa-1x"></i> <span>Active Businesses</span></a>
 							</li>

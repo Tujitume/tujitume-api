@@ -15,7 +15,7 @@ return new class extends Migration
             $table->id();
             $table->foreignId('owner_user_id')->constrained('users')->onDelete('cascade');
 
-            // ─── Identity ────────────────────────────────────────────────
+            // ─── ORG Identity ────────────────────────────────────────────────
             $table->string('name');
             $table->string('display_name')->nullable();
             $table->string('legal_name')->nullable();
@@ -29,6 +29,26 @@ return new class extends Migration
             ])->default('company');
             $table->year('year_established')->nullable();
             $table->text('description')->nullable();
+
+            // ____ Business Identity ____________________________________________
+            $table->string('trading_name')
+                ->nullable();
+            $table->string('registration_number', 100)
+                ->nullable();
+            $table->date('registration_date')
+                ->nullable();
+            $table->string('registration_country', 2)
+                ->nullable();
+            $table->string('legal_structure', 50)
+                ->nullable();
+            $table->string('sector', 150)
+                ->nullable();
+            $table->string('sub_sector', 150)
+                ->nullable();
+            $table->string('physical_address')
+                ->nullable();
+            $table->string('social_media_url')
+                ->nullable();
 
             // ─── Contact ─────────────────────────────────────────────────
             $table->string('email')->nullable();

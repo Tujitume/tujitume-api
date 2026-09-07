@@ -24,6 +24,15 @@ class Organization extends Model
         'region', 'city', 'program_industry_id', 'focus_sectors',
         'operating_countries', 'target_regions', 'financial_year_start_month',
         'lipr_wallet', 'stripe_account_id', 'status',
+        'trading_name',
+        'registration_number',
+        'registration_date',
+        'registration_country',
+        'legal_structure',
+        'sector',
+        'sub_sector',
+        'physical_address',
+        'social_media_url',
     ];
 
     protected $casts = [

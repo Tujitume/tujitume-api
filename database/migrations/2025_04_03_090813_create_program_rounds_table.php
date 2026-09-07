@@ -28,7 +28,7 @@ return new class extends Migration
             $table->json('required_documents')->nullable(); // ['pitch_deck', 'financials']
 
             // Reviewer Assignment
-            $table->enum('assignment_type', ['owner_only', 'internal', 'external'])->default('owner_only');
+            $table->enum('assignment_type', ['owner_only', 'internal', 'external', 'both'])->default('owner_only');
             $table->enum('assignment_method', ['manual', 'round_robin', 'load_balanced'])->default('manual');
             $table->integer('min_reviewers_required')->default(1);
 
