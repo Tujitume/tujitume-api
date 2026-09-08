@@ -52,5 +52,6 @@ Route::post('profile/edit/{id}', [UserController::class, 'updateProfile']);
 // Settings
 
 Route::get('user/settings', [UserSettingController::class, 'show']);
+Route::get('user/settings/logo', [UserSettingController::class, 'logo']);
 Route::patch('user/settings', [UserSettingController::class, 'update']);
 Route::delete('user/settings/reset', [UserSettingController::class, 'reset']);

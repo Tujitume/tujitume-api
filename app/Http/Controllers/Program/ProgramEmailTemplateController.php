@@ -23,6 +23,7 @@ class ProgramEmailTemplateController extends Controller
         $result = collect(ProgramEmailTemplate::CUSTOMISABLE_EVENTS)->map(function ($event) use ($templates) {
             $template = $templates->firstWhere('event', $event);
             return [
+                'id' => $template?->id,
                 'event' => $event,
                 'body_html' => $template?->body_html,
             ];
