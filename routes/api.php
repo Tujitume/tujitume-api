@@ -30,6 +30,10 @@ Route::prefix('v1')->group(function () {
 
     // PUBLIC ROUTES (No Auth Required)
     // =============================================================
+    
+    // Public configuration endpoint (replaces hardcoded frontend env vars)
+    Route::get('/config/public', [\App\Http\Controllers\ConfigController::class, 'getPublicConfig']);
+    // =============================================================
     require __DIR__.'/api/v1/public.php';
 
     // AUTHENTICATION ROUTES

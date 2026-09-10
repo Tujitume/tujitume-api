@@ -13,6 +13,7 @@ use App\Http\Controllers\Business\BidsController;
 use App\Http\Controllers\Business\BusinessController;
 use App\Http\Controllers\Business\MilestoneController;
 use App\Http\Controllers\Capital\CapitalController;
+use App\Http\Controllers\ConfigController;
 use App\Http\Controllers\Misc\AiController;
 use App\Http\Controllers\Misc\EventController;
 use App\Http\Controllers\Misc\LookupController;
@@ -25,6 +26,15 @@ use App\Http\Controllers\Program\ProgramDisbursementController;
 use App\Http\Controllers\Service\BookingController;
 use App\Http\Controllers\Service\ServiceController;
 use App\Http\Controllers\Service\ServiceMilestoneController;
+use App\Http\Controllers\TestNotificationController;
+
+use Illuminate\Support\Facades\Route;
+
+// ── Configuration ────────────────────────────────────────────────────────────
+Route::get('/config/public', [ConfigController::class, 'getPublicConfig']);
+
+// ── Test Endpoints (Development only) ────────────────────────────────────────
+Route::post('/test/send-notification', [TestNotificationController::class, 'sendTestNotification']);
 
 // program supplier confirm
 Route::get('program/disbursements/{disbursement}/supplier-confirm', [ProgramDisbursementController::class, 'supplierConfirm']);
