@@ -249,7 +249,7 @@ Route::prefix('/programs')->middleware(['program', 'program.response'])->group(f
         Route::get('/applications/{app}/analytics/impact', [MEAnalyticsController::class, 'applicationImpact']);
 
 
-        // Add to routes/api/programs.php
+        // Reviewer Assignments
         Route::post('rounds/{round}/reviewers/accept',   [RoundReviewerController::class, 'accept']);
         Route::post('rounds/{round}/reviewers/decline',  [RoundReviewerController::class, 'decline']);
         Route::post('rounds/{round}/reviewers/{reviewer}/assign-applications', [RoundReviewerController::class, 'assignApplications']);
