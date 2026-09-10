@@ -30,12 +30,12 @@ class ProgramMiddleware
         // KYC verification required for POST requests
         $user->load('kycVerification');
 
-        if ($user->kycVerification?->status !== 'verified') {
-            return response()->json([
-                'message' => 'KYC verification is required to access program functionality.',
-                'status' => 403,
-            ], 403);
-        }
+        // if ($user->kycVerification?->status !== 'verified') {
+        //     return response()->json([
+        //         'message' => 'KYC verification is required to access program functionality.',
+        //         'status' => 403,
+        //     ], 403);
+        // }
 
         $user->load('organizationRole.role');
         $role = $user->organizationRole?->role?->name;
