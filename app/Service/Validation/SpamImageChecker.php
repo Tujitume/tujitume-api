@@ -14,22 +14,12 @@ class SpamImageChecker
 
     public function check($image_path)
     {
-        $apiUser = config('services.sightengine.api_user');
-        $apiSecret = config('services.sightengine.api_secret');
-
-        if (!$apiUser || !$apiSecret) {
-            return [[
-                'error' => true,
-                'message' => 'Sightengine credentials are not configured.',
-            ]];
-        }
-
         //$image_path = '';
         $params = array(
             'media' => new CurlFile($image_path),
             'models' => 'nudity-2.1,weapon,alcohol,recreational_drug,medical,offensive-2.0,scam,text-content,gore-2.0,qr-content,violence',
-            'api_user' => $apiUser,
-            'api_secret' => $apiSecret,
+            'api_user' => '725115685',
+            'api_secret' => 'AgH2RUSa3FPoq2HexU9b32XqFvQhtSpa',
         );
 
         // this example uses cURL
