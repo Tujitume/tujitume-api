@@ -23,10 +23,10 @@ return [
      */
     'apps' => [
         [
-            'id' => env('PUSHER_APP_ID', 'tujitume_e2f45h7'),
+            'id' => env('PUSHER_APP_ID'),
             'name' => env('APP_NAME', 'Tujitume'),
-            'key' => env('PUSHER_APP_KEY', 'key.tujitume_e2f45h7'),
-            'secret' => env('PUSHER_APP_SECRET', 'secret.tujitume_e2f45h7'),
+            'key' => env('PUSHER_APP_KEY'),
+            'secret' => env('PUSHER_APP_SECRET'),
             'path' => env('PUSHER_APP_PATH', null),
             'capacity' => null,
             'enable_client_messages' => false,

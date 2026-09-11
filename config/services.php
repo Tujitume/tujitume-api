@@ -55,22 +55,19 @@ return [
         'webhook_secret' => env('STRIPE_WEBHOOK_SECRET'),
     ],
 
-//    'lipr' => [
-//        'base_path' => 'https://api.prod.lipr.io',
-//        'api_key' => 'api_live_d9c7bbc38f4a412f88bc8f19288226b9', //'a52b00aa0de1cc4fc742876b92e480e9',
-//        'api_secret' => 'jNJdccQfb0oVC2pl8BfOynFVc-KoQWreBHtvHDiXpc-eKCPN7EVNf8dYwVcj3jnh', //'9c87f7c6d71312d89a86473eeefec46f',
-//        'subscription_key' => 'bb41577b-29c5-4ed9-9ec6-0220a82b7e91'
-//    ],
-
-    // sandbox version
     'lipr' => [
-        'base_path' => 'https://api.sandbox.lipr.io',
-        'api_key' => 'api_test_3f30c671f57d4f2f9eaa65971f7e8f48',
-        'api_secret' => 'mdsxMNy69bCOCTBHpgpaN3VZxmjuPPLKhbOJ4-i-_BcQ6Y6eig14XL9TkoflUbbI',
-        'subscription_key' => 'a7e4372b-6926-405c-ac05-f25f74256f90'
+        'base_path' => env('LIPR_BASE_PATH', 'https://api.sandbox.lipr.io'),
+        'api_key' => env('LIPR_API_KEY'),
+        'api_secret' => env('LIPR_API_SECRET'),
+        'subscription_key' => env('LIPR_SUBSCRIPTION_KEY'),
     ],
     'pusher' => [
-        'app_id' => 'key.tujitume_e2f45h7',
+        'app_id' => env('PUSHER_APP_ID'),
+    ],
+
+    'sightengine' => [
+        'api_user' => env('SIGHTENGINE_API_USER'),
+        'api_secret' => env('SIGHTENGINE_API_SECRET'),
     ],
 
 ];

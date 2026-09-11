@@ -2,26 +2,27 @@
 
 namespace App\Http\Controllers;
 
-use Illuminate\Http\Request;
-
 class ConfigController extends Controller
 {
     /**
      * Get public frontend configuration
-     * Only returns PUBLIC keys that are safe to expose
+     * Only return values that are intentionally safe to expose to browsers.
      */
     public function getPublicConfig()
     {
+        $pusherKey = config('broadcasting.connections.pusher.key');
+        $pusherOptions = config('broadcasting.connections.pusher.options', []);
+
         return response()->json([
-            'pusher' => [
-                'key' => config('broadcasting.connections.pusher.key'),
-                'cluster' => config('broadcasting.connections.pusher.options.cluster'),
-                'host' => config('broadcasting.connections.pusher.options.host'),
-                'port' => config('broadcasting.connections.pusher.options.port', 443),
-                'scheme' => config('broadcasting.connections.pusher.options.scheme', 'https'),
-            ],
+            'pusher' => $pusherKey ? [
+                'key' => $pusherKey,
+                'cluster' => $pusherOptions['cluster'] ?? 'mt1',
+                'host' => $pusherOptions['host'] ?? null,
+                'port' => $pusherOptions['port'] ?? 443,
+                'scheme' => $pusherOptions['scheme'] ?? 'https',
+            ] : null,
             'stripe' => [
-                'publishableKey' => config('services.stripe.key'), // Only publishable key
+                'publishableKey' => config('services.stripe.publishable'),
             ],
             'app' => [
                 'name' => config('app.name'),
