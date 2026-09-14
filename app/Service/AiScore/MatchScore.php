@@ -48,14 +48,35 @@ class MatchScore
             $score += $sectorScore * 0.30;
 
             // Geographic Fit (15%)
+
             if (!is_array($org['target_regions'])) {
-                $org['target_regions'] = json_decode($org['target_regions'],true)?? [];
+                $org['target_regions'] = json_decode($org['target_regions'], true) ?? [];
             }
-            if($business['region'] && $org['target_regions'])
-                $geoScore = in_array($business['region'], $org['target_regions']) ? 100 : 0;
-            else
-                $geoScore = 0;
+
+            $businessRegions = array_map(
+                fn($region) => trim($region),
+                explode(',', $business['region'] ?? '')
+            );
+
+            $targetRegions = array_map(
+                fn($region) => trim($region),
+                $org['target_regions']
+            );
+
+            $geoScore = 0;
+
+            foreach ($businessRegions as $businessRegion) {
+                foreach ($targetRegions as $targetRegion) {
+
+                    if (strcasecmp($businessRegion, $targetRegion) === 0) {
+                        $geoScore = 100;
+                        break 2;
+                    }
+                }
+            }
+
             $score += $geoScore * 0.15;
+
 
             // Startup Stage Compatibility (10%)
             if (!is_array($org['target_stages'])) {

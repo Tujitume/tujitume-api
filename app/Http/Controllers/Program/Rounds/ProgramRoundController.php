@@ -634,7 +634,7 @@ class ProgramRoundController extends Controller
                     // Award application
                     $app->status = 'awarded';
                     $app->awarded_amount = $totalAmount;
-                    $app->awarded_at = now();
+                    //$app->awarded_at = now();
 
                     $awardedCount++;
 
@@ -867,14 +867,16 @@ class ProgramRoundController extends Controller
                     'program_title'    => $program->program_title,
                     'amount'         => $application->awarded_amount,
                     'application_id' => $application->id,
+                    'recipientName' => $application->user->first_name,
                 ]);
 
                 // to program owner
                 $this->programNotification->send('program.awarded', [$application->program->owner], [
-                    'program_title'   => $application->program->program_title,
+                    'program_title' => $application->program->program_title,
                     'awarded_count' => $awardedCount,
                     'total_amount'  => $awardedCount * $application->program->funding_per_business,
-                    'program_id'      => $application->program->id,
+                    'program_id'    => $application->program->id,
+                    'recipientName' => $application->user->first_name,
                 ]);
 
             } else {
@@ -882,6 +884,7 @@ class ProgramRoundController extends Controller
                     'program_title'    => $program->program_title,
                     'round_name'     => $nextRound->round_name,
                     'application_id' => $application->id,
+                    'recipientName' => $application->user->first_name,
                 ]);
             }
 
@@ -958,6 +961,7 @@ class ProgramRoundController extends Controller
                 'program_title' => $round->program->program_title,
                 'round_name'  => $round->round_name,
                 'program_id'  => $round->program->id,
+                'recipientName' => $application->user->first_name,
             ]);
 
             return response()->json(['message' => 'Application rejected successfully']);

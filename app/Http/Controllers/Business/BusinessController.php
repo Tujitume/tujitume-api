@@ -154,9 +154,14 @@ class BusinessController extends Controller
                 }
             }
 
+            $validated['video'] = $validated['videoLink'] ?? null;
+            unset($validated['videoLink']);
+
+            $validated['name']   = $validated['title'];
+            unset($validated['title']);
+
             $listing = Listing::create([
                 ...$validated,
-                'name'    => $validated['title'],
                 'user_id' => Auth::id(),
                 'stage'   => $request->business_stage,
                 'social_impact_areas' => $validated['social_impact_areas'] ?? [],
@@ -210,7 +215,7 @@ class BusinessController extends Controller
                 'id'             => 'required|integer|exists:listings,id',
                 'name'           => 'required|string|max:300',
                 'details'        => 'required|string|max:1500',
-                'reason'         => 'nullable|string|max:500',
+                'reason'         => 'sometimes|required|string|max:500',
                 //'image'          => 'sometimes|required|file|mimes:jpg,jpeg,png,webp|max:2048',
                 //'pin'            => 'sometimes|required|file|mimes:pdf,docx|max:2048',
                 //'identification' => 'sometimes|required|file|mimes:pdf,docx|max:2048',

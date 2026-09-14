@@ -20,6 +20,7 @@ class ProgramMiddleware
         //$uri = Route::current()?->uri();
         $method = $request->method();;
         $route_name = $lastSegment = $this->getLastRouteSegment(Route::current()?->uri());
+        $isOrgnizationUser = Auth::user()?->user_type_id === 4;
 
         $user = Auth::user();
         if (! $user) {
@@ -30,12 +31,12 @@ class ProgramMiddleware
         // KYC verification required for POST requests
         $user->load('kycVerification');
 
-        // if ($user->kycVerification?->status !== 'verified') {
-        //     return response()->json([
-        //         'message' => 'KYC verification is required to access program functionality.',
-        //         'status' => 403,
-        //     ], 403);
-        // }
+        if ($isOrgnizationUser && $user->kycVerification?->status !== 'verified') {
+            return response()->json([
+                'message' => 'KYC verification is required to access program functionality.',
+                'status' => 403,
+            ], 403);
+        }
 
         $user->load('organizationRole.role');
         $role = $user->organizationRole?->role?->name;

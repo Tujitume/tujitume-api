@@ -113,7 +113,7 @@ class SupportController extends Controller
             'email' => 'required|email|max:191',
 
             'request_type' => 'required|in:demo,meeting,trial,consultation',
-            'type' => 'required|in:program,investment,capital,service,platform',
+            'type' => 'required|in:government,corporate,grant,investment,capital,service,platform',
 
             'notes' => 'nullable|string|max:5000',
         ]);
@@ -131,7 +131,8 @@ class SupportController extends Controller
                         'request_type' => $demoRequest->request_type,
                         'type'        => $demoRequest->type,
                         'notes'       => $demoRequest->name ?? null,
-                    ], 'info@tujitume.com' //'stevemonitoring.gathirus@gmail.com'
+                    ], $demoRequest->email 
+                    //'info@tujitume.com' //'stevemonitoring.gathirus@gmail.com'
                     //config('mail.tujitume.contact_email') // ← send to tujitume internal email
                 );
 

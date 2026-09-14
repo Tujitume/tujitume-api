@@ -19,12 +19,14 @@ return [
 
     'allowed_methods' => ['*'],
 
-//    'allowed_origins' => [
-//        'https://beta.tujitume.com',
-//        'http://localhost:81', // for Vite/React
-//        'http://localhost:3000'
-//    ],
-    'allowed_origins' => ['*'],
+   'allowed_origins' => [
+       'https://beta.tujitume.com',
+       'http://localhost:81', // for Vite/React
+       'http://localhost:3000',
+       'https://unsatirizable-danyell-twirly.ngrok-free.dev',
+       'https://unsatirizable-danyell-twirly.ngrok-free.dev:81',
+   ],
+    //'allowed_origins' => ['*'],
 
     'allowed_headers' => ['*'],
 

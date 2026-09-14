@@ -347,7 +347,7 @@ class ProgramApplicationController extends Controller
 
             $exists = ProgramApplication::where('program_id', $program->id)->where('user_id', Auth::id())->exists();
             if($exists) {
-                return response()->json(['message' => 'You already have an active application for this program.'], 409);
+                //return response()->json(['message' => 'You already have an active application for this program.'], 409);
             }
 
 
@@ -466,7 +466,7 @@ class ProgramApplicationController extends Controller
 
             if ($program->program_type === 'single_round') {
                 // Single round: approve + award immediately
-                $pitch->status = 'awarded'; $pitch->awarded_at = now();
+                $pitch->status = 'awarded'; //$pitch->awarded_at = now();
                 $pitch->round_status = 'advanced';
 
 
@@ -635,7 +635,7 @@ class ProgramApplicationController extends Controller
     {
         $user= Auth::user();
 
-        if($user->user_type_id !== 4) {
+        if($user->user_type_id !== 1) {
             return response()->json(['message' => 'Unauthorized.'], 403);
         }
 

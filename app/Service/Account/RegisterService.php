@@ -30,8 +30,8 @@ class RegisterService
         $data = $request->validate([
             'first_name' => ['required', 'string', 'max:255'],
             'last_name' => ['required', 'string', 'max:255'],
-            'gender' => ['required', 'in:Male,Female,Other'],
-            'dob' => ['required', 'date'],
+            'gender' => ['nullable', 'in:Male,Female,Other'],
+            'dob' => ['nullable', 'date'],
             'email' => ['required', 'email', 'max:255', 'unique:users,email'],
             'password' => ['required', 'string', Password::min(8)->mixedCase()->numbers()],
             'phone' => ['nullable', 'string', 'max:50'],

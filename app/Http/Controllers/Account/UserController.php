@@ -308,8 +308,8 @@ class UserController extends Controller
 
         try {
             $validated = $request->validate([
-                'fname' => 'nullable|string|max:100',
-                'lname' => 'nullable|string|max:100',
+                'first_name' => 'sometimes|required|string|max:100',
+                'last_name' => 'sometimes|required|string|max:100',
                 'mname' => 'nullable|string|max:100',
                 'dob' => 'nullable|date',
                 'gender' => 'nullable|string|in:Male,Female,other',

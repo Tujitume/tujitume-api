@@ -79,7 +79,8 @@ return new class extends Migration
             ])->default('not_started');
 
             $table->enum('knockout_status', ['pending', 'passed', 'failed'])->default('pending');
-
+            
+            $table->string('awarded_at')->nullable();
 
             $table->enum('planning_mode', ['locked', 'hybrid'])->default('locked');
 

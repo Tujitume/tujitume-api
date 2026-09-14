@@ -226,9 +226,9 @@ class KycService
         if ($structure === 'limited_company' && ! in_array('director', $roles)) {
             $errors['people'][] = 'A limited company requires at least one director.';
         }
-        if (in_array($structure, ['ngo', 'foundation']) && ! in_array('trustee', $roles) && ! in_array('director', $roles)) {
-            $errors['people'][] = 'An NGO or foundation requires a director or trustee.';
-        }
+        // if (in_array($structure, ['ngo', 'foundation']) && ! in_array('trustee', $roles) && ! in_array('director', $roles)) {
+        //     $errors['people'][] = 'An NGO or foundation requires a director or trustee.';
+        // }
         if (in_array($structure, ['limited_company', 'partnership'])) {
             foreach ($v->people as $person) {
                 if (in_array($person->relationship_role, ['owner', 'partner', 'shareholder', 'beneficial_owner']) && $person->ownership_percentage === null) {

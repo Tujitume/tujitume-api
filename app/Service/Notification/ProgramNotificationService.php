@@ -24,9 +24,22 @@ class ProgramNotificationService
         $config = $this->getEventConfig($event, $data);
         $type = in_array($event, ['wallet.deposited']) ? 'deposit' : 'program';
 
+        // resolve custom email body
         $customBody = null;
         if (!empty($data['program_id']) && in_array($event, ProgramEmailTemplate::CUSTOMISABLE_EVENTS)) {
             $customBody = ProgramEmailTemplate::resolve((int) $data['program_id'], $event);
+
+            if ($customBody) {
+                $variables = [
+                    'applicant_name' => $data['recipientName'] ?? 'Program Applicant',
+                    'program_title' => $data['program_title'] ?? '',
+                    'round_name' => $data['round_name'] ?? '',
+                ];
+
+                foreach ($variables as $key => $value) {
+                    $customBody = str_replace('{{' . $key . '}}', $value, $customBody);
+                }
+            }
         }
 
         foreach ($recipients as $recipient) {
