@@ -20,8 +20,10 @@ return [
     'allowed_methods' => ['*'],
 
    'allowed_origins' => [
+       'https://tujitume.com',
        'https://beta.tujitume.com',
        'http://localhost:81', // for Vite/React
+       'http://localhost:80',
        'http://localhost:3000',
        'https://unsatirizable-danyell-twirly.ngrok-free.dev',
        'https://unsatirizable-danyell-twirly.ngrok-free.dev:81',
