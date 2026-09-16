@@ -50,19 +50,19 @@ class MilestoneVerificationController extends Controller
         }
 
         $suppliersCount = $milestone->suppliers()->count();
-        if ($suppliersCount === 0) {
-            return response()->json(['error' => 'Cannot submit MPRV. Please add suppliers first.'], 422);
-        }
+        // if ($suppliersCount === 0) {
+        //     return response()->json(['error' => 'Cannot submit MPRV. Please add suppliers first.'], 422);
+        // }
 
         $budgetItemsCount = $milestone->budgetItems()->count();
-        if ($budgetItemsCount === 0) {
-            return response()->json(['error' => 'Cannot submit MPRV. Please add budget items first.'], 422);
-        }
+        // if ($budgetItemsCount === 0) {
+        //     return response()->json(['error' => 'Cannot submit MPRV. Please add budget items first.'], 422);
+        // }
 
-        $budgetTotal = $milestone->budgetItems()->sum('total_cost');
-        if ($budgetTotal != $milestone->amount) {
-            return response()->json(['error' => 'Budget items total (' . $budgetTotal . ') must match milestone amount (' . $milestone->amount . ')'], 422);
-        }
+        // $budgetTotal = $milestone->budgetItems()->sum('total_cost');
+        // if ($budgetTotal != $milestone->amount) {
+        //     return response()->json(['error' => 'Budget items total (' . $budgetTotal . ') must match milestone amount (' . $milestone->amount . ')'], 422);
+        // }
 
         DB::beginTransaction();
         try {
@@ -72,7 +72,7 @@ class MilestoneVerificationController extends Controller
                 'funds_usage_confirmed' => 'required|boolean|accepted',
                 // Optional
                 'additional_declarations' => 'nullable|string',
-                'verification_type' => 'required|string|in:mprv, mid_milestone',
+                'verification_type' => 'required|string|in:mprv,mid_milestone,final_approval',
                 'document' => 'nullable|file|mimes:pdf,doc,docx|max:5120',  // 5MB
             ]);
 
@@ -93,11 +93,12 @@ class MilestoneVerificationController extends Controller
                 $validated['document'] = $filePath;
 
                 $uploadedFiles[] = $filePath;
+
+                if ($validated['document'] == null) {
+                    return response()->json(['error' => 'File upload failed in backend.' . $request->file('document')], 422);
+                }
             }
 
-            if($validated['document'] == null){
-                return response()->json(['error' => 'File upload failed in backend.'. $request->file('document')], 422);
-            }
             $verification = MilestoneVerification::create($validated);
 
             // Update milestone status

@@ -41,7 +41,7 @@ class UserResource extends JsonResource
 
         $organization = $this->relationLoaded('organization') ? $this->organization : null;
         $stripeAccountId = $this->stripe_connect_id ?? $this->connect_id ?? null;
-        $liprWallet = $this->lipr_wallet_account ?? $this->lipr_wallet ?? null;
+        $liprWallet = $this->lipr_wallet ?? $this->lipr_wallet ?? null;
         $organizationWorkspaces = [];
 
         if ($organization && $organization->relationLoaded('workspaces')) {
@@ -128,7 +128,7 @@ class UserResource extends JsonResource
             'kyc_status' => $this->kycVerification?->status ?? 'not_started',
             'organization_id' => $this->organization_id,
             'stripe_connect_id' => $stripeAccountId,
-            'lipr_wallet_account' => $liprWallet,
+            'lipr_wallet' => $liprWallet,
             'stripe_onboard' => $stripeAccountId && $this->completed_onboarding ? 1 : 0,
             'lipr_onboard' => $liprWallet ? 1 : 0,
             'organization' => $organizationPayload,

@@ -42,14 +42,14 @@ class ReviewerPaymentTest extends TestCase
             ->create([
                 'user_type_id' => 4, // Internal reviewer
                 'organization_id' => $this->organization->id,
-                'lipr_wallet_account' => '254712345678',
+                'lipr_wallet' => '254712345678',
             ]);
 
         // Create external reviewer (independent, no organization_id required)
         $this->externalReviewer = User::factory()
             ->create([
                 'user_type_id' => 6, // External reviewer
-                'lipr_wallet_account' => '254787654321',
+                'lipr_wallet' => '254787654321',
             ]);
 
         // Create program

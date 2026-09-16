@@ -524,9 +524,9 @@ class ProgramMilestoneController extends Controller
             $totalAmount = $templates->sum('amount');
             $approvedAmount = $application->total_amount_requested;
 
-            if (abs($totalAmount - $approvedAmount) > 0.01) {
+            if ( abs($totalAmount) > abs($approvedAmount) ) {
                 throw ValidationException::withMessages([
-                    'amount' => ["Total milestone allocation ($totalAmount) must equal approved amount ($approvedAmount)"]
+                    'amount' => ["Total milestone allocation ($totalAmount) must be less or equal to approved amount ($approvedAmount)"]
                 ]);
             }
 
@@ -540,7 +540,7 @@ class ProgramMilestoneController extends Controller
                     $required = array_filter([
                         $template->mprv_required         ? 'mprv'           : null,
                         $template->mid_milestone_required ? 'mid_milestone'  : null,
-                        $template->final_approval_required? 'final_approval' : null,
+                        //$template->final_approval_required? 'final_approval' : null,
                     ]);
 
                     if (!empty($required)) {
@@ -664,15 +664,40 @@ class ProgramMilestoneController extends Controller
 
                 if($application->program->disbursement_type  == 'supplier'){
                     foreach($application->program_milestones as $milestone){
-                        if( $milestone->suppliers->count() === 0 ) {
-                            return response()->json(['message' => 'All milestones must have at least 1 supplier.'], 422);
-                        }
+                        // if( $milestone->suppliers->count() === 0 ) {
+                        //     return response()->json(['message' => 'All milestones must have at least 1 supplier.'], 422);
+                        // }
 
-                        if( $milestone->budgetItems->count() === 0 ) {
-                            return response()->json(['message' => 'All milestones must have at least 1 budget item.'], 422);
-                        }
+                        // if( $milestone->budgetItems->count() === 0 ) {
+                        //     return response()->json(['message' => 'All milestones must have at least 1 budget item.'], 422);
+                        // }
                     }
                 }
+
+                $templates = ProgramMilestone::where('app_id', $applicationId)->get();
+
+                foreach ($templates as $template) {
+                    // pre-agreements check
+                    $required = array_filter([
+                        $template->mprv_required         ? 'mprv'           : null,
+                        $template->mid_milestone_required ? 'mid_milestone'  : null,
+                        $template->final_approval_required ? 'final_approval' : null,
+                    ]);
+
+                    if (!empty($required)) {
+                        $submittedCount = MilestonePreAgreement::where('milestone_id', $template->id)
+                            ->whereIn('verification_type', $required)
+                            ->where('status', 'submitted')->count();
+
+                        if ($submittedCount !== count($required)) {
+                            return response()->json([
+                                'message' => "Milestone '{$template->title}' has pending pre-agreements.(" .implode(',', $required). ")",
+                            ], 422);
+                        }
+                    }
+
+                }
+
 
                 $status = 'awaiting_owner_review';
             }
@@ -691,6 +716,8 @@ class ProgramMilestoneController extends Controller
             ]);
 
             DB::commit();
+
+            // notification on each submit needed
 
             return response()->json([
                 'message' => 'Plan submitted for review successfully'

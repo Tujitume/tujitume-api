@@ -43,7 +43,7 @@ return new class extends Migration
             $table->string('website')->nullable();
 
             // ─── Payment (shared across types) ───────────────────────────
-            $table->string('lipr_wallet_account', 200)->nullable();
+            $table->string('lipr_wallet', 200)->nullable();
             $table->string('stripe_connect_id')->nullable();        // Stripe Connect
             $table->string('stripe_customer_id')->nullable();
             

@@ -369,7 +369,7 @@ Content-Type: application/json
 **Validation:**
 - Order must exist and belong to the authenticated user's program
 - Order must have `work_status` in `['delivered', 'approved']`
-- Reviewer must have `lipr_wallet_account` set
+- Reviewer must have `lipr_wallet` set
 - Order must not already be `payment_status === 'completed'`
 - Fee must be > 0
 

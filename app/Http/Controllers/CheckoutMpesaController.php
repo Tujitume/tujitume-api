@@ -202,7 +202,7 @@ class CheckoutMpesaController extends Controller
                     throw new \Exception('Reviewer has not delivered work yet', 422);
                 }
 
-                if (!$order->reviewer->lipr_wallet_account) {
+                if (!$order->reviewer->lipr_wallet) {
                     throw new \Exception('Reviewer does not have a LIPR wallet configured', 422);
                 }
 

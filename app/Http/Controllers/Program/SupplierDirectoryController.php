@@ -130,9 +130,7 @@ class SupplierDirectoryController extends Controller
 
                 // LIPR
                 'lipr_wallet' => [
-                    'nullable',
-                    'string',
-                    'max:30',
+                    'nullable','numeric',  
                 ],
 
                 'lipr_mobile_number' => [

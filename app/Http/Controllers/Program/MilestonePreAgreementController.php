@@ -36,13 +36,13 @@ class MilestonePreAgreementController extends Controller
             ]);
 
             // Get or create agreement record
-            $agreement = MilestonePreAgreement::firstOrCreate(
+            $agreement = MilestonePreAgreement::updateOrCreate(
                 [
                     'milestone_id'      => $milestone->id,
                     'verification_type' => $type,
                 ],
                 [
-                    'status'       => 'pending',
+                    'status'       => $isApplicant ? 'submitted' : 'pending',
                     'submitted_by' => $userId,
                 ]
             );
@@ -115,7 +115,7 @@ class MilestonePreAgreementController extends Controller
                 return response()->json(['error' => 'No agreement found for this verification type'], 404);
             }
 
-            if ($agreement->status !== 'pending') {
+            if ($agreement->status !== 'submitted') {
                 return response()->json([
                     'error' => 'Agreement cannot be reviewed. Current status: ' . $agreement->status
                 ], 422);
@@ -188,7 +188,7 @@ class MilestonePreAgreementController extends Controller
                 return response()->json(['error' => 'No agreement found for this verification type'], 404);
             }
 
-            if ($agreement->status !== 'pending') {
+            if ($agreement->status !== 'submitted') {
                 return response()->json([
                     'error' => 'Agreement cannot be reviewed. Current status: ' . $agreement->status
                 ], 422);

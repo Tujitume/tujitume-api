@@ -40,7 +40,7 @@ class User extends Authenticatable
         'first_name', 'last_name', 'display_name', 'email', 'phone', 'image',
         'gender', 'dob', 'password', 'token', 'email_verified_at', 'user_type_id',
         'completed_onboarding', 'country', 'city', 'website',
-        'lipr_wallet_account', 'stripe_connect_id', 'stripe_customer_id',
+        'lipr_wallet', 'stripe_connect_id', 'stripe_customer_id',
         'organization_id', 'invited_at','invitation_token_hash','invitation_expires_at'
     ];
 

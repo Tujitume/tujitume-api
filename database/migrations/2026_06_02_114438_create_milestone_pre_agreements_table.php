@@ -15,7 +15,7 @@ return new class extends Migration
             $table->id();
             $table->foreignId('milestone_id')->constrained('program_milestones')->onDelete('cascade');
             $table->enum('verification_type', ['mprv', 'mid_milestone', 'final_approval']);
-            $table->enum('status', ['pending', 'agreed', 'rejected', 'final_rejected'])->default('pending');
+            $table->enum('status', ['pending', 'submitted', 'agreed', 'rejected', 'final_rejected'])->default('pending');
             $table->unsignedTinyInteger('rejection_count')->default(0);
             $table->foreignId('submitted_by')->constrained('users')->onDelete('cascade');
             $table->timestamp('reviewed_at')->nullable();

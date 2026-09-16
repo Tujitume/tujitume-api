@@ -484,7 +484,7 @@ class MpesaCallbackController extends Controller
             $order    = ReviewerOrder::with('reviewer', 'program')->findOrFail($orderId);
             $reviewer = $order->reviewer;
 
-            if (!$reviewer->lipr_wallet_account) {
+            if (!$reviewer->lipr_wallet) {
                 Log::error('Reviewer has no LIPR wallet', ['reviewer_id' => $reviewer->id, 'order_id' => $orderId]);
                 return response()->json(['message' => 'Callback received'], 200);
             }
@@ -500,7 +500,7 @@ class MpesaCallbackController extends Controller
 
             $transfer = $this->liprW2W->send(
                 $amount,           // amount in KES
-                $reviewer->lipr_wallet_account,
+                $reviewer->lipr_wallet,
                 $tujitumeWallet,
                 null               // no milestone context
             );
