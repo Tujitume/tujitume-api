@@ -20,12 +20,12 @@ class KycService
 
     public function organizationFor(User $user): ?int
     {
-        if ((int) $user->user_type_id !== 4) {
+        if ((int) $user->user_type_id !== 4 || (int) $user->user_type_id !== 1) {
             return null;
         }
         $organization = $user->organization;
         if (! $organization) {
-            throw ValidationException::withMessages(['organization' => ['An organization account must belong to an organization.']]);
+            throw ValidationException::withMessages(['organization' => ['A business or organization account must belong to an organization.']]);
         }
         if ($organization->owner_user_id === $user->id) {
             return $organization->id;
