@@ -92,9 +92,34 @@ class KycService
                      //'legal_structure',
                       //'people'
             ],
-            
-            'service_provider' => ['legal_name', 'id_type', 'id_number', 'phone', 'email', 'physical_address', 'tax_pin', 'operates_through_business', 'business_legal_name', 'business_type', 'business_registration_number', 'requires_professional_licence', 'people'],
-            'organization' => ['legal_name', 'registration_number', 'registration_country', 'legal_structure', 'tax_pin', 'physical_address', 'county_region', 'authorized_representative', 'people'],
+
+            'service_provider' => [
+                'legal_name',
+                'id_type',
+                'id_number',
+                'phone',
+                'email',
+                //'physical_address',
+                //'tax_pin',
+                //'operates_through_business',
+                //'business_legal_name',
+                //'business_type',
+                //'business_registration_number',
+                //'requires_professional_licence',
+                //'people'
+            ],
+
+            'organization' => [
+                'legal_name',
+                'registration_number',
+                'registration_country',
+                'legal_structure',
+                'tax_pin',
+                'physical_address',
+                'county_region',
+                'authorized_representative',
+                'people'
+            ],
         };
         $invalid = array_diff(array_keys($data), $allowed);
         if ($invalid) {
@@ -150,9 +175,9 @@ class KycService
                 'id_issuing_country', 
                 'id_expiry_date', 
                 'nationality',
-                'physical_address', 
+                //'physical_address', 
                 'county_region',
-                'tax_pin'
+                //'tax_pin'
             ],
 
             'service_provider' => [
@@ -161,8 +186,8 @@ class KycService
                 'id_number', 
                 'phone', 
                 'email', 
-                'physical_address', 
-                'tax_pin'
+                //'physical_address', 
+                //'tax_pin'
             ],
 
             'organization' => [
@@ -200,11 +225,11 @@ class KycService
             }
         }
         if ($v->verification_type === 'service_provider' && $d->operates_through_business) {
-            foreach (['business_legal_name', 'business_type', 'business_registration_number'] as $field) {
-                if (blank($d->$field)) {
-                    $errors[$field][] = 'This field is required when operating through a business.';
-                }
-            }
+            // foreach (['business_legal_name', 'business_type', 'business_registration_number'] as $field) {
+            //     if (blank($d->$field)) {
+            //         $errors[$field][] = 'This field is required when operating through a business.';
+            //     }
+            // }
         }
         if ($v->verification_type === 'organization' && ! $d->authorization_confirmation) {
             $errors['authorized_representative.authorization_confirmation'][] = 'Authorization confirmation is required.';
@@ -215,21 +240,32 @@ class KycService
                 'id_passport_copy',
                  //'proof_of_address', 
                  'tax_pin_document'
-                 ], 
+            ], 
                  
-            'service_provider' => ['id_passport_copy', 'proof_of_address'], 'organization' => ['registration_certificate', 'tax_compliance_certificate', 'proof_of_address', 'directors_trustees_document', 'authorization_letter_resolution']
+            'service_provider' => [
+                 'id_passport_copy',
+                 'tax_pin_document'
+            ], 'organization' =>
+            [
+                'registration_certificate',
+                 'tax_compliance_certificate',
+                  'proof_of_address',
+                   'directors_trustees_document',
+                    'authorization_letter_resolution'
+            ]
         };
         
         // if ($v->verification_type === 'entrepreneur' && $d->is_registered_business) {
         //     $documentsRequired[] = 'business_registration_certificate';
         // }
 
-        if ($v->verification_type === 'service_provider' && $d->operates_through_business) {
-            $documentsRequired[] = 'business_registration_certificate';
-        }
-        if ($v->verification_type === 'service_provider' && $d->requires_professional_licence) {
-            $documentsRequired[] = 'professional_licence';
-        }
+        // if ($v->verification_type === 'service_provider' && $d->operates_through_business) {
+        //     $documentsRequired[] = 'business_registration_certificate';
+        // }
+        // if ($v->verification_type === 'service_provider' && $d->requires_professional_licence) {
+        //     $documentsRequired[] = 'professional_licence';
+        // }
+
         foreach ($documentsRequired as $doc) {
             if (! in_array($doc, $documents, true)) {
                 $errors['documents'][] = "The {$doc} document is required before submission.";
