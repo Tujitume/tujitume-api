@@ -20,7 +20,7 @@ class KycService
 
     public function organizationFor(User $user): ?int
     {
-        if ((int) $user->user_type_id !== 4 || (int) $user->user_type_id !== 1) {
+        if ((int) $user->user_type_id !== 4) {
             return null;
         }
         $organization = $user->organization;
@@ -73,13 +73,32 @@ class KycService
             abort(409, 'Only draft or rejected KYC records can be updated.');
         }
         $allowed = match ($verification->verification_type) {
-            'entrepreneur' => ['legal_name', 'id_type', 'id_number', 'id_issuing_country', 'id_expiry_date', 'nationality', 'physical_address', 'county_region', 'tax_pin', 'is_registered_business', 'business_legal_name', 'business_registration_number', 'registration_country', 'legal_structure', 'people'],
+            'entrepreneur' => 
+            [
+            'legal_name',
+             'id_type',
+              'id_number',
+               'id_issuing_country',
+                'id_expiry_date',
+                 'nationality',
+                'county_region',
+                 //'physical_address', 
+                 
+                  //'tax_pin',
+                   //'is_registered_business',
+                    //'business_legal_name',
+                     //'business_registration_number', 
+                     //'registration_country', 
+                     //'legal_structure',
+                      //'people'
+            ],
+            
             'service_provider' => ['legal_name', 'id_type', 'id_number', 'phone', 'email', 'physical_address', 'tax_pin', 'operates_through_business', 'business_legal_name', 'business_type', 'business_registration_number', 'requires_professional_licence', 'people'],
             'organization' => ['legal_name', 'registration_number', 'registration_country', 'legal_structure', 'tax_pin', 'physical_address', 'county_region', 'authorized_representative', 'people'],
         };
         $invalid = array_diff(array_keys($data), $allowed);
         if ($invalid) {
-            throw ValidationException::withMessages(array_fill_keys($invalid, 'This field is not applicable to this KYC flow.'));
+            //throw ValidationException::withMessages(array_fill_keys($invalid, 'This field is not applicable to this KYC flow.'));
         }
 
         return DB::transaction(function () use ($verification, $data) {
@@ -169,7 +188,12 @@ class KycService
             }
         }
         if ($v->verification_type === 'entrepreneur' && $d->is_registered_business) {
-            foreach (['business_legal_name', 'business_registration_number', 'registration_country', 'legal_structure'] as $field) {
+            foreach ([
+                //'business_legal_name',
+                 //'business_registration_number',
+                  //'registration_country', 
+                  //'legal_structure'
+                  ] as $field) {
                 if (blank($d->$field)) {
                     $errors[$field][] = 'This field is required for a registered business.';
                 }
@@ -187,11 +211,19 @@ class KycService
         }
         $documents = $v->documents->pluck('document_type')->all();
         $documentsRequired = match ($v->verification_type) {
-            'entrepreneur' => ['id_passport_copy', 'proof_of_address', 'tax_pin_document'], 'service_provider' => ['id_passport_copy', 'proof_of_address'], 'organization' => ['registration_certificate', 'tax_compliance_certificate', 'proof_of_address', 'directors_trustees_document', 'authorization_letter_resolution']
+            'entrepreneur' => [
+                'id_passport_copy',
+                 //'proof_of_address', 
+                 'tax_pin_document'
+                 ], 
+                 
+            'service_provider' => ['id_passport_copy', 'proof_of_address'], 'organization' => ['registration_certificate', 'tax_compliance_certificate', 'proof_of_address', 'directors_trustees_document', 'authorization_letter_resolution']
         };
-        if ($v->verification_type === 'entrepreneur' && $d->is_registered_business) {
-            $documentsRequired[] = 'business_registration_certificate';
-        }
+        
+        // if ($v->verification_type === 'entrepreneur' && $d->is_registered_business) {
+        //     $documentsRequired[] = 'business_registration_certificate';
+        // }
+
         if ($v->verification_type === 'service_provider' && $d->operates_through_business) {
             $documentsRequired[] = 'business_registration_certificate';
         }
