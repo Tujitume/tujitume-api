@@ -38,7 +38,7 @@ Route::prefix('v1')->group(function () {
 
     // PROTECTED ROUTES (Auth Required)
     // =============================================================
-    Route::middleware(['auth:sanctum', 'extend-token', 'throttle:api'])->group(function () {
+    Route::middleware(['auth:sanctum', 'extend-token', 'throttle:api', 'format.dates'])->group(function () {
 
         // Account & Security
         require __DIR__.'/api/v1/account.php';

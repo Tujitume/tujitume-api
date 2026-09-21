@@ -75,6 +75,7 @@ class Kernel extends HttpKernel
         'investor' => \App\Http\Middleware\Api\InvestorMiddleware::class,
         'program' => \App\Http\Middleware\Api\ProgramMiddleware::class,
         'program.response' => \App\Http\Middleware\Api\StandardizeProgramMutationResponse::class,
+        'format.dates' => \App\Http\Middleware\FormatDatesForUser::class,
         'capital' => \App\Http\Middleware\Api\CapitalMiddleware::class,
     ];
 }

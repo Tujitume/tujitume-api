@@ -150,7 +150,7 @@ class ProgramMonitoringAnalyticsService
         ];
 
         $successMetrics = $checkpoints->sortBy('due_date')->map(fn($checkpoint) => [
-            'date' => $checkpoint->due_date?->format('M d, Y'),
+            'date' => $checkpoint->due_date?->toDateString(),
             'checkpoint' => $checkpoint->checkpoint_name,
             'cumulative_progress' => $checkpoint->status === 'verified' ? 100 : ($checkpoint->status === 'submitted' ? 50 : 0),
             'problems_kpis' => count($checkpoint->kpis_to_track ?? []),
@@ -210,13 +210,13 @@ class ProgramMonitoringAnalyticsService
                 'value' => $checkpoint->status,
                 'color' => config('status.me_checkpoint.' . $checkpoint->status, 'gray'),
             ],
-            'due_date' => $checkpoint->due_date?->format('M d, Y'),
-            'submitted_at' => $checkpoint->submission?->submitted_at?->format('M d, Y'),
+            'due_date' => $checkpoint->due_date?->toDateString(),
+            'submitted_at' => $checkpoint->submission?->submitted_at?->toDateString(),
             'reviewer_note' => $checkpoint->submission?->reviewer_note,
             'evidence_count' => $checkpoint->submission?->files->count() ?? 0,
             'site_visit' => $checkpoint->siteVisit ? [
                 'status' => $checkpoint->siteVisit->status,
-                'visit_date' => $checkpoint->siteVisit->start_date?->format('M d, Y'),
+                'visit_date' => $checkpoint->siteVisit->start_date?->toDateString(),
             ] : null,
         ])->values();
 

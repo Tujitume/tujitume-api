@@ -56,22 +56,35 @@ class CurrencyConverter
                     "Accept: */*"
                 ),
             ));
-            $response = curl_exec($curl);
-            $response = json_decode($response, true);
-            $err = curl_error($curl);
+            
+            $rawResponse = curl_exec($curl);
+
+            if ($rawResponse === false) {
+                $error = curl_error($curl);
+                curl_close($curl);
+
+                return false;
+            }
+
             curl_close($curl);
 
-            if($err){
-                return $err;
+            $response = json_decode($rawResponse, true);
+
+            if (
+                !is_array($response) ||
+                !isset($response['rates']) ||
+                !isset($response['rates']['KES'])
+            ) {
+                return false;
             }
+
             return $response['rates']['KES'];
-            //echo '<pre>'; print_r($response); echo '<pre>';
         } catch (\Exception $e) {
 
             ErrorLogService::report($e, [
                 'input' => request()->except(['password', 'token']),
             ]);
-            
+
             return false;
         }
     }
