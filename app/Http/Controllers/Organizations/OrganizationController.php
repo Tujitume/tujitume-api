@@ -318,7 +318,6 @@ class OrganizationController extends Controller
             DB::commit();
 
             return response()->json([
-                'success' => true,
                 'message' => 'Organization updated successfully.',
                 'data' => [
                     'organization' => $organization->fresh(),
