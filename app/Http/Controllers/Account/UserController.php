@@ -476,7 +476,7 @@ class UserController extends Controller
         $data = $request->validate([
             'token' => ['required', 'string', 'size:64'],
             'display_name' => ['required', 'string', 'max:255'],
-            'image' => ['required', 'file', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
+            'image' => ['nullable', 'file', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
             'phone' => ['required', 'string', 'max:20'],
             'password' => ['required', 'confirmed', Password::min(8)->mixedCase()->numbers()],
         ]);

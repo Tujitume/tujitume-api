@@ -156,7 +156,13 @@ Route::prefix('/programs')->middleware(['program', 'program.response'])->group(f
     Route::apiResource('rounds/{round}/reviewers', RoundReviewerController::class)->shallow();
     Route::patch('reviewers/{reviewer}', [RoundReviewerController::class, 'update']); // added by owen
 
-    // ─── REVIEWER ORDERS ──────────────────────────────────────────────────
+    // ─── REVIEWER Assignments & ORDERS ──────────────────────────────────────────────────
+    Route::post('rounds/{round}/reviewers/accept',   [RoundReviewerController::class, 'accept']);
+    Route::post('rounds/{round}/reviewers/decline',  [RoundReviewerController::class, 'decline']);
+    Route::post('rounds/{round}/reviewers/{reviewer}/assign-applications', [RoundReviewerController::class, 'assignApplications']);
+    Route::post('rounds/{round}/applications/{application}/start-review',  [RoundReviewerController::class, 'startReview']);
+    Route::get('rounds/{round}/my-applications',     [RoundReviewerController::class, 'myAssignedApplications']);
+
     Route::get('reviewer/orders', [ReviewerOrderController::class, 'myOrders']);
     Route::get('rounds/{round}/reviewer-orders', [ReviewerOrderController::class, 'roundOrders']);
     Route::post('reviewer-orders/{order}/deliver', [ReviewerOrderController::class, 'deliver']);
@@ -248,13 +254,6 @@ Route::prefix('/programs')->middleware(['program', 'program.response'])->group(f
         Route::get('/applications/{app}/analytics/overview', [MEAnalyticsController::class, 'meOverview']);
         Route::get('/applications/{app}/analytics/impact', [MEAnalyticsController::class, 'applicationImpact']);
 
-
-        // Add to routes/api/programs.php
-        Route::post('rounds/{round}/reviewers/accept',   [RoundReviewerController::class, 'accept']);
-        Route::post('rounds/{round}/reviewers/decline',  [RoundReviewerController::class, 'decline']);
-        Route::post('rounds/{round}/reviewers/{reviewer}/assign-applications', [RoundReviewerController::class, 'assignApplications']);
-        Route::post('rounds/{round}/applications/{application}/start-review',  [RoundReviewerController::class, 'startReview']);
-        Route::get('rounds/{round}/my-applications',     [RoundReviewerController::class, 'myAssignedApplications']);
     });
 
 });
