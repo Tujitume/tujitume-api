@@ -310,10 +310,14 @@ class UserController extends Controller
             $validated = $request->validate([
                 'first_name' => 'sometimes|required|string|max:100',
                 'last_name' => 'sometimes|required|string|max:100',
-                'mname' => 'nullable|string|max:100',
-                'dob' => 'nullable|date',
-                'gender' => 'nullable|string|in:Male,Female,other',
-                'image' => 'nullable|file|mimes:jpg,jpeg,png,webp|max:2048',
+                'display_name' => 'sometimes|required|string|max:100',
+                'country' => 'sometimes|required|string|max:100',
+                'city' => 'sometimes|required|string|max:100',
+                'website' => 'sometimes|required|url|max:255',
+                'dob' => 'sometimes|date',
+                'phone' => 'sometimes|required|string|max:20',
+                'gender' => 'sometimes|required|string|in:Male,Female,other',
+                'image' => 'sometimes|file|mimes:jpg,jpeg,png,webp|max:2048',
             ]);
 
             $user = Auth::user();
@@ -331,7 +335,7 @@ class UserController extends Controller
 
             $user->update($data);
 
-            return response()->json(['status' => 200, 'message' => 'Profile updated successfully.'], 200);
+            return response()->json(['message' => 'Profile updated successfully.'], 200);
 
         } catch (Exception $e) {
             foreach ($uploadedFiles as $file) {

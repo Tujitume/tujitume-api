@@ -47,7 +47,7 @@ Route::get('/transactions', [AccountController::class, 'transactions']);
 Route::get('/withdraw-history', [AccountController::class, 'withdraws']);
 
 Route::get('profile/{id}', [UserController::class, 'profile']);
-Route::post('profile/edit/{id}', [UserController::class, 'updateProfile']);
+Route::patch('profile/update/{id}', [UserController::class, 'updateProfile']);
 
 // Settings
 
