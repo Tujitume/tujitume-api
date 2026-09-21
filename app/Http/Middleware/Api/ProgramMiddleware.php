@@ -21,6 +21,7 @@ class ProgramMiddleware
         $method = $request->method();;
         $route_name = $lastSegment = $this->getLastRouteSegment(Route::current()?->uri());
         $isOrgnizationUser = Auth::user()?->user_type_id === 4;
+        $isEntrepreneur = Auth::user()?->user_type_id === 1;
 
         $user = Auth::user();
         if (! $user) {
@@ -31,7 +32,7 @@ class ProgramMiddleware
         // KYC verification required for POST requests
         $user->load('kycVerification');
 
-        if ($isOrgnizationUser && $user->kycVerification?->status !== 'verified') {
+        if ( ($isOrgnizationUser || $isEntrepreneur) && $user->kycVerification?->status !== 'verified') {
             return response()->json([
                 'message' => 'KYC verification is required to access program functionality.',
                 'status' => 403,

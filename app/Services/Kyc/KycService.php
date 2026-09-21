@@ -176,7 +176,7 @@ class KycService
                 'id_expiry_date', 
                 'nationality',
                 //'physical_address', 
-                'county_region',
+                //'county_region',
                 //'tax_pin'
             ],
 

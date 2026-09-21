@@ -1,5 +1,6 @@
 <?php
 namespace App\Service\Balance;
+use App\Service\Misc\ErrorLogService;
 
 class CurrencyConverter
 {
@@ -30,7 +31,12 @@ class CurrencyConverter
             return $response['rates']['USD'];
             //echo '<pre>'; print_r($response); echo '<pre>';
         } catch (\Exception $e) {
-            return response()->json(['status' => 400, 'message' => $e->getMessage()]);
+
+            ErrorLogService::report($e, [
+                'input' => request()->except(['password', 'token']),
+            ]);
+            
+            return false;
         }
     }
 
@@ -61,7 +67,12 @@ class CurrencyConverter
             return $response['rates']['KES'];
             //echo '<pre>'; print_r($response); echo '<pre>';
         } catch (\Exception $e) {
-            return response()->json(['status' => 400, 'message' => $e->getMessage()]);
+
+            ErrorLogService::report($e, [
+                'input' => request()->except(['password', 'token']),
+            ]);
+            
+            return false;
         }
     }
 

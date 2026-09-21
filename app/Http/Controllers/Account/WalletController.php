@@ -48,7 +48,7 @@ class WalletController extends Controller
             $tujitume_fee = (float) Setting::where('key', 'tujitume_fee')->first()?->value ?? 3.0;
             $tujitume_fee = (float) ($tujitume_fee / 100);
             return response()->json([
-                'rate' => $rate,
+                'rate' => $rate ?? 'Unable to load rate.',
                 'tujitume_fee' => $tujitume_fee
             ], 200);
 
@@ -183,7 +183,7 @@ class WalletController extends Controller
 
 
             if(!$seller){
-                return response()->json(['message' =>  'User not found.', 'status' => 404]);
+                return response()->json(['message' =>  'User not found.'], 404);
             }
 
             if(!$seller->completed_onboarding) {
@@ -205,7 +205,7 @@ class WalletController extends Controller
                 ]);
 
                 $account_id = $account['id'];
-                $seller->update(['connect_id' => $account_id]);
+                $seller->update(['stripe_connect_id' => $account_id]);
 
                 $account_links = $this->Client->accountLinks->create([
                     'account' => $account_id,
@@ -214,11 +214,22 @@ class WalletController extends Controller
                     'type' => 'account_onboarding',
                 ]);
 
-                redirect()->to($account_links->url)->send();
-                //echo "<script>window.location.href='$account_links->url'</script>";
+                return response()->json([
+                    'success' => true,
+                    'data' => [
+                        'url' => $account_links->url, 'type' => 'onboarding',
+                    ],
+                ]);
             }
-            $login_link = $this->Client->accounts->createLoginLink($seller->connect_id);
-            return redirect($login_link->url);
+
+            $loginLink = $this->Client->accounts->createLoginLink($seller->stripe_connect_id);
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'url' => $loginLink->url, 'type' => 'login',
+                ],
+            ]);
         }
         catch(\Exception $e){
             ErrorLogService::report($e, [
@@ -230,7 +241,6 @@ class WalletController extends Controller
 
             return response()->json([
                 'message' => 'Something went wrong, please try again later.',
-                'status' => 400
             ], 500);
         }
     }
@@ -487,7 +497,7 @@ class WalletController extends Controller
                     "amount" => $transaction->net, //100 * 100,
                     "currency" => 'USD',
                     "source_transaction" => $charge->id,
-                    'destination' => $user->connect_id
+                    'destination' => $user->stripe_connect_id
                 ]);
                 $payment->update(['status' => 'transferred']);
 

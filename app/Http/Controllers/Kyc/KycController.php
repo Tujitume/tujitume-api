@@ -55,13 +55,6 @@ class KycController extends Controller
     {
         $user = Auth::user();
 
-        if($user->user_type_id === 1){
-            if(!$user->organization_id){
-                return ApiResponseResource::error('KYC cannot be submitted without an organization.', null, 422);
-
-            }
-        }
-
         $verification = $this->requireCurrent($request);
         if(!$verification){
             return ApiResponseResource::error('KYC has not been started.', null, 404);

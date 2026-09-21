@@ -17,7 +17,7 @@ use App\Http\Controllers\Misc\PaymentMethodController;
 use App\Http\Controllers\Mpesa\MpesaPollingController;
 
 // Onboarding Routes | Stripe
-Route::get('/connect/{id}', [WalletController::class, 'stripeOnboardingInitiate'])->name('connect.stripe');
+Route::post('/connect/{id}', [WalletController::class, 'stripeOnboardingInitiate'])->name('connect.stripe');
 Route::get('/saveStripe/{token}', [WalletController::class, 'onboardingSuccess'])->name('return.stripe');
 
 // LIPR Onboarding & Subscription
