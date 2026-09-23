@@ -480,7 +480,7 @@ class UserController extends Controller
             'phone' => ['required', 'string', 'max:20'],
             'password' => ['required', 'confirmed', Password::min(8)->mixedCase()->numbers()],
         ]);
-
+ 
         try {
 
             $user = null;

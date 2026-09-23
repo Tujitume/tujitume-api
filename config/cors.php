@@ -32,6 +32,11 @@ return [
 
     'allowed_headers' => ['*'],
 
+    'allowed_origins_patterns' => [
+        '/^https:\/\/.*\.ngrok-free\.dev(:\d+)?$/',
+        '/^https:\/\/.*\.trycloudflare\.com(:\d+)?$/',
+    ],
+
     'exposed_headers' => [],
 
     'max_age' => 0,
