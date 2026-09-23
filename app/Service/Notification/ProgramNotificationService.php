@@ -160,7 +160,7 @@ class ProgramNotificationService
 
             'round.scoring_assigned' => [
                 'title'         => 'New Applications to Review',
-                'message'       => "You have applications assinged to review for {$data['program_title']}",
+                'message'       => "You have applications assigned to review for {$data['program_title']}",
                 'email_subject' => 'Applications Assigned for Review',
                 'email_view'    => $this->view_base . 'reviewer_assigned_email',
                 // TODO: deep link to round review page when built
@@ -437,6 +437,14 @@ class ProgramNotificationService
                 'email_subject' => 'Round Scoring Complete — Ready to Finalize',
                 'email_view'    => $this->view_base . 'reviewer_scoring_complete',
                 'link'          => 'overview/programs/rounds/' . ($data['order_id'] ?? ''),
+            ],
+
+            'reviewer.accepted' => [
+                'title'         => 'Reviewer Accepted Assignment',
+                'message'       => "{$data['reviewer_name']} accepted the review assignment for {$data['round_name']} in {$data['program_title']}.",
+                'email_subject' => 'Reviewer Accepted Assignment',
+                'email_view'    => $this->view_base . 'reviewer_accepted',
+                'link'          => 'overview/programs/rounds',
             ],
 
             'reviewer.work_delivered' => [

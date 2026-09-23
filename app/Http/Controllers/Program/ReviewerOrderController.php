@@ -16,7 +16,7 @@ use Illuminate\Validation\ValidationException;
 class ReviewerOrderController extends Controller
 {
     public function __construct(
-        private ProgramNotificationService $notification,
+        
     ) {}
 
     // ─── List reviewer's own orders ──────────────────────────────

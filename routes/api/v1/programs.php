@@ -151,6 +151,7 @@ Route::prefix('/programs')->middleware(['program', 'program.response'])->group(f
         Route::delete('/answers/{question_id}', [RoundQuestionController::class, 'deleteAnswer']);
     });
 
+    //Route::get('reviewer/assigned-rounds', [RoundReviewerController::class, 'rounds']); // added by owen
     Route::get('reviewer/assigned-rounds', [RoundReviewerController::class, 'rounds']); // added by owen
 
     Route::apiResource('rounds/{round}/reviewers', RoundReviewerController::class)->shallow();
@@ -163,12 +164,16 @@ Route::prefix('/programs')->middleware(['program', 'program.response'])->group(f
     Route::post('rounds/{round}/applications/{application}/start-review',  [RoundReviewerController::class, 'startReview']);
     Route::get('rounds/{round}/my-applications',     [RoundReviewerController::class, 'myAssignedApplications']);
 
-    Route::get('reviewer/orders', [ReviewerOrderController::class, 'myOrders']);
+
+    Route::get('reviewer/assigned-requests', [RoundReviewerController::class, 'myAssignedRequests']);
+
     Route::get('rounds/{round}/reviewer-orders', [ReviewerOrderController::class, 'roundOrders']);
     Route::post('reviewer-orders/{order}/deliver', [ReviewerOrderController::class, 'deliver']);
     Route::post('reviewer-orders/{order}/request-modification', [ReviewerOrderController::class, 'requestModification']);
     Route::post('reviewer-orders/{order}/approve', [ReviewerOrderController::class, 'approve']);
     Route::get('reviewer-orders/{order}/payment-status', [ReviewerOrderController::class, 'paymentStatus']);
+
+    Route::get('reviewer/orders', [ReviewerOrderController::class, 'myOrders']);
 
     // ROUND REQUIRED DOCUMENTS
     Route::post('applications/{application_id}/rounds/{round_id}/documents', [RoundDocumentController::class, 'store']);

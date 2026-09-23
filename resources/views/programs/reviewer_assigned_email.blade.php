@@ -22,7 +22,7 @@
             @endif
 
             @if(!empty($proposed_fee))
-            <p style="margin:0.5rem 0;"><strong>Proposed Fee per application:</strong> {{ implode(', ', $proposed_fee) }}</p>
+            <p style="margin:0.5rem 0;"><strong>Proposed Fee per application:</strong> {{ $proposed_fee }}</p>
             @endif
 
 

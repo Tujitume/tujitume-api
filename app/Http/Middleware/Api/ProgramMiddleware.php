@@ -29,18 +29,20 @@ class ProgramMiddleware
         }
 
 
+        $user->load('organizationRole.role');
+        $role = $user->organizationRole?->role?->name;
+
         // KYC verification required for POST requests
         $user->load('kycVerification');
 
-        if ( ($isOrgnizationUser || $isEntrepreneur) && $user->kycVerification?->status !== 'verified') {
+        if ( ( ($isOrgnizationUser && $role ==='super-admin') || $isEntrepreneur) && $user->kycVerification?->status !== 'verified') {
             return response()->json([
                 'message' => 'KYC verification is required to access program functionality.',
                 'status' => 403,
             ], 403);
         }
 
-        $user->load('organizationRole.role');
-        $role = $user->organizationRole?->role?->name;
+    
         $editorForbidden = ['delete-program', 'create-program', 'update-profile','delete/role-user','delete-user'];
         $viewerForbidden = [ 'accept', 'reject', 'update-program', 'visibility','store-watchlist','delete/role-user','delete-user'];
 

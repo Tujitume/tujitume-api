@@ -88,7 +88,7 @@ return new class extends Migration
             // new
             $table->foreignId('current_round_id')->nullable()->constrained('program_rounds');
 
-            $table->enum('round_status', ['draft', 'submitted', 'under_review', 'scored', 'advanced', 'not_selected', 'ineligible', 'withdrawn'])->default('draft');
+            $table->enum('round_status', ['draft', 'submitted', 'under_review', 'assigned', 'scored', 'advanced', 'not_selected', 'ineligible', 'withdrawn'])->default('draft');
 
             $table->decimal('average_score', 5, 2)->nullable();
             $table->boolean('is_eligible_to_advance')->default(false);

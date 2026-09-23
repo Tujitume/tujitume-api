@@ -23,7 +23,7 @@ return new class extends Migration
         $table->decimal('fee_kes', 10, 2)->nullable();
         $table->string('currency', 10)->default('USD');
         $table->enum('work_status', [
-            'assigned', 'in_progress', 'delivered',
+            'pending','assigned', 'in_progress', 'delivered',
             'modification_requested', 'approved', 'rejected',
         ])->default('assigned');
         $table->text('delivery_note')->nullable();

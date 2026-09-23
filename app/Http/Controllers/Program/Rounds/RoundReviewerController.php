@@ -6,6 +6,9 @@ use App\Http\Controllers\Controller;
 use App\Models\Auth\User;
 use App\Models\Programs\Rounds\ProgramRound;
 use App\Models\Programs\Rounds\RoundReviewer;
+use App\Models\Programs\ProgramApplication;
+
+use App\Models\Programs\Rounds\ReviewerApplicationAssignment;
 use App\Models\ReviewerOrder;
 use App\Service\Account\RegisterService;
 use App\Service\Misc\ErrorLogService;
@@ -240,6 +243,21 @@ class RoundReviewerController extends Controller
 
     // ____________________________________________Complex Methods___________________________________________________
 
+
+    // Reviewer fetch assignments requests for a round (to accept or decline)
+    public function myAssignedRequests()
+    {
+        $userId = auth()->id();
+
+        $assignments = RoundReviewer::where('user_id', $userId)
+            ->with([
+                'programRound'
+            ])
+            ->get();
+
+        return response()->json(['assignment_requests' => $assignments], 200);
+    }
+
     // ─── Reviewer accepts assignment ─────────────────────────────
     // POST /programs/rounds/{round}/reviewers/accept
     public function accept(ProgramRound $round)
@@ -281,6 +299,16 @@ class RoundReviewerController extends Controller
 
             DB::commit();
 
+            // Let the program owner know the reviewer is now available to work.
+            $this->programNotification->send('reviewer.accepted', [
+                $round->program->owner,
+            ], [
+                'program_id'    => $round->program_id,
+                'program_title' => $round->program->program_title,
+                'round_name'    => $round->round_name,
+                'reviewer_name' => auth()->user()->first_name . ' ' . auth()->user()->last_name,
+            ]);
+
             return response()->json([
                 'message'        => 'Assignment accepted.',
                 'queue_position' => $queuePosition,
@@ -312,13 +340,14 @@ class RoundReviewerController extends Controller
             ->where('user_id', $userId)
             ->update(['acceptance_status' => 'declined']);
 
-        // Notify program owner
-        $this->grantNotification->send('reviewer.declined', [
+        // Notify the program owner that another reviewer may need to be assigned.
+        $this->programNotification->send('reviewer.declined', [
             $round->program->owner
         ], [
+            'program_id'    => $round->program_id,
             'program_title' => $round->program->program_title,
             'round_name'    => $round->round_name,
-            'reviewer_name' => auth()->user()->first_name,
+            'reviewer_name' => auth()->user()->first_name . ' ' . auth()->user()->last_name,
         ]);
 
         return response()->json(['message' => 'Assignment declined.'], 200);
@@ -344,22 +373,58 @@ class RoundReviewerController extends Controller
                 'application_ids.*' => 'integer|exists:program_applications,id',
             ]);
 
-            $assigned = 0;
-            foreach ($validated['application_ids'] as $appId) {
-                // Remove existing assignment for this app in this round
-                ReviewerApplicationAssignment::where('round_id', $round->id)
-                    ->where('application_id', $appId)
-                    ->delete();
+            $isRoundReviewer = DB::table('round_reviewers')
+                ->where('round_id', $round->id)
+                ->where('user_id', $reviewer->id)
+                ->first();
 
-                ReviewerApplicationAssignment::create([
-                    'round_id'       => $round->id,
-                    'reviewer_id'    => $reviewer->id,
-                    'application_id' => $appId,
-                    'status'         => 'assigned',
-                    'assigned_at'    => now(),
-                ]);
-                $assigned++;
+            if (! $isRoundReviewer) {
+                return response()->json(['error' => 'The selected user is not assigned as a reviewer for this round.'], 422);
             }
+
+            if ($isRoundReviewer->acceptance_status !== 'accepted') {
+                return response()->json(['error' => 'Reviewer must accept the assignment before applications can be assigned.'], 422);
+            }
+
+            $applicationIds = collect($validated['application_ids'])->unique()->values();
+
+            $applicationsBelongToRound = ProgramApplication::whereIn('id', $applicationIds)
+                ->where('current_round_id', $round->id)
+                ->count() === $applicationIds->count();
+
+            if (! $applicationsBelongToRound) {
+                return response()->json(['error' => 'Each application must belong to this round.'], 422);
+            }
+
+            DB::transaction(function () use ($applicationIds, $round, $reviewer) {
+                foreach ($applicationIds as $appId) {
+                    // One reviewer owns an application's assignment for a round.
+                    ReviewerApplicationAssignment::where('round_id', $round->id)
+                        ->where('application_id', $appId)
+                        ->delete();
+
+                    $assignment = ReviewerApplicationAssignment::create([
+                        'round_id'       => $round->id,
+                        'reviewer_id'    => $reviewer->id,
+                        'application_id' => $appId,
+                        'status'         => 'assigned',
+                        'assigned_at'    => now(),
+                    ]);
+
+                    $assignment->application->round_status = 'assigned';
+                    $assignment->application->save();
+                }
+            });
+
+            $assigned = $applicationIds->count();
+
+            // This existing event sends both the in-app notification and email.
+            $this->programNotification->send('round.scoring_assigned', [$reviewer], [
+                'program_id'    => $round->program_id,
+                'program_title' => $round->program->program_title,
+                'round_name'    => $round->round_name,
+                'max_apps'      => $assigned,
+            ]);
 
             return response()->json([
                 'message'  => "{$assigned} application(s) assigned to reviewer.",
@@ -435,7 +500,7 @@ class RoundReviewerController extends Controller
         $rounds = ProgramRound::with([
             'questions',
             'applications' => function ($query) {
-                $query->whereIn('round_status', ['pending','submitted', 'under_review', 'scored']);
+                $query->whereIn('round_status', ['pending', 'assigned', 'submitted', 'under_review', 'scored']);
             },
             'applications.roundAnswers',
             'applications.roundDocuments',
@@ -449,20 +514,26 @@ class RoundReviewerController extends Controller
 
     // ─── Get applications assigned to reviewer for a round ────────
     // GET /programs/rounds/{round}/my-applications
-    public function myAssignedApplications(ProgramRound $round)
+    public function myAssignedApplications()
     {
         $userId = auth()->id();
 
-        $assignments = ReviewerApplicationAssignment::where('round_id', $round->id)
-            ->where('reviewer_id', $userId)
-            ->with(['application'])
-            ->get()
-            ->map(fn($a) => [
-                ...$a->application->toArray(),
-                'review_status' => $a->status,
-                'started_at'    => $a->started_at,
-                'completed_at'  => $a->completed_at,
-            ]);
+        $assignments = ReviewerApplicationAssignment::where('reviewer_id', $userId)
+            ->with([
+                'application.roundAnswers',
+                'application.roundDocuments',
+                'application.scores' => function ($query) use ($userId) {
+                    $query->where('reviewer_id', $userId);
+                },
+            ])
+            ->get();
+
+            // ->map(fn($a) => [
+            //     ...$a->application->toArray(),
+            //     //'review_status' => $a->status,
+            //     'started_at'    => $a->started_at,
+            //     'completed_at'  => $a->completed_at,
+            // ]);
 
         return response()->json(['data' => $assignments], 200);
     }
