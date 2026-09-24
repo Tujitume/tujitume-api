@@ -52,7 +52,7 @@ class ServiceOfferController extends Controller
             $this->notification->create(
                 $service->user_id,
                 $booker->id,
-                "{$booker->fname} made an offer of \${$validated['offered_price']} on {$service->name} (original \${$service->price})",
+                "{$booker->first_name} made an offer of \${$validated['offered_price']} on {$service->name} (original \${$service->price})",
                 'dashboard.serviceProvider.myBookings',
                 'service'
             );
@@ -62,7 +62,7 @@ class ServiceOfferController extends Controller
                 'services.offer_received',
                 [
                     'business_name'  => $service->name,
-                    'customer_name'  => $booker->fname . ' ' . $booker->lname,
+                    'customer_name'  => $booker->first_name . ' ' . $booker->last_name,
                     'offered_price'  => $validated['offered_price'],
                     'original_price' => $service->price,
                     'discount'       => $discountPercent,

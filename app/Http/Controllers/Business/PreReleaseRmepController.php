@@ -284,7 +284,7 @@ class PreReleaseRmepController extends Controller
                 $req->status = 'approved'; $req->save();
 
                 // Notify BO
-                $text = 'Milestone '. $req->milestone->title. ' has been approved by '.$investor->fname.' '.$investor->lname ;
+                $text = 'Milestone '. $req->milestone->title. ' has been approved by '.$investor->first_name.' '.$investor->last_name ;
                 $this->notification->create(
                     $req->milestone->listing->user_id, null, $text, 'milestones', 'milestone'
                 );

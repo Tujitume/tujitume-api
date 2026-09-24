@@ -38,7 +38,7 @@ class RoundReviewerController extends Controller
             ->map(function ($user) {
                 return [
                     'user_id' => $user->id,
-                    'name' => $user->fname.' '.$user->lname,
+                    'name' => $user->first_name.' '.$user->last_name,
                     'email' => $user->email,
                     'image' => $user->image,
                     'reviewer_type' => $user->pivot->reviewer_type,
@@ -110,6 +110,7 @@ class RoundReviewerController extends Controller
                 'assigned_percentage' => 'nullable|integer|min:1|max:100',
                 'expertise_tags'      => 'nullable|array',
                 'reviewer_fee'        => 'nullable|numeric|min:0',
+                'fee_type'            => 'nullable|in:flat,per_application',
                 'fee_currency'        => 'nullable|string|max:10',
             ]);
 
@@ -156,6 +157,7 @@ class RoundReviewerController extends Controller
                     'assigned_percentage' => $validated['assigned_percentage'] ?? null,
                     'expertise_tags'      => isset($validated['expertise_tags']) ? json_encode($validated['expertise_tags']) : null,
                     'reviewer_fee'        => $validated['reviewer_fee'] ?? null,
+                    'fee_type'            => $validated['fee_type'] ?? 'flat',
                     'fee_currency'        => $validated['fee_currency'] ?? 'USD',
                     'acceptance_status'   => 'pending',
                 ]);
@@ -170,21 +172,28 @@ class RoundReviewerController extends Controller
                     'expertise_tags'      => isset($validated['expertise_tags'])
                         ? json_encode($validated['expertise_tags']) : null,
                     'reviewer_fee'        => $validated['reviewer_fee'] ?? null,
+                    'fee_type'            => $validated['fee_type'] ?? 'flat',
                     'fee_currency'        => $validated['fee_currency'] ?? 'USD',
                     'acceptance_status'   => 'pending',
                 ]);
 
             }
 
-            // Create ReviewerOrder
+            $roundReviewer = RoundReviewer::where('round_id', $round->id)->where('user_id', $userId)->firstOrFail();
+            // One round order represents this reviewer's complete round workload.
             ReviewerOrder::create([
                 'organization_id' => $round->program->organization_id,
                 'reviewer_id'     => $userId,
                 'program_id'      => $round->program_id,
                 'order_type'      => 'round_review',
                 'round_id'        => $round->id,
-                'fee_usd'         => $validated['reviewer_fee'] ?? 10,
+                'round_reviewer_id' => $roundReviewer->id,
+                'fee_usd'         => ($validated['fee_type'] ?? 'flat') === 'per_application'
+                    ? 0 : ($validated['reviewer_fee'] ?? 0),
+
+                'fee_type'        => $validated['fee_type'] ?? 'per_application',
                 'work_status'     => 'assigned',
+                'acceptance_status' => 'pending',
                 'payment_status'  => 'unpaid',
                 'deadline'        => $round->close_date ?? null,
             ]);
@@ -251,7 +260,8 @@ class RoundReviewerController extends Controller
 
         $assignments = RoundReviewer::where('user_id', $userId)
             ->with([
-                'programRound'
+                'programRound',
+                'reviewerOrder'
             ])
             ->get();
 
@@ -276,6 +286,9 @@ class RoundReviewerController extends Controller
         if ($pivot->acceptance_status === 'accepted') {
             return response()->json(['error' => 'Already accepted'], 422);
         }
+        if ($pivot->acceptance_status !== 'pending') {
+            return response()->json(['error' => 'This assignment is no longer awaiting a response.'], 422);
+        }
 
         DB::beginTransaction();
         try {
@@ -294,10 +307,45 @@ class RoundReviewerController extends Controller
                     'queue_position'    => $queuePosition,
                 ]);
 
+            $order = ReviewerOrder::where('round_reviewer_id', $pivot->id)->lockForUpdate()->first();
+            if (!$order) {
+                throw new \RuntimeException('Reviewer order not found for this round assignment.');
+            }
+            $order->update(['acceptance_status' => 'accepted', 'accepted_at' => now()]);
+
             // Trigger app assignment based on method
             $this->assignApplicationsToReviewer($round, $userId);
 
+            // Load balanced assignment can change existing reviewers' application counts too.
+            ReviewerOrder::where('round_id', $round->id)->where('order_type', 'round_review')
+                ->get()->each->refreshRoundReviewFee();
+
+            // Calaculate total reviewer fees and check wallet balance
+            $totalReviewerFees = ReviewerOrder::where('round_id', $round->id)
+                ->where('order_type', 'round_review')->where('acceptance_status', 'accepted')
+                ->where('payment_status', '!=', 'completed')->sum('fee_usd');
+
+            $wallet    = $round->program->wallet;
+            $available = $wallet?->balance ?? 0;
+            $required  = $totalReviewerFees;
+            $sufficient = $available >= $required;
+
+
             DB::commit();
+
+            if(!$sufficient) {
+                $this->programNotification->send('reviewer.accepted_insufficient_funds', [
+                    $round->program->owner,
+                ], [
+                    'program_id'    => $round->program_id,
+                    'program_title' => $round->program->program_title,
+                    'round_name'    => $round->round_name,
+                    'required'      => $required,
+                    'available'     => $available,
+                    'shortfall'     => $required - $available,
+                    'currency'      => 'USD', //KES
+                ]);
+            }
 
             // Let the program owner know the reviewer is now available to work.
             $this->programNotification->send('reviewer.accepted', [
@@ -326,6 +374,16 @@ class RoundReviewerController extends Controller
     {
         $userId = auth()->id();
 
+        $pivot = RoundReviewer::where('round_id', $round->id)->where('user_id', $userId)->first();
+
+        if (!$pivot) {
+            return response()->json(['error' => 'Not assigned to this round'], 404);
+        }
+
+        if ($pivot->acceptance_status !== 'pending') {
+            return response()->json(['error' => 'This assignment is no longer awaiting a response.'], 422);
+        }
+
         $exists = DB::table('round_reviewers')
             ->where('round_id', $round->id)
             ->where('user_id', $userId)
@@ -339,6 +397,8 @@ class RoundReviewerController extends Controller
             ->where('round_id', $round->id)
             ->where('user_id', $userId)
             ->update(['acceptance_status' => 'declined']);
+
+        $pivot?->reviewerOrder?->update(['acceptance_status' => 'declined']);
 
         // Notify the program owner that another reviewer may need to be assigned.
         $this->programNotification->send('reviewer.declined', [
@@ -406,6 +466,7 @@ class RoundReviewerController extends Controller
                     $assignment = ReviewerApplicationAssignment::create([
                         'round_id'       => $round->id,
                         'reviewer_id'    => $reviewer->id,
+                        'reviewer_order_id' => ReviewerOrder::where('round_id', $round->id)->where('reviewer_id', $reviewer->id)->value('id'),
                         'application_id' => $appId,
                         'status'         => 'assigned',
                         'assigned_at'    => now(),
@@ -414,6 +475,9 @@ class RoundReviewerController extends Controller
                     $assignment->application->round_status = 'assigned';
                     $assignment->application->save();
                 }
+
+                ReviewerOrder::where('round_id', $round->id)->where('order_type', 'round_review')
+                    ->get()->each->refreshRoundReviewFee();
             });
 
             $assigned = $applicationIds->count();
@@ -453,6 +517,11 @@ class RoundReviewerController extends Controller
             return response()->json(['error' => 'This application is not assigned to you'], 403);
         }
 
+        $roundReviewer = RoundReviewer::where('round_id', $round->id)->where('user_id', $userId)->first();
+        if (!$roundReviewer || $roundReviewer->acceptance_status !== 'accepted') {
+            return response()->json(['error' => 'Accept the round assignment before starting review.'], 422);
+        }
+
         if ($assignment->status === 'completed') {
             return response()->json(['error' => 'Already reviewed'], 422);
         }
@@ -472,6 +541,8 @@ class RoundReviewerController extends Controller
             'status'     => 'in_review',
             'started_at' => now(),
         ]);
+
+        $assignment->reviewerOrder()->update(['work_status' => 'in_progress']);
 
         // Mark reviewer as started in pivot
         DB::table('round_reviewers')
@@ -630,10 +701,12 @@ class RoundReviewerController extends Controller
     // ─── PRIVATE: Wallet funds check ──────────────────────────────
     private function checkWalletFundsForReviewers(ProgramRound $round): array
     {
-        $totalReviewerFees = DB::table('round_reviewers')
-            ->where('round_id', $round->id)
+        $totalReviewerFees = ReviewerOrder::where('round_id', $round->id)
+            ->where('order_type', 'round_review')
             ->where('acceptance_status', 'accepted')
-            ->sum('reviewer_fee');
+            ->where('payment_status', '!=', 'completed')
+            ->where('work_status', '!=', 'rejected')
+            ->sum('fee_usd');
 
         $wallet    = $round->program->wallet;
         $available = $wallet?->balance ?? 0;

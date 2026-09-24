@@ -20,4 +20,10 @@ class RoundReviewer extends Model
     {
         return $this->belongsTo(User::class, 'user_id', 'id');
     }
+
+    public function reviewerOrder()
+    {
+        return $this->hasOne(\App\Models\ReviewerOrder::class, 'round_reviewer_id');
+    }
+
 }

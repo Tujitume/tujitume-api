@@ -15,11 +15,11 @@ class Transactions extends Model
 
     public function user()
     {
-        return $this->belongsTo(User::class, 'user_id')->select(['id', 'fname', 'lname']);
+        return $this->belongsTo(User::class, 'user_id')->select(['id', 'first_name', 'last_name']);
     }
 
     public function recipient()
     {
-        return $this->belongsTo(User::class, 'recipient_id')->select(['id', 'fname', 'lname']);
+        return $this->belongsTo(User::class, 'recipient_id')->select(['id', 'first_name', 'last_name']);
     }
 }

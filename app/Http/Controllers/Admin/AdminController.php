@@ -404,7 +404,7 @@ class AdminController extends Controller
     {
         $disputes = Dispute::latest()->get();
         foreach ($disputes as $disp) {
-             $opened_by = User::select('fname', 'lname', 'email')->find($disp->user_id);
+             $opened_by = User::select('first_name', 'last_name', 'email')->find($disp->user_id);
              if($opened_by){
                 $disp->user = $opened_by;
              }
@@ -591,8 +591,8 @@ class AdminController extends Controller
     {
         try {
             $searchText = trim($request->text);
-            $users = User::where('fname', 'like', "%{$searchText}%")
-                ->orWhere('lname', 'like', "%{$searchText}%")
+            $users = User::where('first_name', 'like', "%{$searchText}%")
+                ->orWhere('last_name', 'like', "%{$searchText}%")
                 ->orWhere('email', 'like', "%{$searchText}%")
                 ->orWhere('website', 'like', "%{$searchText}%")
                 ->get();

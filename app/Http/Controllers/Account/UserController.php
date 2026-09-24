@@ -61,10 +61,10 @@ class UserController extends Controller
 
         try {
 
-            $data = $user->only(['email', 'id', 'fname', 'lname', 'gender', 'image']);
+            $data = $user->only(['email', 'id', 'first_name', 'last_name', 'gender', 'image']);
             $data['from_id'] = $authId;
             $data['to_id'] = $user->id;
-            $data['sender'] = "{$user->fname} {$user->lname}";
+            $data['sender'] = "{$user->first_name} {$user->last_name}";
             $data['messages'] = [];
             $data['service_id'] = 0;
 

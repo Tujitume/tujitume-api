@@ -296,8 +296,8 @@ class CheckoutStripeController extends Controller
                     $accepted_bid->update(['status' => 'manager_assigned', 'project_manager'=>$owner->id ]);
                     $b_owner = User::select('id','email')->where('id',$accepted_bid->owner_id)->first();
 
-                    $investor_name = $user->fname. ' '.$user->lname;
-                    $manager = $owner->fname. ' '.$owner->lname; // Manager == Service Owner
+                    $investor_name = $user->first_name. ' '.$user->last_name;
+                    $manager = $owner->first_name. ' '.$owner->last_name; // Manager == Service Owner
 
                     // N o t i f i c a t i o n
                     $text = 'Project Manager '.$manager.' has been assigned to help verify the equipment from the investor '.$investor_name;
@@ -341,12 +341,12 @@ class CheckoutStripeController extends Controller
             $infoOwner=[
                 'amount'=>$service->price, 'business'=>$service->name,
                 'note' => 'A message has also been sent to the client from you.',
-                'customer'=>$user->fname, 'id'=>$booking->id
+                'customer'=>$user->first_name, 'id'=>$booking->id
             ];
             $infoCustomer=[
                 'amount'=>$service->price, 'business'=>$service->name,
                 'note' => 'A message has also been sent to your dashboard inbox from the Service Provider.',
-                'customer'=>$user->fname, 'id'=>$booking->id
+                'customer'=>$user->first_name, 'id'=>$booking->id
             ];
 
 
@@ -366,7 +366,7 @@ class CheckoutStripeController extends Controller
                     'booker_id' => $user->id,
                     'service_id' => $service->id,
                     'service_owner_id' => $owner->id,
-                    'msg' => 'Hi ' . $user->fname. ', my name is ' . $owner->fname .'. Thank you for booking my service, ' .$service->name. '. I\'m excited to work with you and will be in touch shortly with the next steps.',
+                    'msg' => 'Hi ' . $user->first_name. ', my name is ' . $owner->first_name .'. Thank you for booking my service, ' .$service->name. '. I\'m excited to work with you and will be in touch shortly with the next steps.',
                     'to_id' => $user->id,
                     'from_id' => $owner->id
                 ]);
@@ -509,7 +509,7 @@ class CheckoutStripeController extends Controller
             }
 
             //NotificationService
-            $text = 'You have a new bid from '.$user->fname.' '.$user->lname;
+            $text = 'You have a new bid from '.$user->first_name.' '.$user->last_name;
             $this->notification->create(
                 $listing->user_id, $user->id, $text, 'investment-bids', 'investor'
             );
@@ -694,7 +694,7 @@ class CheckoutStripeController extends Controller
                 'business_name'=>$listing->name, 'bid_id'=> base64_encode($bid->id), 'type' => $bid->type
             ];
             $data = [
-                'investorName' => $bid->investor->fname,
+                'investorName' => $bid->investor->first_name,
                 'milestoneName' => $bid->milestone->title,
                 'reviewUrl' => 'https://beta.tujitume.com/dashboard/milestones',
             ];

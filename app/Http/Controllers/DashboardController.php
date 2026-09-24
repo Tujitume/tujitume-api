@@ -34,7 +34,7 @@ class DashboardController extends Controller
             return response()->json([
                 'investor'   => $user->user_type_id === 1,
                 'user_email' => $user->email,
-                'user_name'  => $user->fname . ' ' . $user->lname,
+                'user_name'  => $user->first_name . ' ' . $user->last_name,
                 'services'   => Services::where('user_id', $user->id)->get(),
             ]);
         }
@@ -109,7 +109,7 @@ class DashboardController extends Controller
             if (!$notifier) return false;
 
             $name = match($notice->type) {
-                'investor', 'customer' => ($notifier->fname ?? '') . ' ' . ($notifier->lname ?? ''),
+                'investor', 'customer' => ($notifier->first_name ?? '') . ' ' . ($notifier->last_name ?? ''),
                 'program'                 => 'Program',
                 default                 => 'Tujitume',
             };

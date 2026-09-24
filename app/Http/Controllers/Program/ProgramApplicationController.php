@@ -402,7 +402,7 @@ class ProgramApplicationController extends Controller
 
             // E M A I L
             $sme = Auth::user();
-            $smeName = $sme->fname. ' '. $sme->lname;
+            $smeName = $sme->first_name. ' '. $sme->last_name;
             $go_email = User::where('id', $program->user_id)->value('email');
 
             $info=[ 'program'=>$program->program_title, 'SME'=>$smeName ];
@@ -550,9 +550,9 @@ class ProgramApplicationController extends Controller
     {
         try{
             $pitch = ProgramApplication::with('program')->where('id',$pitch_id)->first();
-            $user = User::select('fname','lname')->where('id',$pitch->user_id)->first();
+            $user = User::select('first_name','last_name')->where('id',$pitch->user_id)->first();
 
-            $text = $user->fname.' '.$user->lname. 'Has requested funding to the Program'.$pitch->program->program_title;
+            $text = $user->first_name.' '.$user->last_name. 'Has requested funding to the Program'.$pitch->program->program_title;
             $notification = new NotificationService();
             $notification->create($pitch->program->user_id,$pitch->user_id,$text,
                 'dashboard.programOrg.applications','program_fund_request');
@@ -829,6 +829,9 @@ class ProgramApplicationController extends Controller
                     ]);
                 }
             }
+
+            \App\Models\ReviewerOrder::where('round_id', $round->id)
+                ->where('order_type', 'round_review')->get()->each->refreshRoundReviewFee();
         }
     }
 

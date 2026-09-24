@@ -33,6 +33,7 @@ class TransactionRecord
 
         $debitTypes = [
             'withdraw',
+            'transfer_to_program_wallet',
             'investment',
             'investment_awaiting',
             'service_fee',

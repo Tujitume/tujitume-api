@@ -13,7 +13,7 @@ class RmepVotes extends Model
 
     public function voter()
     {
-        return $this->belongsTo(User::class, 'investor_id')->select('id','fname','lname','email');
+        return $this->belongsTo(User::class, 'investor_id')->select('id','first_name','last_name','email');
     }
 
     public function rmep()

@@ -13,6 +13,6 @@ class MilestoneCommunications extends Model
 
     public function sender()
     {
-        return $this->belongsTo(User::class, 'sender_id')->select('id','user_type_id','fname','lname','email');
+        return $this->belongsTo(User::class, 'sender_id')->select('id','user_type_id','first_name','last_name','email');
     }
 }

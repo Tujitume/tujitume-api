@@ -289,7 +289,7 @@ class PayStackController extends Controller
                 $service = Services::select('id', 'name', 'user_id')
                 ->where('id',$mile->listing_id)->first();
                 $owner = User::select('email')->where('id', $service->user_id)->first();
-                $customer = User::select('fname','lname','email')->where('id',$investor_id)->first();
+                $customer = User::select('first_name','last_name','email')->where('id',$investor_id)->first();
 
                 //ASSET-related
                 if ($service->category == '0')
@@ -312,7 +312,7 @@ class PayStackController extends Controller
                 $update = ServiceBookingMilestone::where('id',$rep_id)->update([ 'status' => 'In Progress']);
                 $info=['name'=>$mile->title,  'amount'=>$mile->amount,
                 'business'=>$service->name, 's_id' => $service->id,
-                'customer'=>$customer->fname. ' '.$customer->lname ];
+                'customer'=>$customer->first_name. ' '.$customer->last_name ];
                 $user['to'] = $owner->email;//'sohaankane@gmail.com';
 
 

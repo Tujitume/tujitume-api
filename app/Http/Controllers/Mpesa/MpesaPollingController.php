@@ -512,8 +512,8 @@ class MpesaPollingController extends Controller
 
                     try{
                         //M. Assigned Alert, B_Owner & S_Owner
-                        $investor_name = $customer->fname. ' '.$customer->lname;
-                        $manager = $service->owner->fname. ' '.$service->owner->lname;
+                        $investor_name = $customer->first_name. ' '.$customer->last_name;
+                        $manager = $service->owner->first_name. ' '.$service->owner->last_name;
 
                         // Store mail jobs to run after commit
                         $mailJobs[] = [
@@ -582,7 +582,7 @@ class MpesaPollingController extends Controller
                     'amount'=>$service->price,
                     'business'=>$service->name,
                     's_id' => $service->id,
-                    'customer'=>$customer->fname,
+                    'customer'=>$customer->first_name,
                     'id'=>$milestone->booking_id,
                     'note'=>$milestone->note
                 ];

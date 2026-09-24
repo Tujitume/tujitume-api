@@ -107,6 +107,7 @@ return [
     ],
 
     'reviewer_order' => [
+        'pending'                => 'info',
         'assigned'               => 'info',
         'in_progress'            => 'warning',
         'delivered'              => 'warning',

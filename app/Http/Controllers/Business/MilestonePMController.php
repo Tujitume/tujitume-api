@@ -528,7 +528,7 @@ class MilestonePMController extends Controller
             );
 
             //Owner NotificationService
-            $text = 'Project manager '.$recipient->fname.' '.$recipient->lanme.' has been assigned for  Your Milestone ' . $milestone->title . ' to progress with the pre-release audit.';
+            $text = 'Project manager '.$recipient->first_name.' '.$recipient->last_name.' has been assigned for  Your Milestone ' . $milestone->title . ' to progress with the pre-release audit.';
             $this->notification->create(
                 $owner->id, null, $text, 'milestones', 'milestone'
             );
@@ -539,7 +539,7 @@ class MilestonePMController extends Controller
             $data = [
                 'boName' => $milestone->listing->name,
                 'milestoneName' => $milestone->title,
-                'pmName' => $recipient->fname . ' ' . $recipient->lname,
+                'pmName' => $recipient->first_name . ' ' . $recipient->last_name,
                 'reviewUrl' => 'https://beta.tujitume.com/dashboard/milestones',
             ];
             $this->emailService->send($subject, 'milestone.pre_release.pm_assigned', $data, $mail_to);
@@ -554,7 +554,7 @@ class MilestonePMController extends Controller
             );
 
             //Owner NotificationService
-            $text = 'Project manager '.$recipient->fname.' '.$recipient->lanme.' has been assigned for  Your Milestone ' . $milestone->title . ' to progress with the pre-release audit.';
+            $text = 'Project manager '.$recipient->first_name.' '.$recipient->last_name.' has been assigned for  Your Milestone ' . $milestone->title . ' to progress with the pre-release audit.';
             $this->notification->create(
                 $owner->id, null, $text, 'milestones', 'milestone'
             );
@@ -565,7 +565,7 @@ class MilestonePMController extends Controller
             $data = [
                 'boName' => $milestone->listing->name,
                 'milestoneName' => $milestone->title,
-                'pmName' => $recipient->fname . ' ' . $recipient->lname,
+                'pmName' => $recipient->first_name . ' ' . $recipient->last_name,
                 'reviewUrl' => 'https://beta.tujitume.com/dashboard/milestones',
             ];
             $this->emailService->send($subject, 'milestone.mid_milestone.pm_assigned', $data, $mail_to);
@@ -580,7 +580,7 @@ class MilestonePMController extends Controller
             );
 
             //Owner NotificationService
-            $text = 'Project manager '.$recipient->fname.' '.$recipient->lanme.' has been assigned for  Your Milestone ' . $milestone->title . ' to progress with the final-approval audit.';
+            $text = 'Project manager '.$recipient->first_name.' '.$recipient->last_name.' has been assigned for  Your Milestone ' . $milestone->title . ' to progress with the final-approval audit.';
             $this->notification->create(
                 $owner->id, null, $text, 'milestones', 'milestone'
             );
@@ -591,7 +591,7 @@ class MilestonePMController extends Controller
             $data = [
                 'boName' => $milestone->listing->name,
                 'milestoneName' => $milestone->title,
-                'pmName' => $recipient->fname . ' ' . $recipient->lname,
+                'pmName' => $recipient->first_name . ' ' . $recipient->last_name,
                 'reviewUrl' => 'https://beta.tujitume.com/dashboard/milestones',
             ];
             $this->emailService->send($subject, 'milestone.final_approval.pm_assigned', $data, $mail_to);
@@ -599,7 +599,7 @@ class MilestonePMController extends Controller
             // Notice  to  Investors
             $investors = $milestone->investors;
             foreach($investors as $investor) {
-                $text1 = 'Project manager '.$recipient->fname.' '.$recipient->lanme.' has been assigned for  Your Milestone ' . $milestone->title . ' to progress with the final-approval audit.';
+                $text1 = 'Project manager '.$recipient->first_name.' '.$recipient->last_name.' has been assigned for  Your Milestone ' . $milestone->title . ' to progress with the final-approval audit.';
                 $this->notification->create(
                     $investor->id, null, $text1, 'milestones', 'milestone'
                 );

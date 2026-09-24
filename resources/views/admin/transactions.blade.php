@@ -49,7 +49,7 @@
                 @foreach($transactions as $txn)
                     <tr class="text-left border-b hover:bg-gray-50">
                         <td class="px-4 py-2">{{ $txn->id }}</td>
-                        <td class="px-4 py-2">{{ $txn->user?->fname.' '.$txn->user?->lname ?? 'N/A' }}</td>
+                        <td class="px-4 py-2">{{ $txn->user?->first_name.' '.$txn->user?->last_name ?? 'N/A' }}</td>
                         <td class="px-4 py-2 capitalize">{{ str_replace('_', ' ', $txn->type) }}</td>
                         <td class="px-4 py-2">{{ $txn->method ?? 'N/A' }}</td>
                         <td class="px-4 py-2">${{ number_format($txn->gross_amount, 2) }}</td>

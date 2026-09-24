@@ -57,7 +57,7 @@ class MessageController extends Controller
                 if (!$partner) return null;
 
                 return [
-                    'sender'   => $partner->fname . ' ' . $partner->lname,
+                    'sender'   => $partner->first_name . ' ' . $partner->last_name,
                     'email'    => $partner->email,
                     'messages' => $conversation,
                 ];
@@ -148,7 +148,7 @@ class MessageController extends Controller
                 $sender = User::find($from_id);
 
                 $user['to'] = $receiver->email;
-                $info=[ 'sender'=>$sender->fname, 'msg'=>$validated['msg'] ];
+                $info=[ 'sender'=>$sender->first_name, 'msg'=>$validated['msg'] ];
                 Mail::send('bids.conv_mail', $info, function($msg) use ($user){
                     $msg->to($user['to']); $msg->subject('Message Received.');
                 });
@@ -227,7 +227,7 @@ class MessageController extends Controller
                 })->whereColumn('to_id', '!=', 'from_id')->latest()->get()
                     ->each(fn($m) => $m->sender = $m->from_id === $userId ? 'me' : '');
 
-                $thread->sender   = $sender->fname . ' ' . $sender->lname;
+                $thread->sender   = $sender->first_name . ' ' . $sender->last_name;
                 $thread->email    = $sender->email;
                 $thread->messages = $messages;
                 return $thread;
@@ -348,11 +348,11 @@ class MessageController extends Controller
             ]);
 
             $receiver = User::select('email')->findOrFail($validated['to_id']);
-            $sender   = User::select('fname')->findOrFail($fromId);
+            $sender   = User::select('first_name')->findOrFail($fromId);
 
             $this->emailService->send(
                 'Message Received', 'bids.conv_mail',
-                ['sender' => $sender->fname, 'msg' => $validated['msg']],
+                ['sender' => $sender->first_name, 'msg' => $validated['msg']],
                 $receiver->email
             );
 

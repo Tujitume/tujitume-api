@@ -53,7 +53,7 @@ class ProgramNotificationService
                 $config['email_subject'],
                 $config['email_view'],
                 array_merge($data, [
-                    'recipientName'  => $recipient->fname ?? $recipient->name,
+                    'recipientName'  => $recipient->first_name ?? $recipient->name,
                     'recipientEmail' => $recipient->email,
                     'custom_body'    => $customBody,
                 ]),
@@ -444,6 +444,14 @@ class ProgramNotificationService
                 'message'       => "{$data['reviewer_name']} accepted the review assignment for {$data['round_name']} in {$data['program_title']}.",
                 'email_subject' => 'Reviewer Accepted Assignment',
                 'email_view'    => $this->view_base . 'reviewer_accepted',
+                'link'          => 'overview/programs/rounds',
+            ],
+
+            'reviewer.accepted_insufficient_funds' => [
+                'title'         => 'Funds Required to Start Reviews',
+                'message'       => "A reviewer accepted the assignment for {$data['round_name']} in {$data['program_title']}. Deposit {$data['shortfall']} to the program wallet to enable reviews.",
+                'email_subject' => 'Deposit Funds to Start Program Reviews',
+                'email_view'    => $this->view_base . 'reviewer_accepted_insufficient_funds',
                 'link'          => 'overview/programs/rounds',
             ],
 

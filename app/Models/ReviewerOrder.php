@@ -16,9 +16,9 @@ class ReviewerOrder extends Model
 
     protected $fillable = [
         'organization_id', 'reviewer_id', 'program_id',
-        'order_type', 'round_id', 'site_visit_id',
-        'fee_usd', 'fee_kes', 'currency',
-        'work_status', 'delivery_note', 'modification_note', 'rejection_reason',
+        'order_type', 'round_id', 'round_reviewer_id', 'site_visit_id',
+        'fee_usd', 'fee_type', 'fee_kes', 'currency',
+        'work_status', 'acceptance_status', 'accepted_at', 'delivery_note', 'modification_note', 'rejection_reason',
         'deadline', 'delivered_at', 'approved_at',
         'payment_status', 'leg1_reference', 'leg2_reference', 'paid_at',
     ];
@@ -27,6 +27,7 @@ class ReviewerOrder extends Model
         'fee_usd'      => 'float',
         'fee_kes'      => 'float',
         'deadline'     => 'datetime',
+        'accepted_at'  => 'datetime',
         'delivered_at' => 'datetime',
         'approved_at'  => 'datetime',
         'paid_at'      => 'datetime',
@@ -50,6 +51,38 @@ class ReviewerOrder extends Model
     public function round()
     {
         return $this->belongsTo(ProgramRound::class, 'round_id');
+    }
+
+    public function roundReviewer()
+    {
+        return $this->belongsTo(\App\Models\Programs\Rounds\RoundReviewer::class, 'round_reviewer_id');
+    }
+
+    public function applicationAssignments()
+    {
+        return $this->hasMany(\App\Models\Programs\Rounds\ReviewerApplicationAssignment::class, 'reviewer_order_id');
+    }
+
+    /** Recalculate the payable total for a per-application round review order. */
+    public function refreshRoundReviewFee(): void
+    {
+        if ($this->order_type !== 'round_review' || $this->isPaid()) {
+            return;
+        }
+
+        $roundReviewer = $this->roundReviewer;
+        if (!$roundReviewer) {
+            return;
+        }
+
+        $rate = (float) ($roundReviewer->reviewer_fee ?? 0);
+        $feeType = $roundReviewer->fee_type ?? 'per_application';
+        $this->update([
+            'fee_type' => $feeType,
+            'fee_usd' => $feeType === 'per_application'
+                ? $rate * $this->applicationAssignments()->count()
+                : $rate,
+        ]);
     }
 
     public function siteVisit()

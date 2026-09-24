@@ -120,7 +120,7 @@ class MilestoneNotifyActions extends Command
                     // Email
                     $subject = 'Milestone Approved'; $mail_to = $owner->email;;
                     $data = [
-                        'boName' => $owner->fname,
+                        'boName' => $owner->first_name,
                         'milestoneName' => $milestone->title,
                         'reviewUrl' => 'https://beta.tujitume.com/dashboard/milestones',
                     ];
@@ -255,7 +255,7 @@ class MilestoneNotifyActions extends Command
                 $req->save(); $req->milestone->save();
 
                 // Notify BO
-//                $text = 'Milestone '. $req->milestone->title. ' has been approved by '.$investor->fname.' '.$investor->lname ;
+//                $text = 'Milestone '. $req->milestone->title. ' has been approved by '.$investor->first_name.' '.$investor->last_name ;
 //                $notification->create(
 //                    $req->milestone->listing->user_id, null, $text, 'milestones', 'milestone'
 //                );

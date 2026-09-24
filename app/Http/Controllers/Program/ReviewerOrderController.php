@@ -15,16 +15,17 @@ use Illuminate\Validation\ValidationException;
 
 class ReviewerOrderController extends Controller
 {
-    public function __construct(
-        
-    ) {}
+
+    public function __construct(ProgramNotificationService $notification)
+    {
+    }
 
     // ─── List reviewer's own orders ──────────────────────────────
     // GET /api/v1/programs/reviewer/orders
     public function myOrders()
     {
         $orders = ReviewerOrder::where('reviewer_id', Auth::id())
-            ->with(['program', 'round', 'siteVisit'])
+            ->with(['program', 'round', 'siteVisit', 'applicationAssignments'])
             ->latest()
             ->get()
             ->map(fn($order) => [
@@ -76,7 +77,37 @@ class ReviewerOrderController extends Controller
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
-        if (!in_array($order->work_status, ['assigned', 'in_progress', 'modification_requested'])) {
+        if ($order->order_type === 'round_review' && $order->acceptance_status !== 'accepted') {
+            return response()->json(['error' => 'Accept the reviewer assignment before delivering work.'], 422);
+        }
+
+        if ($order->order_type === 'round_review') {
+            $assignments = $order->applicationAssignments();
+
+            if (!$assignments->exists()) {
+                return response()->json([
+                    'error' => 'Cannot deliver a round review order with no assigned applications.',
+                ], 422);
+            }
+
+            $incompleteCount = $order->applicationAssignments()
+                ->where(function ($query) {
+                    $query->where('status', '!=', 'completed')
+                        ->orWhereDoesntHave('application', function ($applicationQuery) {
+                            $applicationQuery->where('round_status', 'scored');
+                        });
+                })
+                ->count();
+
+            if ($incompleteCount > 0) {
+                return response()->json([
+                    'error' => 'All assigned applications must be scored before delivering this order.',
+                    'incomplete_assignments' => $incompleteCount,
+                ], 422);
+            }
+        }
+
+        if (!in_array($order->work_status, ['in_progress', 'modification_requested'])) {
             return response()->json([
                 'error' => 'Cannot deliver from current status: ' . $order->work_status
             ], 422);

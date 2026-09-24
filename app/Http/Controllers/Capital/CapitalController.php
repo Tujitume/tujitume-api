@@ -629,7 +629,7 @@ class CapitalController extends Controller
         try{
             $user = Auth::user();
             $request->validate([
-                'fname' => 'required|string|max:255', // Org name
+                'first_name' => 'required|string|max:255', // Org name
                 'interested_cats' => 'array', // Preferred Sectors
                 'org_type' => 'required|string',
                 'phone' => 'string|max:20',
@@ -641,7 +641,7 @@ class CapitalController extends Controller
             ]);
 
             $user->update([
-                'fname' => $request->fname,
+                'first_name' => $request->first_name,
                 'interested_cats' => $request->interested_cats,
                 'phone' => $request->phone,
                 'inv_range' => $request->inv_range,
@@ -698,7 +698,7 @@ class CapitalController extends Controller
         try{
             $request->validate([
                 'id'    => 'required',
-                'fname'  => 'required|string|max:255',
+                'first_name'  => 'required|string|max:255',
                 //'email' => 'required|string|max:255',
                 'role_id'  => 'required|numeric',
             ]);

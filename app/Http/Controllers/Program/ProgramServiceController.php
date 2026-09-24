@@ -83,7 +83,7 @@ class ProgramServiceController extends Controller
 
                  $user = User::where('id', $list->user_id)->first();
                      if($user){
-                         $list->manager = $user->fname.' '.$user->lname;
+                         $list->manager = $user->first_name.' '.$user->last_name;
                          $list->contact = $user->email;
                       }
             }

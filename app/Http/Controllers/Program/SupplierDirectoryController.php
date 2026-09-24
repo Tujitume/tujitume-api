@@ -223,8 +223,8 @@ class SupplierDirectoryController extends Controller
                 [
                     'recipientName'  => $validated['contact_person'] ?? $validated['legal_name'],
                     'recipientEmail' => $validated['email'],
-                    'added_by'       => auth()->user()->fname . ' ' . auth()->user()->lname,
-                    'org_name'       => auth()->user()->fname.' Funders',
+                    'added_by'       => auth()->user()->first_name . ' ' . auth()->user()->last_name,
+                    'org_name'       => auth()->user()->first_name.' Funders',
                     'supplier_name'  => $validated['legal_name'],
                     'supplier_type'  => $validated['supplier_type'] ?? null,
                 ],

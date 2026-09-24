@@ -15,6 +15,7 @@ use App\Http\Controllers\CheckoutStripeController;
 use App\Http\Controllers\Program\ProgramDisbursementController;
 use App\Http\Controllers\Misc\PaymentMethodController;
 use App\Http\Controllers\Mpesa\MpesaPollingController;
+use App\Http\Controllers\Program\ProgramWalletController;
 
 // Onboarding Routes | Stripe
 Route::post('/connect/{id}', [WalletController::class, 'stripeOnboardingInitiate'])->name('connect.stripe');

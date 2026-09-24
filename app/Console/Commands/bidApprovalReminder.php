@@ -56,11 +56,11 @@ class bidApprovalReminder extends Command
                     $sent++;
 
                 if ($sent == 0) {
-                    $owner = User::select('fname','email')
+                    $owner = User::select('first_name','email')
                     ->where('id',$bid->owner_id)->first();
 
                     $info=['business'=>$business->name,
-                    'owner' => $owner->fname];
+                    'owner' => $owner->first_name];
                     $user['to'] = $owner->email;
 
                     Mail::send('bids.reminder.bid_approve_reminder',

@@ -107,7 +107,7 @@ class AssetBidsController extends Controller
             // Notify owner about new bid
             $this->notification->create(
                 $listing->user_id, $investorId,
-                "You have a new bid from {$investor->fname}",
+                "You have a new bid from {$investor->first_name}",
                 'investment-bids', 'investor'
             );
 
@@ -138,12 +138,12 @@ class AssetBidsController extends Controller
 
             $pendingBidService = new PendingAndAssetBidService($this->Client);
 
-            $investor = User::select('id','fname','lname','email')
+            $investor = User::select('id','first_name','last_name','email')
                 ->findOrFail($bid->investor_id);
 
             $business = $bid->listing; $owner = $business->owner;
 
-            $investorName = $investor->fname.' '.$investor->lname;
+            $investorName = $investor->first_name.' '.$investor->last_name;
 
             if ($action === 'confirm') {
 
@@ -177,9 +177,9 @@ class AssetBidsController extends Controller
         try {
             $bid = AcceptedBids::findOrFail($bidId);
 
-            $investor = User::select('fname','lname','email')->find($bid->investor_id);
+            $investor = User::select('first_name','last_name','email')->find($bid->investor_id);
             $owner = $bid->listing->owner; $businessName = $bid->business->name;
-            $invName = $investor->fname.' '.$investor->lname;
+            $invName = $investor->first_name.' '.$investor->last_name;
 
 
             if ($action === 'confirm') {
@@ -239,9 +239,9 @@ class AssetBidsController extends Controller
             $investor = User::findOrFail(Auth::id());
             $b_owner = $listing->owner;
 
-            $investor_name = $investor->fname.' '.$investor->lname;
+            $investor_name = $investor->first_name.' '.$investor->last_name;
             $manager = $manager_id ? User::find($manager_id) : null;
-            $manager_name = $manager ? $manager->fname.' '.$manager->lname : null;
+            $manager_name = $manager ? $manager->first_name.' '.$manager->last_name : null;
 
             // Voting / release payment processing logic
             $agreeToVotingService = new AgreeToProgressVotingService($this->Client);
@@ -254,7 +254,7 @@ class AssetBidsController extends Controller
                 [
                     'investor_name'=>$investor_name,
                     'contact'=>$investor->email,
-                    'owner_name'=>$b_owner->fname.' '.$b_owner->lname,
+                    'owner_name'=>$b_owner->first_name.' '.$b_owner->last_name,
                     'contact2'=>$b_owner->email,
                     'b_name'=>$listing->name,
                     'to'=> $manager ? 'PM' : 'Owner'

@@ -342,7 +342,7 @@ class MilestoneLifecycleService
             $subject = 'Milestone Continuation RMEP';
             $mail_to = $recipient->email;
             $data = [
-                'boName' => $recipient->fname,
+                'boName' => $recipient->first_name,
                 'milestoneName' => $milestone->title,
                 'reviewUrl' => 'https://beta.tujitume.com/dashboard/milestones',
             ];

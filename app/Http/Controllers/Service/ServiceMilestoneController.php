@@ -198,7 +198,7 @@ class ServiceMilestoneController extends Controller
             $mile  = ServiceBookingMilestone::select('id', 'service_id', 'amount', 'title', 'released')
                 ->findOrFail($repId);
             $serv  = Services::select('name', 'id', 'user_id', 'price')->findOrFail($mile->service_id);
-            $owner = User::select('fname', 'id', 'connect_id', 'email')->findOrFail($serv->user_id);
+            $owner = User::select('first_name', 'id', 'connect_id', 'email')->findOrFail($serv->user_id);
 
             $mile->update(['status' => 'In Progress']);
 
@@ -256,7 +256,7 @@ class ServiceMilestoneController extends Controller
                 'business'   => $business->name,
                 's_id'       => $business->id,
                 'booker_id'  => $mile->booker_id,
-                'owner'      => $owner->fname . ' ' . $owner->lname,
+                'owner'      => $owner->first_name . ' ' . $owner->last_name,
                 'rep_id'     => $validated['id'],
             ], $customer->email);
 
@@ -284,7 +284,7 @@ class ServiceMilestoneController extends Controller
             'milestones'   => $milestones,
             'business'     => $business,
             's_name'       => $service?->name ?? 'N/A',
-            'booker_name'  => $booker ? $booker->fname . ' ' . $booker->lname : 'N/A',
+            'booker_name'  => $booker ? $booker->first_name . ' ' . $booker->last_name : 'N/A',
         ]);
     }
 
@@ -365,8 +365,8 @@ class ServiceMilestoneController extends Controller
 
             // Send emails if service completed
             if (!$pending) {
-                $dataCustomer = ['s_id' => $s_id, 'service' => $service->name, 'amount' => $service->price, 'to' => 1, 'user_name' => $customer->fname];
-                $dataOwner = ['s_id' => $s_id, 'service' => $service->name, 'amount' => $service->price, 'to' => 2, 'user_name' => $owner->fname];
+                $dataCustomer = ['s_id' => $s_id, 'service' => $service->name, 'amount' => $service->price, 'to' => 1, 'user_name' => $customer->first_name];
+                $dataOwner = ['s_id' => $s_id, 'service' => $service->name, 'amount' => $service->price, 'to' => 2, 'user_name' => $owner->first_name];
 
                 $this->emailService->send('Service Done', 'milestoneS.service_done_mail', $dataCustomer, $customer->email);
                 $this->emailService->send('Service Done', 'milestoneS.service_done_mail', $dataOwner, $owner->email);

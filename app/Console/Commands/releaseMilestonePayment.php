@@ -110,8 +110,8 @@ class releaseMilestonePayment extends Command
         $mileLat = ServiceBookingMilestone::where('service_id',$mileThis->service_id)
         ->where('booker_id',$booker_id)->where('status','To Do')->first();
         $serv= Services::select('name','id','shop_id','price')->where('id',$mileThis->service_id)->first();
-        $owner = User::select('fname','id','connect_id','email')->where('id',$serv->shop_id)->first();
-        $customer = User::select('fname','email')->where('id',$booker_id)->first();
+        $owner = User::select('first_name','id','connect_id','email')->where('id',$serv->shop_id)->first();
+        $customer = User::select('first_name','email')->where('id',$booker_id)->first();
 
         if($mileLat)
         ServiceBookingMilestone::where('id',$mileLat->id)->update([
@@ -156,7 +156,7 @@ class releaseMilestonePayment extends Command
             {
                 //Customer
                 $info=[ 's_id' => base64_encode(base64_encode($serv->id)),
-                'service' => $serv->name, 'amount' => $serv->price, 'to'=>1, 'user_name'=> $customer->fname ];
+                'service' => $serv->name, 'amount' => $serv->price, 'to'=>1, 'user_name'=> $customer->first_name ];
 
                 $user['to'] = $customer->email;//'sohaankane@gmail.com';
                  Mail::send('milestoneS.service_done_mail', $info, function($msg) use ($user){
@@ -167,7 +167,7 @@ class releaseMilestonePayment extends Command
 
                 //Owner
                  $info=[ 's_id' => base64_encode(base64_encode($serv->id)),
-                'service' => $serv->name, 'amount' => $serv->price, 'to'=>2, 'user_name'=> $owner->fname ];
+                'service' => $serv->name, 'amount' => $serv->price, 'to'=>2, 'user_name'=> $owner->first_name ];
 
                 $user['to'] = $owner->email;//'sohaankane@gmail.com';
                  Mail::send('milestoneS.service_done_mail', $info, function($msg) use ($user){

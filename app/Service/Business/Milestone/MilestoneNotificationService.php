@@ -32,7 +32,7 @@ class MilestoneNotificationService
 
                 $mail_to = $investor->email;
                 $data = [
-                    'investorName' => $investor->fname,
+                    'investorName' => $investor->first_name,
                     'milestoneName' => $milestone->title,
                     'reviewUrl' => 'https://beta.tujitume.com/dashboard/milestones',
                 ];
@@ -54,7 +54,7 @@ class MilestoneNotificationService
             $subject = 'Milestone RMEP Approved';
             $mail_to = $recipient->email;
             $data = [
-                'boName' => $recipient->fname,
+                'boName' => $recipient->first_name,
                 'milestoneName' => $milestone->title,
                 'reviewUrl' => 'https://beta.tujitume.com/dashboard/milestones',
             ];
@@ -78,7 +78,7 @@ class MilestoneNotificationService
             $subject = 'Milestone RMEP Rejected';
             $mail_to = $recipient->email;
             $data = [
-                'boName' => $recipient->fname,
+                'boName' => $recipient->first_name,
                 'milestoneName' => $milestone->title,
                 'reviewUrl' => 'https://beta.tujitume.com/dashboard/milestones',
             ];
@@ -93,7 +93,7 @@ class MilestoneNotificationService
 
                 $mail_to = $investor->email;
                 $data = [
-                    'investorName' => $investor->fname,
+                    'investorName' => $investor->first_name,
                     'milestoneName' => $milestone->title,
                     'reviewUrl' => 'https://beta.tujitume.com/dashboard/milestones',
                 ];
@@ -116,8 +116,8 @@ class MilestoneNotificationService
             $subject = 'Milestone Pre Release Requested';
             $mail_to = $recipient->email;
             $data = [
-                'boName' => $recipient->fname,
-                'investorName' => $investor->fname. ' '.$investor->lname ,
+                'boName' => $recipient->first_name,
+                'investorName' => $investor->first_name. ' '.$investor->last_name ,
                 'documents' => $info, // e.g., ['Invoice','Certificate']
                 'dashboardUrl' => 'https://beta.tujitume.com/dashboard/milestones',
             ];
@@ -136,7 +136,7 @@ class MilestoneNotificationService
 
                 $mail_to = $investor->email;
                 $data = [
-                    'investorName' => $investor->fname,
+                    'investorName' => $investor->first_name,
                     'milestoneName' => $milestone->title,
                     'reviewUrl' => 'https://beta.tujitume.com/dashboard/milestones',
                 ];
@@ -154,7 +154,7 @@ class MilestoneNotificationService
             $subject = 'Milestone Approved, Funds Released';
             $mail_to = $recipient->email;
             $data = [
-                'boName' => $recipient->fname,
+                'boName' => $recipient->first_name,
                 'milestoneName' => $milestone->title,
                 'reviewUrl' => 'https://beta.tujitume.com/dashboard/milestones',
             ];
@@ -183,7 +183,7 @@ class MilestoneNotificationService
             $subject = 'Milestone Pre Release Rejected';
             $mail_to = $recipient->email;
             $data = [
-                'boName' => $recipient->fname,
+                'boName' => $recipient->first_name,
                 'milestoneName' => $milestone->title,
                 'reviewUrl' => 'https://beta.tujitume.com/dashboard/milestones',
             ];
@@ -210,7 +210,7 @@ class MilestoneNotificationService
         }
         if($type == 'pr_rejected_by_one'){
             $investor = Auth::user();
-            $text = 'Milestone '. $milestone->title. ' has been rejected by '.$investor->fname.' '.$investor->lname. ',Please go to dealroom and resubmit you documents.';
+            $text = 'Milestone '. $milestone->title. ' has been rejected by '.$investor->first_name.' '.$investor->last_name. ',Please go to dealroom and resubmit you documents.';
             $this->notification->create(
                 $recipient->id, null, $text, 'milestones', 'milestone'
             );
@@ -219,8 +219,8 @@ class MilestoneNotificationService
             $subject = 'Milestone Pre Release Rejected';
             $mail_to = $recipient->email;
             $data = [
-                'boName' => $recipient->fname,
-                'investorName' => $investor->fname.' '.$investor->lname,
+                'boName' => $recipient->first_name,
+                'investorName' => $investor->first_name.' '.$investor->last_name,
                 'milestoneName' => $milestone->title,
                 'reviewUrl' => 'https://beta.tujitume.com/dashboard/milestones',
             ];
@@ -238,7 +238,7 @@ class MilestoneNotificationService
             $subject = 'Milestone Is In Project manager audit';
             $mail_to = $recipient->email;
             $data = [
-                'investorName' => $recipient->fname,
+                'investorName' => $recipient->first_name,
                 'milestoneName' => $milestone->title,
                 'reviewUrl' => 'https://beta.tujitume.com/dashboard/milestones',
             ];
@@ -254,7 +254,7 @@ class MilestoneNotificationService
             $subject = 'Milestone Is In Admin Review';
             $mail_to = 'stevemonitoring.gathirus@gmail.com'; //$recipient->email; Admin
             $data = [
-                'investorName' => $recipient->fname,
+                'investorName' => $recipient->first_name,
                 'milestoneName' => $milestone->title,
                 'reviewUrl' => 'https://beta.tujitume.com/dashboard/milestones',
             ];
@@ -279,7 +279,7 @@ class MilestoneNotificationService
 
                 $mail_to = $investor->email;
                 $data = [
-                    'investorName' => $investor->fname,
+                    'investorName' => $investor->first_name,
                     'milestoneName' => $milestone->title,
                     'reviewUrl' => 'https://beta.tujitume.com/dashboard/milestones',
                 ];
@@ -296,7 +296,7 @@ class MilestoneNotificationService
             $subject = 'Mid Milestone Approved, Funds Released';
             $mail_to = $recipient->email;
             $data = [
-                'boName' => $recipient->fname,
+                'boName' => $recipient->first_name,
                 'milestoneName' => $milestone->title,
                 'reviewUrl' => 'https://beta.tujitume.com/dashboard/milestones',
             ];
@@ -330,7 +330,7 @@ class MilestoneNotificationService
             $mail_to = $recipient->email;
 
             $data = [
-                'boName' => $recipient->fname,
+                'boName' => $recipient->first_name,
                 'milestoneName' => $midMilestone->milestone->title,
                 'reasons_list' => $reasons_list,
                 'reviewUrl' => 'https://beta.tujitume.com/dashboard/milestones',
@@ -355,7 +355,7 @@ class MilestoneNotificationService
             $subject = 'Milestone Is In Project Manger Audit';
             $mail_to = $recipient->email;
             $data = [
-                'boName' => $recipient->fname,
+                'boName' => $recipient->first_name,
                 'milestoneName' => $milestone->title,
                 'reviewUrl' => 'https://beta.tujitume.com/dashboard/milestones',
             ];
@@ -384,7 +384,7 @@ class MilestoneNotificationService
 
                 $mail_to = $investor->email;
                 $data = [
-                    'investorName' => $investor->fname,
+                    'investorName' => $investor->first_name,
                     'milestoneName' => $milestone->title,
                     'reviewUrl' => 'https://beta.tujitume.com/dashboard/milestones',
                 ];
@@ -401,7 +401,7 @@ class MilestoneNotificationService
             $subject = 'Milestone Finally Approved, Funds Released';
             $mail_to = $recipient->email;
             $data = [
-                'boName' => $recipient->fname,
+                'boName' => $recipient->first_name,
                 'milestoneName' => $milestone->title,
                 'reviewUrl' => 'https://beta.tujitume.com/dashboard/milestones',
             ];
@@ -427,7 +427,7 @@ class MilestoneNotificationService
             $subject = 'Milestone Final Approval Rejected';
             $mail_to = $recipient->email;
             $data = [
-                'boName' => $recipient->fname,
+                'boName' => $recipient->first_name,
                 'milestoneName' => $milestone->title,
                 'reasons_list' => [], //$reasons_list,
                 'reviewUrl' => 'https://beta.tujitume.com/dashboard/milestones',
@@ -454,7 +454,7 @@ class MilestoneNotificationService
             $subject = 'Milestone Is In Project manager final audit';
             $mail_to = $recipient->email;
             $data = [
-                'boName' => $recipient->fname,
+                'boName' => $recipient->first_name,
                 'milestoneName' => $milestone->title,
                 'reviewUrl' => 'https://beta.tujitume.com/dashboard/milestones',
             ];

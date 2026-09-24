@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Program\Rounds;
 use App\Http\Controllers\Controller;
 use App\Models\Programs\ProgramApplication;
 use App\Models\Programs\Rounds\ApplicationScore;
+
+use App\Models\Programs\Rounds\ReviewerApplicationAssignment;
 use App\Models\ReviewerOrder;
 use App\Service\Misc\ErrorLogService;
 use App\Service\Notification\ProgramNotificationService;

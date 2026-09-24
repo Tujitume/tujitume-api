@@ -56,7 +56,7 @@ class BookingController extends Controller
             $book->location       = $service->location;
             $book->service        = $service->name;
             $book->category       = $service->category;
-            $book->customer_name  = $customer->fname . ' ' . $customer->lname;
+            $book->customer_name  = $customer->first_name . ' ' . $customer->last_name;
             $book->website        = $customer->website;
             $book->email          = $customer->email;
             $book->deadline       = str_replace('before', '', now()->diffForHumans(
@@ -111,7 +111,7 @@ class BookingController extends Controller
 
             $this->notification->create(
                 $service->user_id, $booker->id,
-                'You have a new booking from ' . $booker->fname . ' ' . $booker->lname,
+                'You have a new booking from ' . $booker->first_name . ' ' . $booker->last_name,
                 'dashboard.serviceProvider.myBookings::' . $booking->id, 'customer'
             );
 
@@ -266,7 +266,7 @@ class BookingController extends Controller
             $booker = $booking->customer; $owner = $booking->service->owner;
 
             $serviceName = $booking->service->name;
-            $bookerName = $booker->fname.' '.$booker->lname;
+            $bookerName = $booker->first_name.' '.$booker->last_name;
             $s_id = base64_encode(base64_encode($booking->service->id));
 
             if ($action === 'confirm') {
@@ -328,7 +328,7 @@ class BookingController extends Controller
             ->get()
             ->filter(fn($b) => $b->booker)
             ->map(function ($b) {
-                $b->booker->name = $b->booker->fname . ' ' . $b->booker->lname;
+                $b->booker->name = $b->booker->first_name . ' ' . $b->booker->last_name;
                 return $b->booker;
             })->values();
 

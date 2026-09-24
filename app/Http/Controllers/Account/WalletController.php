@@ -75,7 +75,7 @@ class WalletController extends Controller
 
             $fields = [
                 "parentWalletAccount" => $parentLiprWalletAccount,
-                "walletName" => $user->fname . ' ' . $user->lname,
+                "walletName" => $user->first_name . ' ' . $user->last_name,
                 "walletDescription" => 'Tujitume customer wallet',
 //                "metadata" => [
 //                    //"department" => "ops",
@@ -129,6 +129,7 @@ class WalletController extends Controller
             }
 
             $createWallet = $this->create_wallet();
+            return $createWallet;
 
             if(isset($createWallet['success']) && $createWallet['success'] == false){
                 return response()->json([
@@ -177,8 +178,8 @@ class WalletController extends Controller
                 $seller->load('capital_profile.role');
                 $role = $seller->capital_profile?->role?->name ?? null;
             }
-            if($role){
-                return response()->json(['message' =>  'Unauthorized, bad request.'], 400);
+            if($role && $role !== 'super_admin'){
+                return response()->json(['message' =>  'Unauthorized, only Super admin can deposit funds.'], 403);
             }
 
 
@@ -313,7 +314,8 @@ class WalletController extends Controller
     public function lipr_deposit (Request $request)
     {
         try {
-            //$amountUsd = $convert->UsdToKes();
+
+            $platform_wallet = Setting::where('key', 'platform_lipr_wallet')->value('value');
 
             $token = $this->liprAuth->authorize();
             $user = Auth::user(); //User::find(1);
@@ -335,7 +337,7 @@ class WalletController extends Controller
                 "timeoutUrl" => "https://tujitume.com/api/lipr-callback/timeout",
                 //"metadata" => ["user_id" => $user->id, "purpose" => $request->purpose, //"customerId" => "CUST-441"],
 
-                "wallet" => $user->lipr_wallet,
+                "wallet" => $platform_wallet, // $user->lipr_wallet,
                 "narration" => $request->purpose,
                 "customerAccountNumber" => $acc_number,
                 "recipients" => [
@@ -349,14 +351,14 @@ class WalletController extends Controller
             $getApiResponse = $this->PostApiHelper($fields, $url, $token);
             $response = json_decode($getApiResponse, true);
 
-            if (!isset($response['success'])) {
+            if (!isset($response['data'][0]['success'])) {
                 return response()->json([
                     'message' => $response['error'] ?? $response['message'] ?? 'Invalid response from lipr.',
                     'response' => $response
                 ], 500);
             }
 
-            if ($response['success'] !== true) {
+            if ( !$response['data'][0]['success'] ) {
                 return response()->json([
                     'message' => $response['message']
                         ?? $response['error'] ?? $response['errors'] ?? 'API request failed',

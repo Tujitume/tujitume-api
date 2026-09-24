@@ -70,14 +70,14 @@ class SocialController extends Controller
                 ], 422);
             }
 
-            [$fname, $lname] = $this->parseName($socialUser->name);
+            [$first_name, $last_name] = $this->parseName($socialUser->name);
 
             $user = User::where('email', $socialUser->email)->first();
 
             if (!$user) {
                 $user = User::create([
-                    'fname' => $fname,
-                    'lname' => $lname,
+                    'first_name' => $first_name,
+                    'last_name' => $last_name,
                     'email' => $socialUser->email,
                     'password' => bcrypt(str()->random(32))
                 ]);
@@ -112,11 +112,11 @@ class SocialController extends Controller
     {
         $parts = explode(' ', trim($name));
 
-        $fname = $parts[0] ?? '';
-        $lname = count($parts) > 1
+        $first_name = $parts[0] ?? '';
+        $last_name = count($parts) > 1
             ? implode(' ', array_slice($parts, 1))
             : '';
 
-        return [$fname, $lname];
+        return [$first_name, $last_name];
     }
 }

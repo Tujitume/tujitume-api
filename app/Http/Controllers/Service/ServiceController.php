@@ -313,7 +313,7 @@ class ServiceController extends Controller
             ServiceReviews::create([
                 'user_id'    => Auth::id(),
                 'listing_id' => $validated['id'],
-                'user_name'  => Auth::user()->fname,
+                'user_name'  => Auth::user()->first_name,
                 'text'       => mb_convert_encoding($validated['text'] ?? '', 'UTF-8', 'UTF-8'),
                 'rating'     => $validated['rating'],
             ]);

@@ -157,8 +157,8 @@ class AuthController extends Controller
             //$data = $request->all();
             $data = $request->validate([
                 //Required Fields
-                'fname' => ['required', 'string', 'max:255'],
-                'lname' => ['required', 'string', 'max:255'],
+                'first_name' => ['required', 'string', 'max:255'],
+                'last_name' => ['required', 'string', 'max:255'],
                 'gender' => ['required', 'in:Male,Female,Other'],
                 'dob' => ['required', 'date'],
                 'email' => ['required', 'email', 'max:255'],
@@ -209,7 +209,7 @@ class AuthController extends Controller
                 $data = $request->validate([
                     'role_id' => ['required', 'nullable', 'integer'], // optional, integer
                     'email' => ['required', 'email', 'max:255'],
-                    'fname' => ['required', 'string', 'max:255'],
+                    'first_name' => ['required', 'string', 'max:255'],
                     'user_type_id' => ['required', 'integer', 'in:1,2,3,4,5'],
                     'organization_id' => ['required', 'integer', 'exists:organizations,id'],
                 ]);
@@ -219,7 +219,7 @@ class AuthController extends Controller
 
             $data = $request->validate([
                 //Required Fields
-                'fname' => ['required', 'string', 'max:255'],
+                'first_name' => ['required', 'string', 'max:255'],
                 'email' => ['required', 'email', 'max:255'],
                 'password' => ['required', 'string', 'min:8'],
                 // Arrays (casted in model)
@@ -251,7 +251,7 @@ class AuthController extends Controller
                 $data = $request->validate([
                     'role_id' => ['required', 'nullable', 'integer'], // optional, integer
                     'email' => ['required', 'email', 'max:255'],
-                    'fname' => ['required', 'string', 'max:255'],
+                    'first_name' => ['required', 'string', 'max:255'],
                     'user_type_id' => ['required', 'integer', 'in:1,2,3,4,5'],
                     'capital_owner_id' => ['required', 'integer'],
                 ]);
@@ -261,8 +261,8 @@ class AuthController extends Controller
 
             $data = $request->validate([
                 //Required Fields
-                'fname' => ['required', 'string', 'max:255'],
-                //'lname' => ['required', 'string', 'max:255'],
+                'first_name' => ['required', 'string', 'max:255'],
+                //'last_name' => ['required', 'string', 'max:255'],
                 'email' => ['required', 'email', 'max:255'],
                 'password' => ['required', 'string', 'min:8'],
                 // Arrays (casted in model)
@@ -293,8 +293,8 @@ class AuthController extends Controller
         //Regular User (Type 4 & 5) Register
         $data = $request->validate([
             //Required Fields
-            'fname' => ['required', 'string', 'max:255'],
-            'lname' => ['required', 'string', 'max:255'],
+            'first_name' => ['required', 'string', 'max:255'],
+            'last_name' => ['required', 'string', 'max:255'],
             'gender' => ['required', 'in:Male,Female,Other'],
             'dob' => ['required', 'date'],
             'email' => ['required', 'email', 'max:255'],
@@ -320,9 +320,9 @@ class AuthController extends Controller
         }
 
         $user = User::create([
-            'fname' => $data['fname'],
+            'first_name' => $data['first_name'],
             'mname' => $request->mname,
-            'lname' => $data['lname'],
+            'last_name' => $data['last_name'],
             'user_type_id' => $request->user_type_id,
             'email' => $data['email'],
             'gender' => $request->gender,

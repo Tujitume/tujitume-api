@@ -30,7 +30,7 @@ class ScheduleMeetingController extends Controller
     {
         try{
             $host = Auth::user();
-            $client = User::select('fname','lname','email')->where('id',$request->client_id)->first();
+            $client = User::select('first_name','last_name','email')->where('id',$request->client_id)->first();
             $request->validate([
                 'client_id'   => 'required|integer|exists:users,id', // or clients table if applicable
                 //'client_name' => 'required|string|max:255',
@@ -44,8 +44,8 @@ class ScheduleMeetingController extends Controller
             $meeting = Meeting::create([
                 'host_id'      => Auth::id(),
                 'client_id'    => $request->client_id,
-                'host_name'    => $host->fname.' '.$host->lname,
-                'client_name'  => $client->fname.' '.$client->lname,
+                'host_name'    => $host->first_name.' '.$host->last_name,
+                'client_name'  => $client->first_name.' '.$client->last_name,
                 'date'         => $request->date,
                 'time'         => $request->time,
                 'title'        => $request->title,
@@ -67,11 +67,11 @@ class ScheduleMeetingController extends Controller
                 $linkForSme = 'overview/settings/security';
             }
 
-            $text = 'You have a new meeting from '.$host->fname.' '.$host->lname. ' at '.$formatted ;
+            $text = 'You have a new meeting from '.$host->first_name.' '.$host->last_name. ' at '.$formatted ;
             $this->notification->create($request->client_id, $host->id, $text
                 ,$linkForSme,'meeting');
 
-            $text2 = 'You have a new meeting with '.$client->fname.' '.$client->lname. ' at '.$formatted ;
+            $text2 = 'You have a new meeting with '.$client->first_name.' '.$client->last_name. ' at '.$formatted ;
             $this->notification->create($host->id ,$request->client_id , $text2
                 ,$linkForOrg,'meeting');
             //Notifications

@@ -50,7 +50,7 @@ class PMAudit extends Model
     public function getCandidatesAttribute()
     {
         return User::whereIn('id', $this->candidate_pm_ids ?? [])
-            ->select('id', 'fname', 'lname', 'email', 'user_type_id', 'dob', 'gender', 'image', 'phone', 'website')
+            ->select('id', 'first_name', 'last_name', 'email', 'user_type_id', 'dob', 'gender', 'image', 'phone', 'website')
             ->get();
     }
 

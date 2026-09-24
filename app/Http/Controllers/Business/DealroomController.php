@@ -115,7 +115,7 @@ class DealroomController extends Controller
 
             // Pending Investors
             $pendingInvestors = $listing->pending_investors()
-                ->select('users.id', 'users.fname','users.lname','users.email')
+                ->select('users.id', 'users.first_name','users.last_name','users.email')
                 ->get(); // returns a Collection of User models
             //$total_investors = $investors->count();
 
@@ -135,7 +135,7 @@ class DealroomController extends Controller
 
             // Active Investors
             $investors = $listing->investors()
-                ->select('users.id', 'users.fname','users.lname','users.email')
+                ->select('users.id', 'users.first_name','users.last_name','users.email')
                 ->get(); // returns a Collection of User models
             $total_investors = $investors->count();
 

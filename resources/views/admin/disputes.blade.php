@@ -134,7 +134,7 @@
 				        		<h6 class="w-75 text-left border py-3 pl-3 ">Disputant</h6>
 				        	</div>
 				        	<div class="col-sm-6">
-				        		<p class="text-center mb-1">{{$l->user?->fname ?? 'N/A'. ' '.$l->user?->lname ?? 'N/A' }}</p>
+				        		<p class="text-center mb-1">{{$l->user?->first_name ?? 'N/A'. ' '.$l->user?->last_name ?? 'N/A' }}</p>
 				        		<p class="font-weight-bold text-center">{{$l->user?->email ?? 'N/A' }}</p>
 				        	</div>
 

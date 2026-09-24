@@ -89,8 +89,8 @@ class AccountController extends Controller
             }
 
             $connectAccount = 'N/A'; $transferCapabilities = false;
-            if($user->connect_id && $user->connect_id != 'null') {
-                $connectAccount = $this->Client->accounts->retrieve($user->connect_id);
+            if($user->stripe_connect_id && $user->stripe_connect_id != 'null') {
+                $connectAccount = $this->Client->accounts->retrieve($user->stripe_connect_id);
                 $capabilities = $connectAccount->capabilities;
 
                 if (

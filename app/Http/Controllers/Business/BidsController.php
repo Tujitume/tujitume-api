@@ -60,8 +60,8 @@ class BidsController extends Controller
     {
         try{
             $bid = AcceptedBids::where('id', $id)->first();
-            $investor = User::select('fname')->where('id', $bid->investor_id)
-                ->first()->fname;
+            $investor = User::select('first_name')->where('id', $bid->investor_id)
+                ->first()->first_name;
             return response()->json([
                 'data' => $bid,
                 'investor'=> $investor
@@ -89,8 +89,8 @@ class BidsController extends Controller
                 ->map(function ($bid) {
                     $inv = $bid->investor;
                     return array_merge($bid->toArray(), [
-                        'investor'        => $inv->fname . ' ' . $inv->lname,
-                        'investor_name'   => trim($inv->fname . ' ' . $inv->mname . ' ' . $inv->lname),
+                        'investor'        => $inv->first_name . ' ' . $inv->last_name,
+                        'investor_name'   => trim($inv->first_name . ' ' . $inv->mname . ' ' . $inv->last_name),
                         'business'        => $bid->listing->name,
                         'threshold'       => $bid->listing->threshold_met,
                         'inv_range'       => $inv->inv_range,
@@ -130,7 +130,7 @@ class BidsController extends Controller
                 if (!$bid->investor || !$bid->listing) return null;
                 $inv = $bid->investor;
                 return array_merge($bid->toArray(), [
-                    'investor'        => $inv->fname . ' ' . $inv->lname,
+                    'investor'        => $inv->first_name . ' ' . $inv->last_name,
                     'business'        => $bid->listing->name,
                     'interested_cats' => $inv->interested_cats,
                     'past_investment' => $inv->past_investment,
@@ -217,15 +217,15 @@ class BidsController extends Controller
             $bidService = new BusinessBidService($this->Client);
 
             $bid = AcceptedBids::with('milestone')->findOrFail($bidId);
-            $investor = User::select('id','fname','lname','email')
+            $investor = User::select('id','first_name','last_name','email')
                 ->findOrFail($bid->investor_id);
 
             $business = Listing::findOrFail($bid->business_id);
 
-            $owner = User::select('id','fname','lname','email')
+            $owner = User::select('id','first_name','last_name','email')
                 ->findOrFail($business->user_id);
 
-            $investorName = $investor->fname.' '.$investor->lname;
+            $investorName = $investor->first_name.' '.$investor->last_name;
 
             // Handle refund if monetary
             if ($bid->type === 'Monetary') {
@@ -294,8 +294,8 @@ class BidsController extends Controller
             $bid = BusinessBids::findOrfail($id);
 
             $owner = User::select('id','email')->findOrfail($bid->owner_id);
-            $investor = User::select('fname','lname')->findOrfail($bid->investor_id);
-            $invName = $investor->fname.' '.$investor->lname;
+            $investor = User::select('first_name','last_name')->findOrfail($bid->investor_id);
+            $invName = $investor->first_name.' '.$investor->last_name;
 
             // Refund / cleanup
             if ($bid->type === 'Monetary') {

@@ -59,7 +59,7 @@
 
 
 													<td>N/A</td>
-													<td>{{$l->fname.' '.$l->lname}}</td>
+													<td>{{$l->first_name.' '.$l->last_name}}</td>
 
 													@if($l->investor == '')
 													<td style="color:green;" class=" font-weight-bold">Business/Service</td>
@@ -100,7 +100,7 @@
 						  <div class="modal-dialog" role="document">
 						    <div class="modal-content mx-auto text-center">
 						      <div class="text-center modal-header">
-						        <h5 class="modal-title  text-secondary mx-auto" id="exampleModalLabel">User Info ({{$l->fname.' '.$l->lname}})</h5>
+						        <h5 class="modal-title  text-secondary mx-auto" id="exampleModalLabel">User Info ({{$l->first_name.' '.$l->last_name}})</h5>
 						        <button type="button" class="close" data-dismiss="modal" aria-label="Close">
 						          <span aria-hidden="true">&times;</span>
 						        </button>

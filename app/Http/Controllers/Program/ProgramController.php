@@ -265,7 +265,7 @@ class ProgramController extends Controller
             $wallet['total_deposited'] = 0.00; $wallet['total_disbursed'] = 0.00;
             $wallet['total_reserved'] = 0.00;  $wallet['balance'] = 0.00;
             $wallet['status'] = 'inactive';  // not active until funded
-            $wallet['currency'] = $validated['currency'] ?? 'KES';
+            $wallet['currency'] = $validated['currency'] ?? 'USD'; //KES
             $wallet['program_id'] = $program->id;
 
             ProgramWallet::create($wallet);
@@ -677,7 +677,7 @@ class ProgramController extends Controller
         try{
             $request->validate([
                 'id'    => 'required',
-                'fname'  => 'required|string|max:255',
+                'first_name'  => 'required|string|max:255',
                 //'email' => 'required|string|max:255',
                 'role_id'  => 'required|numeric',
             ]);
@@ -819,7 +819,7 @@ class ProgramController extends Controller
         try{
             $user = Auth::user()->load('organization');
             $request->validate([
-                'fname' => 'required|string|max:255', // Org name
+                'first_name' => 'required|string|max:255', // Org name
                 'interested_cats' => 'array', // Focus Sectors
                 'org_type' => 'required|string',
                 'phone' => 'string|max:20',
@@ -829,7 +829,7 @@ class ProgramController extends Controller
             ]);
 
             $user->update([
-                'fname' => $request->fname,
+                'first_name' => $request->first_name,
                 'interested_cats' => $request->interested_cats,
                 'phone' => $request->phone,
                 'website' => $request->website,

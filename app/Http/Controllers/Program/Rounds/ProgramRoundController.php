@@ -265,7 +265,7 @@ class ProgramRoundController extends Controller
 
                 // Scoring rubric
                 'rubric_mode' => 'nullable|in:weighted,simple_total,pass_fail',
-                'scoring_criteria' => 'nullable|array',
+                'scoring_criteria' => 'required_if:rubric_mode,weighted|array',
 
                 // Question
                 'round_questions' => 'nullable|array',
@@ -387,7 +387,7 @@ class ProgramRoundController extends Controller
                 'review_period_end' => 'nullable|date',
                 'announcement_date' => 'nullable|date',
                 'rubric_mode' => 'sometimes|in:weighted,simple_total,pass_fail',
-                'scoring_criteria' => 'nullable|array',
+                'scoring_criteria' => 'required_if:rubric_mode,weighted|array',
 
                 // Question
                 'round_questions' => 'nullable|array',

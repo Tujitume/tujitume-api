@@ -86,7 +86,7 @@ class PaymentMethodController extends Controller
             if (!$user->stripe_customer_id) {
                 $customer = $this->stripe->customers->create([
                     'email'    => $user->email,
-                    'name'     => trim($user->fname . ' ' . $user->lname),
+                    'name'     => trim($user->first_name . ' ' . $user->last_name),
                     'metadata' => ['user_id' => $user->id],
                 ]);
                 $user->update(['stripe_customer_id' => $customer->id]);

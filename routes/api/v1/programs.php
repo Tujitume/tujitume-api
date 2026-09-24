@@ -83,6 +83,8 @@ Route::prefix('/programs')->middleware(['program', 'program.response'])->group(f
     Route::post('wallets/{wallet}/deposit', [ProgramWalletController::class, 'deposit']);
     Route::post('wallets/{wallet}/deposit-status', [ProgramWalletController::class, 'deposit_status']);
 
+    Route::post('wallets/{wallet}/transfer', [ProgramWalletController::class, 'transferFromMainWallet']);
+
     // Route::apiResource('applications/{application}/milestones', ProgramMilestoneController::class)->shallow();
 
     Route::post('applications/{application}/planning-mode', [ProgramApplicationController::class, 'setPlanningMode']);

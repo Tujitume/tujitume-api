@@ -15,6 +15,9 @@ use Illuminate\Validation\ValidationException;
 
 class ProgramWalletController extends Controller
 {
+    protected $liprAuth;
+    protected $balance;
+
     public function __construct(){
         parent::__construct();
         $this->liprAuth = new LiprAuthService();
@@ -51,11 +54,60 @@ class ProgramWalletController extends Controller
         //
     }
 
+
+    // D E P O S I T / Transfer from main wallet
+    public function transferFromMainWallet(Request $request, ProgramWallet $wallet)
+    {
+        if(!$wallet){
+            return response()->json(['message' => 'Program wallet not found.'], 404);
+        }
+
+        $user = Auth::user();
+        if($wallet->program->user_id !== $user->id){
+            return response()->json(['message' => 'Unauthorized.'], 403);
+        }
+
+        try {
+            $request->validate([
+                'amount' => 'required|numeric|min:10', //KES
+                'purpose' => 'nullable|string|max:255',
+            ]);
+
+            $amount =  round($request->amount, 2);
+
+            // Deduct from main wallet and add to program wallet
+            DB::transaction(function () use ($user, $wallet, $amount) {
+                $this->balance->updateBalanceMinus($user->id, $amount, 'stripe');
+                $wallet->balance += $amount;
+                $wallet->total_deposited += $amount;
+                $wallet->status = 'active';
+                $wallet->save();
+
+                //Transaction
+                $this->transaction->create(
+                    $user->id,
+                    'transfer_to_program_wallet',
+                    'stripe',
+                    $amount,
+                    null
+                );
+            });
+
+            return response()->json(['message' => 'Transfer successful.', 'new_balance' => $wallet->balance], 200);
+
+        } catch (ValidationException $ve) {
+            return response()->json(['message' => $ve->getMessage()], 422);
+        } catch (\Exception $e) {
+            ErrorLogService::report($e, ['input' => request()->except(['password', 'token']),]);
+            return response()->json(['message' => 'Something went wrong, please try again later.'], 500);
+        }
+    }
+
     /**
      * Deposit funds to wallet (with proof)
      * POST /api/v1/program-wallets/{wallet}/deposit
      */
-    //D E P O S I T  M E T H O D S
+    // D E P O S I T  M E T H O D S
     public function deposit (Request $request, ProgramWallet $wallet)
     {
         if(!$wallet){

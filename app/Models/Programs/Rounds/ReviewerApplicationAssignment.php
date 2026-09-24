@@ -13,6 +13,7 @@ class ReviewerApplicationAssignment extends Model
     protected $fillable = [
         'round_id',
         'reviewer_id',
+        'reviewer_order_id',
         'application_id',
         'status',
         'assigned_at',
@@ -26,6 +27,25 @@ class ReviewerApplicationAssignment extends Model
         'completed_at' => 'datetime',
     ];
 
+    protected static function booted(): void
+    {
+        static::creating(function (self $assignment) {
+            if (!$assignment->reviewer_order_id) {
+                $assignment->reviewer_order_id = \App\Models\ReviewerOrder::where('round_id', $assignment->round_id)
+                    ->where('reviewer_id', $assignment->reviewer_id)
+                    ->value('id');
+            }
+        });
+
+        static::created(function (self $assignment) {
+            $assignment->reviewerOrder?->refreshRoundReviewFee();
+        });
+
+        static::deleted(function (self $assignment) {
+            $assignment->reviewerOrder?->refreshRoundReviewFee();
+        });
+    }
+
     public function round()
     {
         return $this->belongsTo(ProgramRound::class, 'round_id');
@@ -37,5 +57,10 @@ class ReviewerApplicationAssignment extends Model
     public function application()
     {
         return $this->belongsTo(ProgramApplication::class, 'application_id');
+    }
+
+    public function reviewerOrder()
+    {
+        return $this->belongsTo(\App\Models\ReviewerOrder::class, 'reviewer_order_id');
     }
 }

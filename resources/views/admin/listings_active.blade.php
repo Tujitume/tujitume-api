@@ -47,7 +47,7 @@
 													<!-- <td>N/A</td> -->
 													<td>
 														<button  type="button" class="border text-dark btn btn-light py-1 font-weight-bold small" data-toggle="modal" data-target="#exampleModal{{$l[0]->id}}">
-														{{$l[0]->fname.' '.$l[0]->lname}}
+														{{$l[0]->first_name.' '.$l[0]->last_name}}
 														</button>
 													</td>
 
@@ -70,7 +70,7 @@
 						  <div class="modal-dialog" role="document">
 						    <div class="modal-content mx-auto text-center">
 						      <div class="text-center modal-header">
-						        <h5 class="modal-title  text-secondary mx-auto" id="exampleModalLabel">User Info ({{$l[0]->fname.' '.$l[0]->lname}})</h5>
+						        <h5 class="modal-title  text-secondary mx-auto" id="exampleModalLabel">User Info ({{$l[0]->first_name.' '.$l[0]->last_name}})</h5>
 						        <button type="button" class="close" data-dismiss="modal" aria-label="Close">
 						          <span aria-hidden="true">&times;</span>
 						        </button>

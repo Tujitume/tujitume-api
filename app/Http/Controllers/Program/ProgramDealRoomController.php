@@ -76,7 +76,7 @@ class ProgramDealRoomController extends Controller
 
             if (count($recipients) > 0) {
                 $this->programNotification->send('dealroom.document_uploaded', $recipients, [
-                    'uploader_name' => $user->fname . ' ' . $user->lname, 'document_type' => $validated['document_type'],
+                    'uploader_name' => $user->first_name . ' ' . $user->last_name, 'document_type' => $validated['document_type'],
                     'milestone_number' => $milestone->sequence_order, 'application_id' => $milestone->app_id,
                 ]);
             }
