@@ -27,6 +27,7 @@ class TransactionRecord
         $creditTypes = [
             'deposit',
             'refund',
+            'reviewer_payment_received',
             'service_milestone',
             'business_milestone',
         ];
@@ -34,6 +35,7 @@ class TransactionRecord
         $debitTypes = [
             'withdraw',
             'transfer_to_program_wallet',
+            'reviewer_payment_sent',
             'investment',
             'investment_awaiting',
             'service_fee',

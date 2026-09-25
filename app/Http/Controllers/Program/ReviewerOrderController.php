@@ -12,12 +12,21 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
+use Stripe\StripeClient;
+use App\Service\Balance\BalanceService;
 
 class ReviewerOrderController extends Controller
 {
 
-    public function __construct(ProgramNotificationService $notification)
+    private $Client;
+    private $balance;
+
+    public function __construct(StripeClient $client)
     {
+        parent::__construct();
+        $this->Client = $client;
+        $this->balance = new BalanceService();
+
     }
 
     // ─── List reviewer's own orders ──────────────────────────────
@@ -125,7 +134,7 @@ class ReviewerOrderController extends Controller
             ]);
 
             // Notify program owner
-            $this->notification->send('reviewer.work_delivered', [
+            $this->programNotification->send('reviewer.work_delivered', [
                 $order->program->owner
             ], [
                 'program_title'  => $order->program->program_title,
@@ -171,7 +180,7 @@ class ReviewerOrderController extends Controller
             ]);
 
             // Notify reviewer
-            $this->notification->send('reviewer.modification_requested', [
+            $this->programNotification->send('reviewer.modification_requested', [
                 $order->reviewer
             ], [
                 'program_title'     => $order->program->program_title,
@@ -210,28 +219,119 @@ class ReviewerOrderController extends Controller
             return response()->json(['error' => 'Already paid'], 422);
         }
 
-        $order->update([
-            'work_status'  => 'approved',
-            'approved_at'  => now(),
-        ]);
+        try {
+            $transfer = $this->initiateReviewerPayment($order);
 
-        // Notify reviewer
-        $this->notification->send('reviewer.work_approved', [
-            $order->reviewer
-        ], [
-            'program_title' => $order->program->program_title,
-            'order_type'    => $order->order_type,
-            'fee'           => $order->fee_usd,
-            'order_id'      => $order->id,
-        ]);
+            $program = $order->program;
+            $reviewer = $order->reviewer;
+            $this->programNotification->send('reviewer.work_approved', [$reviewer], [
+                'program_title' => $program->program_title,
+                'order_type' => $order->order_type,
+                'fee' => $order->fee_usd,
+                'order_id' => $order->id,
+            ]);
+            $this->programNotification->send('reviewer.payment_initiated', [$reviewer], [
+                'program_title' => $program->program_title,
+                'round_name' => $order->round?->round_name ?? $program->program_title,
+                'fee' => $order->fee_usd,
+                'order_id' => $order->id,
+            ]);
+            $this->programNotification->send('reviewer.payment_completed', [$reviewer], [
+                'program_title' => $program->program_title,
+                'amount' => $order->fee_usd,
+                'currency' => $order->currency ?: 'USD',
+                'order_id' => $order->id,
+            ]);
 
-        return response()->json([
-            'message' => 'Work approved. Proceed to initiate payment.',
-            'data'    => $order->fresh(),
-        ], 200);
+            return response()->json([
+                'message' => 'Work approved and payment transferred to reviewer.',
+                'data' => $order->fresh(),
+                'transfer_id' => $transfer->id,
+            ], 200);
+        } catch (ValidationException $e) {
+            return response()->json(['message' => 'Already paid'], 422);
+        } catch (\Throwable $e) {
+            ErrorLogService::report($e, ['order_id' => $order->id]);
+            $status = in_array($e->getCode(), [404, 422]) ? $e->getCode() : 500;
+            return response()->json(['message' => $status === 500 ? 'Reviewer payment could not be completed.' : $e->getMessage()], $status);
+        }
     }
 
-    // ─── Payment status polling ───────────────────────────────────
+    // ─── Payment initiate & status polling ───────────────────────────────────
+
+    public function initiateReviewerPayment(ReviewerOrder $order)
+    {
+        return DB::transaction(function () use ($order) {
+            $order = ReviewerOrder::whereKey($order->id)->lockForUpdate()->firstOrFail();
+            if ($order->payment_status === 'completed') {
+                throw ValidationException::withMessages(['payment' => 'Already paid']);
+            }
+
+            $program = $order->program()->with('owner')->firstOrFail();
+            $owner = $program->owner;
+            $reviewer = $order->reviewer;
+            $wallet = $program->wallet()->lockForUpdate()->first();
+            $amount = round((float) $order->fee_usd, 2);
+
+            if ( !$reviewer?->stripe_connect_id) {
+                throw new \RuntimeException('Reviewer must have a Stripe Connect account.', 422);
+            }
+            if (!$wallet || (float) $wallet->balance < $amount) {
+                throw new \RuntimeException('Insufficient program wallet balance.', 422);
+            }
+            if ($amount <= 0) {
+                throw new \RuntimeException('Reviewer payment amount must be greater than zero.', 422);
+            }
+
+            $order->update([
+                'work_status' => 'approved',
+                'approved_at' => now(),
+                'payment_status' => 'pending',
+            ]);
+
+            // Create the transfer in the program owner's connected account context.
+            $transfer = $this->Client->transfers->create([
+                'amount' => (int) round($amount * 100),
+                'currency' => 'usd',
+                'destination' => $reviewer->stripe_connect_id,
+                'description' => 'Reviewer payment for program ' . $program->program_title,
+                'metadata' => [
+                    'reviewer_order_id' => (string) $order->id,
+                    'program_id' => (string) $program->id,
+                ],
+            ], [
+                'stripe_account' => $owner->stripe_connect_id,
+                'idempotency_key' => 'reviewer_order_' . $order->id,
+            ]);
+
+            $wallet->balance = (float) $wallet->balance - $amount;
+            $wallet->total_disbursed = (float) $wallet->total_disbursed + $amount;
+            $wallet->save();
+
+            $this->balance->updateBalance(
+                $reviewer->id, $amount, 'reviewer_payment'
+            );
+
+            $this->transaction->create(
+                $owner->id, 'reviewer_payment_sent','stripe', $amount, $transfer->id, $reviewer->id
+            );
+
+            $this->transaction->create(
+                $reviewer->id,'reviewer_payment_received','stripe',$amount,$transfer->id,
+                $owner->id
+            );
+
+
+            $order->update([
+                'payment_status' => 'completed',
+                'leg2_reference' => $transfer->id,
+                'paid_at' => now(),
+            ]);
+
+            return $transfer;
+        });
+    }
+
     // GET /api/v1/programs/reviewer-orders/{order}/payment-status
     public function paymentStatus(ReviewerOrder $order)
     {

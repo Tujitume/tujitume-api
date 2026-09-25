@@ -129,7 +129,7 @@ class WalletController extends Controller
             }
 
             $createWallet = $this->create_wallet();
-            return $createWallet;
+            //return $createWallet;
 
             if(isset($createWallet['success']) && $createWallet['success'] == false){
                 return response()->json([

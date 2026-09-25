@@ -14,8 +14,9 @@ use App\Service\Account\RegisterService;
 use App\Service\Misc\ErrorLogService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\ValidationException;
-use PhpOffice\PhpSpreadsheet\Calculation\MathTrig\Round;
+
 
 class RoundReviewerController extends Controller
 {
@@ -506,7 +507,13 @@ class RoundReviewerController extends Controller
     // POST /programs/rounds/{round}/applications/{application}/start-review
     public function startReview(ProgramRound $round, ProgramApplication $application)
     {
-        $userId = auth()->id();
+        $user = Auth::user();
+
+        $userId = $user->id;
+
+        if (!$user->stripe_connect_id && !$user->lipr_wallet) {
+            throw new \RuntimeException('You must onboard to Stripe or Mpesa before starting a review.', 422);
+        }
 
         $assignment = ReviewerApplicationAssignment::where('round_id', $round->id)
             ->where('application_id', $application->id)
