@@ -15,7 +15,6 @@ use App\Models\Programs\Monitoring\MESubmission;
 use App\Models\Programs\Monitoring\MESubmissionFile;
 use App\Models\ReviewerOrder;
 use App\Service\Misc\ErrorLogService;
-use App\Service\Notification\ProgramNotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -24,13 +23,9 @@ use Illuminate\Validation\ValidationException;
 
 class MEController extends Controller
 {
-    protected $fileUpload;
-    protected $programNotification;
-
     public function __construct()
     {
         parent::__construct();
-        $this->programNotification = new ProgramNotificationService();
     }
 
     // ─── CHECKPOINTS ────────────────────────────────────────────────────
