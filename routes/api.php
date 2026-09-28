@@ -12,9 +12,10 @@ use Illuminate\Support\Facades\Route;
 | Routes organized into modules for better maintainability
 */
 
-Route::prefix('v1')->group(function () {
-    // THIRD PARTY CALLBACKS (Public)
-    // =============================================================
+
+// THIRD PARTY CALLBACKS (Public)
+// =============================================================
+
     Route::post('/lipr-callback', [MpesaCallbackController::class, 'callback']);
     Route::post('/stripe-callback', [CheckoutStripeController::class, 'callback']);
 
@@ -27,6 +28,8 @@ Route::prefix('v1')->group(function () {
     // Reviewer payment callbacks
     Route::post('/lipr-callback-reviewer-payment', [MpesaCallbackController::class, 'callbackForReviewerPayment']);
     Route::post('/lipr-callback-reviewer-payment-leg2', [MpesaCallbackController::class, 'callbackForReviewerPaymentLeg2']);
+
+Route::prefix('v1')->group(function () {
 
     // PUBLIC ROUTES (No Auth Required)
     // =============================================================
