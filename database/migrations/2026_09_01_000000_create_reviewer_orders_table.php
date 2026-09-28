@@ -40,8 +40,8 @@ return new class extends Migration
         $table->timestamp('paid_at')->nullable();
         $table->timestamps();
 
-        $table->unique(['reviewer_id', 'round_id'], 'unique_reviewer_round');
-        $table->unique(['reviewer_id', 'site_visit_id'], 'unique_reviewer_site_visit');
+        //$table->unique(['reviewer_id', 'round_id'], 'unique_reviewer_round');
+        //$table->unique(['reviewer_id', 'site_visit_id'], 'unique_reviewer_site_visit');
     });
     }
 

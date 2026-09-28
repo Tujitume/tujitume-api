@@ -222,6 +222,18 @@ class ReviewerOrderController extends Controller
         try {
             $transfer = $this->initiateReviewerPayment($order);
 
+            if ($order->order_type === 'round_review') {
+                $order->applicationAssignments()
+                    ->with('application')
+                    ->get()
+                    ->each(function ($assignment) use ($order) {
+                        if ($assignment->application) {
+                            $assignment->application->assigned_reviewer_id = $order->reviewer_id;
+                            $assignment->application->save();
+                        }
+                    });
+            }
+
             $program = $order->program;
             $reviewer = $order->reviewer;
             $this->programNotification->send('reviewer.work_approved', [$reviewer], [
@@ -244,6 +256,23 @@ class ReviewerOrderController extends Controller
                 'currency' => $order->currency ?: 'USD',
                 'order_id' => $order->id,
             ]);
+
+            $round = $order->round;
+            if (
+                $order->order_type === 'round_review'
+                && $round
+                && !$round->applications()->where(function ($query) {
+                    $query->whereNull('round_status')
+                        ->orWhere('round_status', '!=', 'scored');
+                })->exists()
+            ) {
+                $this->programNotification->send('round.all_applications_scored', [$program->owner], [
+                    'program_title' => $program->program_title,
+                    'round_name' => $round->round_name,
+                    'round_id' => $round->id,
+                    'program_id' => $program->id,
+                ]);
+            }
 
             return response()->json([
                 'message' => 'Work approved and payment transferred to reviewer.',

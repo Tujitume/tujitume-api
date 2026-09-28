@@ -23,7 +23,7 @@ class RoundReviewer extends Model
 
     public function reviewerOrder()
     {
-        return $this->hasOne(\App\Models\ReviewerOrder::class, 'round_reviewer_id');
+        return $this->hasMany(\App\Models\ReviewerOrder::class, 'round_reviewer_id');
     }
 
 }

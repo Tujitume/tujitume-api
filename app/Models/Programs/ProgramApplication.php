@@ -68,6 +68,12 @@ class ProgramApplication extends Model
         return $this->belongsTo(User::class,'user_id','id');
     }
 
+    public function reviewer()
+    {
+        return $this->belongsTo(User::class, 'assigned_reviewer_id')
+            ->select(['id', 'first_name', 'last_name', 'email', 'image']);
+    }
+
     public function program_milestones()
     {
         return $this->hasMany(ProgramMilestone::class,'app_id','id')

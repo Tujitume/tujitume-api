@@ -439,6 +439,14 @@ class ProgramNotificationService
                 'link'          => 'overview/programs/rounds/' . ($data['order_id'] ?? ''),
             ],
 
+            'round.all_applications_scored' => [
+                'title'         => 'Round Scoring Complete',
+                'message'       => "All applications for {$data['round_name']} have been scored. Please finalize the round and start the next round.",
+                'email_subject' => 'All Applications Scored — Finalize the Round',
+                'email_view'    => $this->view_base . 'round_all_applications_scored',
+                'link'          => 'overview/programs/rounds/' . ($data['round_id'] ?? ''),
+            ],
+
             'reviewer.accepted' => [
                 'title'         => 'Reviewer Accepted Assignment',
                 'message'       => "{$data['reviewer_name']} accepted the review assignment for {$data['round_name']} in {$data['program_title']}.",

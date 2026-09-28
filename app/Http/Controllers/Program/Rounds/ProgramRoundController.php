@@ -157,11 +157,11 @@ class ProgramRoundController extends Controller
             $appIds = ApplicationRoundHistory::where('round_id', $round_id)
                 ->pluck('application_id');
 
-            $applications = ProgramApplication::whereIn('id', $appIds)->get();
+            $applications = ProgramApplication::with('reviewer')->whereIn('id', $appIds)->get();
 
         } else {
             // Round still active - get current apps
-            $applications = ProgramApplication::where('current_round_id', $round_id)->get();
+            $applications = ProgramApplication::with('reviewer')->where('current_round_id', $round_id)->get();
         }
 
         // Stats always from history (accurate regardless of round state)
@@ -173,7 +173,7 @@ class ProgramRoundController extends Controller
             'not_selected_count' => $history->where('outcome', 'not_selected')->count(),
             'awarded_count'      => $history->where('outcome', 'awarded')->count(),
             'in_progress_count'  => $history->where('outcome', 'in_progress')->count(),
-            'reviewed_by'         => $round->reviewers,
+            //'reviewed_by'         => $round->reviewers,
         ];
 
         $mapped = $applications->map(function ($app) use ($round_id) {
@@ -534,6 +534,18 @@ class ProgramRoundController extends Controller
             return response()->json(['error' => 'Round already finalized'], 422);
         }
 
+        $unscoredCount = ProgramApplication::where('current_round_id', $round->id)
+            ->where(function ($query) {
+                $query->whereNull('round_status')->orWhere('round_status', '!=', 'scored');
+            })->count();
+
+        if ($unscoredCount > 0) {
+            return response()->json([
+                'error' => 'All applications in this round must be scored before the round can be finalized.',
+                'unscored_applications' => $unscoredCount,
+            ], 422);
+        }
+
         DB::beginTransaction();
         try {
             $knockoutService = new KnockoutEvaluator();
@@ -606,6 +618,7 @@ class ProgramRoundController extends Controller
 
             foreach ($advanced as $app) {
                 $app->round_status = 'advanced';
+                $app->assigned_reviewer_id = null;
 
                 if($app->status == 'pending'){
                     $app->status = 'approved';
@@ -757,6 +770,12 @@ class ProgramRoundController extends Controller
         if (!$round || $round->advancement_mode !== 'manual') {
             return response()->json([
                 'error' => 'Round does not allow manual advancement'
+            ], 422);
+        }
+
+        if ($round->status !== 'published') {
+            return response()->json([
+                'error' => 'Round is not published. Current status: ' . $round->status
             ], 422);
         }
 
@@ -1041,7 +1060,7 @@ class ProgramRoundController extends Controller
             DB::commit();
 
             return response()->json([
-                'message' => 'Round submitted successfully',
+                'message' => 'Application submitted successfully',
                 'data' => [
                     'application_id' => $application->id,
                     'round_id' => $application->current_round_id,

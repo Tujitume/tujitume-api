@@ -150,7 +150,7 @@ class ApplicationRoundProgressController extends Controller
             $errors['close_date'] = 'Close date must be after open date.';
         }
 
-        if (empty($round->scoring_criteria)) {
+        if ($round->advancement_mode == 'score_threshold' && empty($round->scoring_criteria)) {
             $errors['scoring_criteria'] = 'Round must have scoring criteria defined.';
         }
 
@@ -297,12 +297,12 @@ class ApplicationRoundProgressController extends Controller
 
         try {
             $validated = $request->validate([
-                'application_start_id' => 'required|integer',
-                'application_end_id'   => 'required|integer|gte:application_start_id',
+                'application_start_id' => 'nullable|integer',
+                'application_end_id'   => 'nullable|integer|gte:application_start_id',
             ]);
 
-            $startId = $validated['application_start_id'];
-            $endId   = $validated['application_end_id'];
+            //$startId = $validated['application_start_id'];
+            //$endId   = $validated['application_end_id'];
 
             $scoringCriteria = $round->scoring_criteria;
 
@@ -314,7 +314,7 @@ class ApplicationRoundProgressController extends Controller
 
             $applications = ProgramApplication::where('current_round_id', $round->id)
                 //->whereBetween('id', [$startId, $endId])
-                ->whereIn('round_status', ['draft','submitted', 'under_review'])
+                ->whereIn('round_status', ['draft','submitted', 'assigned', 'under_review'])
                 ->get();
 
             if ($applications->isEmpty()) {

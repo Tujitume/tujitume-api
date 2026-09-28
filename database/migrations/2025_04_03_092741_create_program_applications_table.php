@@ -87,6 +87,7 @@ return new class extends Migration
             $table->text('rejection_reason')->nullable();
             // new
             $table->foreignId('current_round_id')->nullable()->constrained('program_rounds');
+            $table->foreignId('assigned_reviewer_id')->nullable()->constrained('users')->nullOnDelete();
 
             $table->enum('round_status', ['draft', 'submitted', 'under_review', 'assigned', 'scored', 'advanced', 'not_selected', 'ineligible', 'withdrawn'])->default('draft');
 
