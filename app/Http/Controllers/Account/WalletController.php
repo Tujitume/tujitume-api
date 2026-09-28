@@ -333,8 +333,8 @@ class WalletController extends Controller
 
             $fields = [
                 "requestId" => 'stk-' . now()->format('YmdHis') . '-' . uniqid(),
-                "resultUrl" => "https://tujitume.com/api/lipr-callback",
-                "timeoutUrl" => "https://tujitume.com/api/lipr-callback/timeout",
+                "resultUrl" => "https://api.tujitume.com/api/lipr-callback",
+                "timeoutUrl" => "https://api.tujitume.com/api/lipr-callback/timeout",
                 //"metadata" => ["user_id" => $user->id, "purpose" => $request->purpose, //"customerId" => "CUST-441"],
 
                 "wallet" => $user->lipr_wallet, // 'tujitume-2v'
