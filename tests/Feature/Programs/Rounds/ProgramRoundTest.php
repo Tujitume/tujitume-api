@@ -18,7 +18,7 @@ describe('Round endpoints', function () {
         $this->program->update(['total_rounds' => 3]);
 
         $created = $this->actingAsOrgOwner()
-            ->postJson("/api/v1/programs/{$this->program->id}/rounds", [
+            ->postJson("/api/v1/programs/{$this->program->id}/rounds", [ 
                 'round_name' => 'Due diligence',
                 'open_date' => '2026-09-01',
                 'close_date' => '2026-09-15',
@@ -26,6 +26,18 @@ describe('Round endpoints', function () {
                 'announcement_date' => '2026-09-25',
                 'rubric_mode' => 'weighted',
                 'advancement_mode' => 'manual',
+                'scoring_criteria' => [
+                    [
+                        'criteria_name' => 'Team',
+                        'weight' => 0.5,
+                        'description' => 'The team is strong and capable.',
+                    ],
+                    [
+                        'criteria_name' => 'Market',
+                        'weight' => 0.5,
+                        'description' => 'The market is large and growing.',
+                    ]
+                ]
             ]);
 
         $created->assertCreated()
