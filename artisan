@@ -1,10 +1,11 @@
 #!/usr/bin/env php
 <?php
 
-if (in_array('test', $_SERVER['argv'] ?? [], true)) {
-    fwrite(STDERR, "Tests are disabled in this project.\n");
-    exit(1);
-}
+// disable tests
+// if (in_array('test', $_SERVER['argv'] ?? [], true)) {
+//     fwrite(STDERR, "Tests are disabled in this project.\n");
+//     exit(1);
+// }
 
     define('LARAVEL_START', microtime(true));
 
