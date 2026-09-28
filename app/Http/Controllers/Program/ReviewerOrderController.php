@@ -230,12 +230,14 @@ class ReviewerOrderController extends Controller
                 'fee' => $order->fee_usd,
                 'order_id' => $order->id,
             ]);
-            $this->programNotification->send('reviewer.payment_initiated', [$reviewer], [
-                'program_title' => $program->program_title,
-                'round_name' => $order->round?->round_name ?? $program->program_title,
-                'fee' => $order->fee_usd,
-                'order_id' => $order->id,
-            ]);
+
+            // $this->programNotification->send('reviewer.payment_initiated', [$reviewer], [
+            //     'program_title' => $program->program_title,
+            //     'round_name' => $order->round?->round_name ?? $program->program_title,
+            //     'fee' => $order->fee_usd,
+            //     'order_id' => $order->id,
+            // ]);
+
             $this->programNotification->send('reviewer.payment_completed', [$reviewer], [
                 'program_title' => $program->program_title,
                 'amount' => $order->fee_usd,
@@ -263,6 +265,7 @@ class ReviewerOrderController extends Controller
     {
         return DB::transaction(function () use ($order) {
             $order = ReviewerOrder::whereKey($order->id)->lockForUpdate()->firstOrFail();
+
             if ($order->payment_status === 'completed') {
                 throw ValidationException::withMessages(['payment' => 'Already paid']);
             }
@@ -289,10 +292,12 @@ class ReviewerOrderController extends Controller
                 'payment_status' => 'pending',
             ]);
 
-            // Create the transfer in the program owner's connected account context.
+            // Create the transfer in the program context.
+
             $transfer = $this->Client->transfers->create([
-                'amount' => (int) round($amount * 100),
-                'currency' => 'usd',
+                "amount" => (int) round($amount * 100),
+                "currency" => 'usd',
+                //"source_transaction" => $charge->id,
                 'destination' => $reviewer->stripe_connect_id,
                 'description' => 'Reviewer payment for program ' . $program->program_title,
                 'metadata' => [
@@ -300,10 +305,12 @@ class ReviewerOrderController extends Controller
                     'program_id' => (string) $program->id,
                 ],
             ], [
-                'stripe_account' => $owner->stripe_connect_id,
                 'idempotency_key' => 'reviewer_order_' . $order->id,
             ]);
 
+
+            // Stripe succeeded
+            
             $wallet->balance = (float) $wallet->balance - $amount;
             $wallet->total_disbursed = (float) $wallet->total_disbursed + $amount;
             $wallet->save();

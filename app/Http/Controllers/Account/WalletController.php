@@ -138,7 +138,7 @@ class WalletController extends Controller
                 ], 400);
             }
             elseif(isset($createWallet['success']) && $createWallet['success'] === true){
-                User::where('id', $id)->update([ 'lipr_wallet' => $createWallet['wallet']['id'] ]);
+                User::where('id', $id)->update([ 'lipr_wallet' => $createWallet['wallet']['account'] ]);
 
                 return response()->json([
                     'message' => 'Lipr wallet created.',
@@ -337,7 +337,7 @@ class WalletController extends Controller
                 "timeoutUrl" => "https://tujitume.com/api/lipr-callback/timeout",
                 //"metadata" => ["user_id" => $user->id, "purpose" => $request->purpose, //"customerId" => "CUST-441"],
 
-                "wallet" => $platform_wallet, // $user->lipr_wallet,
+                "wallet" => $user->lipr_wallet, // 'tujitume-2v'
                 "narration" => $request->purpose,
                 "customerAccountNumber" => $acc_number,
                 "recipients" => [
@@ -466,6 +466,9 @@ class WalletController extends Controller
             return response()->json(['message' => 'Unauthorized!'], 401);
         }
         $user = Auth::user();
+
+        $isOrganizationUser = $user->user_type_id === 4;
+
         $user->load('balance');
 
         try {
@@ -495,13 +498,18 @@ class WalletController extends Controller
             if($charge && $charge->status == "succeeded")
             {
                 $transaction = $this->Client->balanceTransactions->retrieve($charge->balance_transaction);
-                $transfer = $this->Client->transfers->create([
-                    "amount" => $transaction->net, //100 * 100,
-                    "currency" => 'USD',
-                    "source_transaction" => $charge->id,
-                    'destination' => $user->stripe_connect_id
-                ]);
-                $payment->update(['status' => 'transferred']);
+
+                if(!$isOrganizationUser){
+                    $transfer = $this->Client->transfers->create([
+                        "amount" => $transaction->net, //100 * 100,
+                        "currency" => 'USD',
+                        "source_transaction" => $charge->id,
+                        'destination' => $user->stripe_connect_id
+                    ]);
+
+                    $payment->update(['status' => 'transferred']);
+                }
+                
 
                 //Balance Update $
                 $netAmount = $transaction->net / 100;

@@ -15,7 +15,7 @@ use Illuminate\Support\Facades\Route;
 Route::prefix('v1')->group(function () {
     // THIRD PARTY CALLBACKS (Public)
     // =============================================================
-    Route::post('/lipr-callback', [MpesaPollingController::class, 'callback']);
+    Route::post('/lipr-callback', [MpesaCallbackController::class, 'callback']);
     Route::post('/stripe-callback', [CheckoutStripeController::class, 'callback']);
 
     // programs
