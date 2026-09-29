@@ -18,7 +18,7 @@ class LiprPaymentService
 
     // ─── Payment Type Methods ───────────────────────────────────────────
 
-    public function toMobile($milestoneId, string $walletAccount, string $customerAccNumber, float $amountKes): array
+    public function toMobile(string $walletAccount, string $customerAccNumber, float $amountKes, ?int $milestoneId = null): array
     {
         $fields = [
             "requestId" => 'stk-' . now()->format('YmdHis') . '-' . uniqid(),

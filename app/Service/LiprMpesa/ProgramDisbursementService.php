@@ -68,7 +68,7 @@ class ProgramDisbursementService
 
     // ─── Route to correct LIPR payment method based on supplier ────────
 
-    private function routePayment($milestoneId, SupplierDirectory $supplier,  float $amountKes, string $walletAccount): array
+    private function routePayment(SupplierDirectory $supplier,  float $amountKes, string $walletAccount, int milestoneId): array
     {
         return match($supplier->payment_method) {
             'mpesa_mobile' => $this->lipr->toMobile(
