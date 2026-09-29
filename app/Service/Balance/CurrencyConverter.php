@@ -9,7 +9,8 @@ class CurrencyConverter
         try {
             $curl = curl_init();
             curl_setopt_array($curl, array(
-                CURLOPT_URL => "https://api.exchangerate.fun/latest?base=KES",
+                //CURLOPT_URL => "https://api.exchangerate.fun/latest?base=KES",
+                CURLOPT_URL => "https://api.frankfurter.dev/v2/rates?base=KES",
                 CURLOPT_RETURNTRANSFER => true,
                 CURLOPT_ENCODING => "",
                 CURLOPT_MAXREDIRS => 10,
@@ -28,8 +29,11 @@ class CurrencyConverter
             if($err){
                 return $err;
             }
-            return $response['rates']['USD'];
-            //echo '<pre>'; print_r($response); echo '<pre>';
+            //return $response['rates']['USD'];
+            $rate = collect($response)->firstWhere('quote', 'USD')['rate'] ?? null;
+
+            return $rate;
+
         } catch (\Exception $e) {
 
             ErrorLogService::report($e, [
@@ -70,15 +74,10 @@ class CurrencyConverter
 
             $response = json_decode($rawResponse, true);
 
-            if (
-                !is_array($response) ||
-                !isset($response['rates']) ||
-                !isset($response['rates']['KES'])
-            ) {
-                return false;
-            }
+            $rate = collect($response)->firstWhere('quote', 'KES')['rate'] ?? null;
 
-            return $response['rates']['KES'];
+            return $rate;
+
         } catch (\Exception $e) {
 
             ErrorLogService::report($e, [
