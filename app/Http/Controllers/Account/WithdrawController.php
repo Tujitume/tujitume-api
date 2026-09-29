@@ -90,11 +90,11 @@ class WithdrawController extends Controller
 
         try {
             $request->validate([
-                'reference_id' => 'required',
+                'referenceId' => 'required',
                 //'amount' => 'required|numeric',//KES
             ]);
 
-            $payment = LiprPayment::where('reference_id', $request->reference_id)
+            $payment = LiprPayment::where('reference_id', $request->referenceId)
                 //->where('user_id', $user->id)
                 ->lockForUpdate()->first();
 
@@ -105,7 +105,7 @@ class WithdrawController extends Controller
                 ],200);
             }
 
-            if ($payment->status === "failed") {
+            if (strtolower($payment->status) === "failed") {
                 return response()->json([
                     'status' => 'failed',
                     'message' =>  'Customer rejected payment or did not pay',
@@ -113,13 +113,13 @@ class WithdrawController extends Controller
                 ],200);
             }
 
-
+            DB::transaction(function () use ($request, $user, &$amountUsd, &$payment) {
 
                 if ($payment->status === 'completed') {
                     throw new \Exception('Payment already completed.', 409);
                 }
 
-                if ($payment->status !== 'processed') {
+                if (strtolower($payment->status) !== 'successful') {
                     throw new \Exception('Payment not ready for crediting.', 422);
                 }
 
@@ -130,8 +130,9 @@ class WithdrawController extends Controller
                 $payment->update([ 'status' => 'completed' ]);
 
                 $this->transaction->create(
-                    $user->id,'withdraw','lipr-mobile', $payment->amount, $request->reference_id
+                    $user->id,'withdraw','lipr-mobile', $payment->amount_usd, $request->referenceId
                 );
+            });
 
 
             //NotificationService
