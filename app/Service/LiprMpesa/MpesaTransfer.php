@@ -31,7 +31,7 @@ class MpesaTransfer
                 'wallet_account' => $payer_wallet,
                 'amount' => $amount,
                 'narration' => $narration,
-                "callback_url" => "https://tujitume.com/api/lipr-callback",
+                "callback_url" => rtrim(config('app.api_url'), '/') . '/lipr-callback',
                 "payment_type" => "M2B_MPESA_PAYBILL", //$payment_type
                 "paybill_account_number" => $receiver_paybil_acc, //tax_acc_number
                 "paybill_number" => $receiver_paybill,
@@ -65,7 +65,7 @@ class MpesaTransfer
                 'customer_account_number' => $receiver_acc_number, //"254721601031", //,
                 'amount' => $amount, //KES
                 'narration' => $narration,
-                "callback_url" => "https://tujitume.com/api/lipr-callback",
+                "callback_url" => rtrim(config('app.api_url'), '/') . '/lipr-callback',
                 "payment_type" => "M2C_MPESA"
             ],
         ];
@@ -98,7 +98,7 @@ class MpesaTransfer
                 'wallet_account' => $payer_wallet,
                 'amount' => $amount,
                 'narration' => $narration,
-                "callback_url" => "https://tujitume.com/api/lipr-callback",
+                "callback_url" => rtrim(config('app.api_url'), '/') . '/lipr-callback',
                 "payment_type" => "M2B_MPESA_TILL", //$payment_type
                 "till_number" => $receiver_till_number,
             ],
@@ -137,4 +137,3 @@ class MpesaTransfer
 
 
 }
-

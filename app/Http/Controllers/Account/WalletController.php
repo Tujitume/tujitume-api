@@ -333,8 +333,8 @@ class WalletController extends Controller
 
             $fields = [
                 "requestId" => 'stk-' . now()->format('YmdHis') . '-' . uniqid(),
-                "resultUrl" => "https://api.tujitume.com/api/lipr-callback",
-                "timeoutUrl" => "https://api.tujitume.com/api/lipr-callback/timeout",
+                "resultUrl" => rtrim(config('app.api_url'), '/') . '/lipr-callback',
+                "timeoutUrl" => rtrim(config('app.api_url'), '/') . '/lipr-callback/timeout',
                 //"metadata" => ["user_id" => $user->id, "purpose" => $request->purpose, //"customerId" => "CUST-441"],
 
                 "wallet" => $user->lipr_wallet, // 'tujitume-2v'
@@ -392,7 +392,7 @@ class WalletController extends Controller
 
         try {
             $request->validate([
-                'reference_id' => 'required',
+                'referenceId' => 'required',
                 //'amount' => 'required|numeric',//KES
             ]);
 
@@ -405,7 +405,7 @@ class WalletController extends Controller
                     return response()->json([ 'status' => 'pending', 'updated_at' => now() ],200);
                 }
 
-                if ($payment->status === "failed") {
+                if (strtolower($payment->status) === "failed") {
                     return response()->json([
                         'status' => 'failed', 'updated_at' => now(),
                         'message' =>  'Customer rejected payment or did not pay',
@@ -419,7 +419,7 @@ class WalletController extends Controller
                     throw new \Exception('Payment already completed.', 409);
                 }
 
-                if ($payment->status !== 'processed') {
+                if (strtolower($payment->status) !== 'successful') {
                     throw new \Exception('Payment not ready for crediting.', 422);
                 }
                 $amountUsd = $payment->amount_usd;
@@ -443,7 +443,7 @@ class WalletController extends Controller
             //NotificationService
 
             return response()->json([
-                'status' => 'processed',
+                'status' => 'completed',
                 'updated_at' => now(),
             ],200);
         }

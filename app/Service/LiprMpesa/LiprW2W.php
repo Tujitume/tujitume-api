@@ -47,8 +47,8 @@ class LiprW2W
 
         $fields = [
             "requestId" => 'stk-' . now()->format('YmdHis') . '-' . uniqid(),
-            "resultUrl" => "https://tujitume.com/api/lipr-callback-grant-supplier",
-            "timeoutUrl" => "https://tujitume.com/api/lipr-callback/timeout",
+            "resultUrl" => rtrim(config('app.api_url'), '/') . '/lipr-callback-grant-supplier',
+            "timeoutUrl" => rtrim(config('app.api_url'), '/') . '/lipr-callback/timeout',
             "metadata" => [ "listingId" => $milestone->id ],
 
             "fromWallet" => $payer_wallet,
@@ -97,4 +97,3 @@ class LiprW2W
     }
 
 }
-

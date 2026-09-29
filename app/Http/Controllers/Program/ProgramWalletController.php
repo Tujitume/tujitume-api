@@ -137,8 +137,8 @@ class ProgramWalletController extends Controller
 
             $fields = [
                 "requestId" => 'stk-' . now()->format('YmdHis') . '-' . uniqid(),
-                "resultUrl" => "https://tujitume.com/api/lipr-callback",
-                "timeoutUrl" => "https://tujitume.com/api/lipr-callback/timeout",
+                "resultUrl" => rtrim(config('app.api_url'), '/') . '/lipr-callback',
+                "timeoutUrl" => rtrim(config('app.api_url'), '/') . '/lipr-callback/timeout',
                 //"metadata" => ["user_id" => $user->id, "purpose" => $request->purpose, //"customerId" => "CUST-441"],
 
                 "wallet" => $wallet->lipr_wallet,

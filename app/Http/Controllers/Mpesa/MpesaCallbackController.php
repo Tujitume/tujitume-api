@@ -55,7 +55,7 @@ class MpesaCallbackController extends Controller
     public function callback(Request $request, CurrencyConverter $convert)
     {
         try {
-            //$liprService = new LiprAuthService();
+  
             Log::info('LIPR CALLBACK', [
                 'payload' => $request->all(),
                 'raw' => $request->getContent(),

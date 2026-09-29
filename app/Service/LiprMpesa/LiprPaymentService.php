@@ -13,7 +13,7 @@ class LiprPaymentService
         private LiprAuthService $liprAuth,
     ) {
         $this->basePath    = config('services.lipr.base_path');
-        $this->callbackUrl = 'https://tujitume.com/api/lipr-callback';
+        $this->callbackUrl = rtrim(config('app.api_url'), '/') . '/lipr-callback';
     }
 
     // ─── Payment Type Methods ───────────────────────────────────────────
@@ -22,8 +22,8 @@ class LiprPaymentService
     {
         $fields = [
             "requestId" => 'stk-' . now()->format('YmdHis') . '-' . uniqid(),
-            "resultUrl" => "https://tujitume.com/api/lipr-callback-grant-supplier",
-            "timeoutUrl" => "https://tujitume.com/api/lipr-callback/timeout",
+            "resultUrl" => rtrim(config('app.api_url'), '/') . '/lipr-callback-grant-supplier',
+            "timeoutUrl" => rtrim(config('app.api_url'), '/') . '/lipr-callback/timeout',
             "metadata" => [ "listingId" => $milestoneId ],
 
             "wallet" => $walletAccount,
@@ -43,8 +43,8 @@ class LiprPaymentService
     {
         $fields = [
             "requestId" => 'stk-' . now()->format('YmdHis') . '-' . uniqid(),
-            "resultUrl" => "https://tujitume.com/api/lipr-callback",
-            "timeoutUrl" => "https://tujitume.com/api/lipr-callback/timeout",
+            "resultUrl" => $this->callbackUrl,
+            "timeoutUrl" => $this->callbackUrl . '/timeout',
             "wallet" => $walletAccount,
             "narration" => 'Mobile Money Transfer',
             "customerAccountNumber" => $this->sanitizePhone($phone),
@@ -63,8 +63,8 @@ class LiprPaymentService
     {
         $fields = [
             "requestId" => 'stk-' . now()->format('YmdHis') . '-' . uniqid(),
-            "resultUrl" => "https://tujitume.com/api/lipr-callback",
-            "timeoutUrl" => "https://tujitume.com/api/lipr-callback/timeout",
+            "resultUrl" => $this->callbackUrl,
+            "timeoutUrl" => $this->callbackUrl . '/timeout',
 
             "wallet" => $walletAccount,
             "narration" => 'Mobile Money Transfer',
@@ -82,8 +82,8 @@ class LiprPaymentService
     {
         $fields = [
             "requestId" => 'stk-' . now()->format('YmdHis') . '-' . uniqid(),
-            "resultUrl" => "https://tujitume.com/api/lipr-callback",
-            "timeoutUrl" => "https://tujitume.com/api/lipr-callback/timeout",
+            "resultUrl" => $this->callbackUrl,
+            "timeoutUrl" => $this->callbackUrl . '/timeout',
             "wallet" => $walletAccount, //2547XXXXXXXX
             "narration" => 'Mobile Money Transfer',
             "recipients" => [
@@ -206,4 +206,3 @@ class LiprPaymentService
         return $result;
     }
 }
-

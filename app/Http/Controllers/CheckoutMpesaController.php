@@ -107,7 +107,7 @@ class CheckoutMpesaController extends Controller
             $tujitume_fee = (float) (Setting::where('key', 'tujitume_fee')->first()?->value ?? 3.0);
             $rate = $converter->UsdToKes('USD');
 
-            $callbackUrl = "https://tujitume.com/api/lipr-callback";
+            $callbackUrl = rtrim(config('app.api_url'), '/') . '/lipr-callback';
 
             if (!$platform_wallet)
             {
@@ -141,7 +141,7 @@ class CheckoutMpesaController extends Controller
                     ->with('application') // eager load the owner
                     ->firstOrFail();
                 $amount = $milestone->amount;
-                $callbackUrl = "https://tujitume.com/api/lipr-callback-program-direct";
+                $callbackUrl = rtrim(config('app.api_url'), '/') . '/lipr-callback-program-direct';
 
                 // Authorization: only program owner can disburse
                 if ($milestone->application->program_owner_id !== auth()->id()) {
@@ -154,7 +154,7 @@ class CheckoutMpesaController extends Controller
                     ->with('application') // eager load the owner
                     ->firstOrFail();
                 $amount = $milestone->application->total_amount_requested ?? $milestone->application->awarded_amount;
-                $callbackUrl = "https://tujitume.com/api/lipr-callback-program-escrow";
+                $callbackUrl = rtrim(config('app.api_url'), '/') . '/lipr-callback-program-escrow';
 
                 // Authorization: only program owner can disburse
                 if ($milestone->application->program_owner_id !== auth()->id()) {
@@ -207,7 +207,7 @@ class CheckoutMpesaController extends Controller
                 }
 
                 $amount = $order->fee_usd;
-                $callbackUrl = 'https://tujitume.com/api/lipr-callback-reviewer-payment';
+                $callbackUrl = rtrim(config('app.api_url'), '/') . '/lipr-callback-reviewer-payment';
             }
 
             if($request->purpose !== 'bids')
@@ -243,8 +243,7 @@ class CheckoutMpesaController extends Controller
             $fields = [
                 "requestId" => 'stk-' . now()->format('YmdHis') . '-' . uniqid(),
                 "resultUrl" => $callbackUrl,
-                //"resultUrl" => "http://127.0.0.1:8000/api/lipr-callback",
-                "timeoutUrl" => "https://tujitume.com/api/lipr-callback/timeout",
+                "timeoutUrl" => rtrim(config('app.api_url'), '/') . '/lipr-callback/timeout',
                 "metadata" => [ "listingId" => $request->listing_id ],
 
                 "wallet" => $destination_wallet_acc,
