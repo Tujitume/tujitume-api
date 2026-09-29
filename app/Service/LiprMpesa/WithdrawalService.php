@@ -24,11 +24,13 @@ class WithdrawalService
 
     // ─── Initiate Methods ───────────────────────────────────────────────
 
-    public function initiateToMobile(User $user, float $amountKes, string $phone): array
+    public function initiateToMobile(User $user, float $amountKes, string $phone, string $type): array
     {
         $this->validateWithdrawal($user, $amountKes);
 
         return $this->lipr->toMobile($user->lipr_wallet, $phone, $amountKes);
+
+        
     }
 
     public function initiateToPaybill(User $user, float $amountKes, string $paybillNumber, string $paybillAccount): array

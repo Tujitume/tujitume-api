@@ -55,7 +55,7 @@ class WithdrawController extends Controller
             $amountKes = round($validated['amount'], 2);
 
             $response = $this->withdrawalService->initiateToMobile(
-                $user, $amountKes, $validated['phone']
+                $user, $amountKes, $validated['phone'], $type = 'withdraw'
             );
 
             if (!$this->lipr->isSuccess($response)) {

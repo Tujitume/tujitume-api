@@ -60,6 +60,7 @@ Route::post('/lipr/deposit-status', [WalletController::class,'lipr_deposit_statu
 Route::post('/stripe/withdraw', [WithdrawController::class,'stripe_withdraw']);
 Route::post('/lipr/initiate-withdraw', [WithdrawController::class,'mobile_initiate_withdraw']);
 Route::post('/lipr/withdraw-status', [WithdrawController::class,'mobile_withdraw_status']);
+
 Route::post('/lipr/paybill-initiate-withdraw', [WithdrawController::class,'paybill_initiate_withdraw']);
 Route::post('/lipr/paybill-withdraw-status', [WithdrawController::class,'paybill_withdraw_status']);
 Route::post('/lipr/till-initiate-withdraw', [WithdrawController::class,'till_initiate_withdraw']);

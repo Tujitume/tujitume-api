@@ -71,11 +71,11 @@ class ProgramDisbursementService
     private function routePayment(SupplierDirectory $supplier,  float $amountKes, string $walletAccount, int $milestoneId): array
     {
         return match($supplier->payment_method) {
-            'mpesa_mobile' => $this->lipr->toMobile(
-                $milestoneId,
+            'mpesa_mobile' => $this->lipr->disbursementToMobile(
                 $walletAccount,
                 $supplier->lipr_mobile_number ?? $supplier->phone,
-                $amountKes
+                $amountKes,
+                $milestoneId
             ),
 
             'mpesa_paybill' => $this->lipr->toPaybill(

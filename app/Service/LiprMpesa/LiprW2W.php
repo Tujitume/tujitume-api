@@ -47,7 +47,7 @@ class LiprW2W
 
         $fields = [
             "requestId" => 'stk-' . now()->format('YmdHis') . '-' . uniqid(),
-            "resultUrl" => rtrim(config('app.api_url'), '/') . '/lipr-callback-grant-supplier',
+            "resultUrl" => rtrim(config('app.api_url'), '/') . '/lipr-callback-program-supplier',
             "timeoutUrl" => rtrim(config('app.api_url'), '/') . '/lipr-callback/timeout',
             "metadata" => [ "listingId" => $milestone->id ],
 

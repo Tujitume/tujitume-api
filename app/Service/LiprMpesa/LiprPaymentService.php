@@ -22,7 +22,7 @@ class LiprPaymentService
     {
         $fields = [
             "requestId" => 'stk-' . now()->format('YmdHis') . '-' . uniqid(),
-            "resultUrl" => rtrim(config('app.api_url'), '/') . '/lipr-callback-grant-supplier',
+            "resultUrl" => rtrim(config('app.api_url'), '/') . '/lipr-callback',
             "timeoutUrl" => rtrim(config('app.api_url'), '/') . '/lipr-callback/timeout',
             "metadata" => [ "listingId" => $milestoneId ],
 
@@ -32,6 +32,28 @@ class LiprPaymentService
             "recipients" => [
                 [
                     "amount" => $amountKes, "account" => $this->sanitizePhone($customerAccNumber) // can be multiple with [],[]
+                ]
+            ]
+        ];
+
+        return $this->disburse('to_mobile', $fields);
+    }
+
+    public function disbursementToMobile(string $walletAccount, string $customerAccNumber, float $amountKes, ?int $milestoneId = null): array
+    {
+        $fields = [
+            "requestId" => 'stk-' . now()->format('YmdHis') . '-' . uniqid(),
+            "resultUrl" => rtrim(config('app.api_url'), '/') . '/lipr-callback-program-supplier',
+            "timeoutUrl" => rtrim(config('app.api_url'), '/') . '/lipr-callback/timeout',
+            "metadata" => ["listingId" => $milestoneId],
+
+            "wallet" => $walletAccount,
+            "narration" => 'Disbursement Mobile Money Transfer',
+            "customerAccountNumber" => $this->sanitizePhone($customerAccNumber),
+            "recipients" => [
+                [
+                    "amount" => $amountKes,
+                    "account" => $this->sanitizePhone($customerAccNumber) // can be multiple with [],[]
                 ]
             ]
         ];
