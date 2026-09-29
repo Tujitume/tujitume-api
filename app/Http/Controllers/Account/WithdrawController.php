@@ -19,7 +19,6 @@ use Stripe\StripeClient;
 
 class WithdrawController extends Controller
 {
-    protected StripeClient $client;
     protected BalanceService $balance;
     protected LiprAuthService $liprAuth;
     protected $transaction;

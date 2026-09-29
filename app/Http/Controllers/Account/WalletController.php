@@ -430,7 +430,7 @@ class WalletController extends Controller
 
                 //Transaction
                 $this->transaction->create(
-                    $user->id,'deposit','lipr', $payment->amount, $request->reference_id
+                    $user->id,'deposit','lipr', $payment->amount_usd, $request->reference_id
                 );
             });
 

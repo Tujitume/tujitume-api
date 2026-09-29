@@ -3,10 +3,11 @@ namespace App\Service\Balance;
 
 use App\Models\Auth\User;
 use App\Service\LiprMpesa\LiprAuthService;
+use Stripe\StripeClient;
 
 class RetrieveBalanceService
 {
-    public function __construct($client)
+    public function __construct(StripeClient $client)
     {
         $this->Client = $client; // injected automatically
     }
