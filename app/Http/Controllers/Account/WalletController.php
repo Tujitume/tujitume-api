@@ -397,7 +397,7 @@ class WalletController extends Controller
             ]);
 
 
-                $payment = LiprPayment::where('reference_id', $request->reference_id)
+                $payment = LiprPayment::where('reference_id', $request->referenceId)
                     //->where('user_id', $user->id)
                     ->lockForUpdate()->first();
 
