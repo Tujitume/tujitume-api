@@ -49,7 +49,8 @@ class CurrencyConverter
         try {
             $curl = curl_init();
             curl_setopt_array($curl, array(
-                CURLOPT_URL => "https://api.exchangerate.fun/latest?base=USD",
+                //CURLOPT_URL => "https://api.exchangerate.fun/latest?base=USD",
+                CURLOPT_URL => "https://api.frankfurter.dev/v2/rates?base=USD",
                 CURLOPT_RETURNTRANSFER => true,
                 CURLOPT_ENCODING => "",
                 CURLOPT_MAXREDIRS => 10,

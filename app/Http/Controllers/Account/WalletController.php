@@ -45,6 +45,7 @@ class WalletController extends Controller
             else{
                 $rate = $converter->KesToUsd();
             }
+            
             $tujitume_fee = (float) Setting::where('key', 'tujitume_fee')->first()?->value ?? 3.0;
             $tujitume_fee = (float) ($tujitume_fee / 100);
             return response()->json([
