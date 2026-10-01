@@ -13,7 +13,8 @@ return new class extends Migration
     {
         Schema::create('supplier_directories', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('user_id')->constrained()->onDelete('cascade'); // Program owner
+            $table->foreignId('user_id')->nullable()->constrained('users')->nullOnDelete(); // user
+            $table->foreignId('added_by')->nullable()->constrained('users')->nullOnDelete(); // Program owner
 
             // Basic Identity
             $table->string('legal_name', 255);

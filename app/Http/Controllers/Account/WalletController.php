@@ -389,7 +389,7 @@ class WalletController extends Controller
             return response()->json(['message' => 'Unauthorized!'], 401);
         }
         $user = Auth::user();
-        $amountUsd = null;
+        $amount = null;
 
         try {
             $request->validate([
@@ -413,7 +413,7 @@ class WalletController extends Controller
                     ],200);
                 }
 
-            DB::transaction(function () use ($request, $user, &$amountUsd, &$payment)
+            DB::transaction(function () use ($request, $user, &$amount, &$payment)
             {
 
                 if ($payment->status === 'completed') {
@@ -423,14 +423,14 @@ class WalletController extends Controller
                 if (strtolower($payment->status) !== 'successful') {
                     throw new \Exception('Payment not ready for crediting.', 422);
                 }
-                $amountUsd = $payment->amount_usd;
+                $amount = $payment->amount;
                 //Balance Update $
-                $this->balance->updateBalance($user->id, $amountUsd, 'lipr');
+                $this->balance->updateBalance($user->id, $amount, 'lipr');
                 $payment->update([ 'status' => 'completed' ]);
 
                 //Transaction
                 $this->transaction->create(
-                    $user->id,'deposit','lipr', $payment->amount_usd, $request->referenceId
+                    $user->id,'deposit','lipr', $payment->amount, $request->referenceId
                 );
             });
 
@@ -439,7 +439,7 @@ class WalletController extends Controller
             if($user->user_type_id == 4 || $user->user_type_id == 3){
                 $link = 'overview/account';
             }
-            $text = 'Hi, your wallet was credited by USD $'. $amountUsd .' from deposit.';
+            $text = 'Hi, your wallet was credited by KES '. $amount .' from deposit.';
             $notification->create($user->id, $user->id, $text, $link, 'deposit');
             //NotificationService
 
@@ -516,7 +516,7 @@ class WalletController extends Controller
                 $netAmount = $transaction->net / 100;
                 DB::transaction(function () use ($user, $netAmount, $charge) {
                     //Balance Update $
-                    $this->balance->updateBalance($user->id, $netAmount, 'stripe');
+                    $this->balance->updateBalance($user->id, $netAmount, 'lipr');
 
                     //Transaction
                     $this->transaction->create(

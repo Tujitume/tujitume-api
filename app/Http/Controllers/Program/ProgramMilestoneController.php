@@ -439,6 +439,12 @@ class ProgramMilestoneController extends Controller
                     'mode' => $application->planning_mode ], 403);
             }
 
+            if ($application->funding_setup_status === 'completed') {
+                return response()->json([
+                    'error' => 'Funding setup is completed. Milestones cannot be edited or deleted.',
+                ], 403);
+            }
+
             // Validate all rules
             //$validated = $request->validate($rules);
             $validated = validator($requestData, $rules)->validate();
@@ -607,6 +613,13 @@ class ProgramMilestoneController extends Controller
             // Authorization: Only program owner
             if ($milestone->application->program->user_id !== $userId) {
                 return response()->json(['error' => 'Unauthorized'], 403);
+            }
+
+            if ($milestone->application->funding_setup_status === 'completed') {
+                DB::rollBack();
+                return response()->json([
+                    'error' => 'Funding setup is completed. Milestones cannot be edited or deleted.',
+                ], 403);
             }
 
             // Delete associated budget & suppliers

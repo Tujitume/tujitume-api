@@ -41,9 +41,13 @@ class LiprPaymentService
 
     public function disbursementToMobile(string $walletAccount, string $customerAccNumber, float $amountKes, ?int $milestoneId = null): array
     {
+        if( !$customerAccNumber ){
+            throw new \Exception('Customer account number is required for mobile disbursement', 422);
+        }
+
         $fields = [
             "requestId" => 'stk-' . now()->format('YmdHis') . '-' . uniqid(),
-            "resultUrl" => rtrim(config('app.api_url'), '/') . '/lipr-callback-program-supplier',
+            "resultUrl" => rtrim(config('app.api_url'), '/') . '/lipr-callback/transfer-to-supplier', //leg 2 callback for direct disburse
             "timeoutUrl" => rtrim(config('app.api_url'), '/') . '/lipr-callback/timeout',
             "metadata" => ["listingId" => $milestoneId],
 
@@ -69,11 +73,11 @@ class LiprPaymentService
             "timeoutUrl" => $this->callbackUrl . '/timeout',
             "wallet" => $walletAccount,
             "narration" => 'Mobile Money Transfer',
-            "customerAccountNumber" => $this->sanitizePhone($phone),
+            "customerAccountNumber" => $this->sanitizePhone($paybillNumber),
             "recipients" => [
                 [
                     "amount" => $amountKes,
-                    "account" => $this->sanitizePhone($phone),
+                    "account" => $this->sanitizePhone($paybillNumber),
                     "businessNumber" => "888880"
                 ]
             ]
@@ -184,7 +188,7 @@ class LiprPaymentService
 
     public function getError(array $response): string
     {
-        return $response['error'] ?? $response['message'] ?? $response['errors'] ?? json_encode($response) ?? 'Unknown error from payment provider';
+        return $response['data'][0]['reason'] ?? $response['error'] ?? $response['errors'] ?? json_encode($response) ?? 'Unknown error from payment provider';
     }
 
     public function getStatusCode(array $response): int

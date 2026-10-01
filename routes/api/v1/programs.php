@@ -91,6 +91,7 @@ Route::prefix('/programs')->middleware(['program', 'program.response'])->group(f
 
     Route::post('milestones/{milestone}/budget-items', [ProgramSupplierController::class, 'budget_item_store']);
     Route::get('milestones/{milestone}/budget-items', [ProgramSupplierController::class, 'budget_item_index']);
+    Route::delete('milestones/{milestone}/budget-items/{budgetItemId}', [ProgramSupplierController::class, 'budget_item_destroy']);
 
     Route::post('applications/{application}/award', [ProgramMilestoneController::class, 'award']);
 
@@ -232,6 +233,9 @@ Route::prefix('/programs')->middleware(['program', 'program.response'])->group(f
     Route::post('milestones/{milestone}/agreements/{type}/comment', [MilestonePreAgreementController::class, 'comment']);
     Route::post('milestones/{milestone}/agreements/{type}/approve', [MilestonePreAgreementController::class, 'approve']);
     Route::post('milestones/{milestone}/agreements/{type}/reject', [MilestonePreAgreementController::class, 'reject']);
+
+    // programs disbursement
+    Route::post('milestones/{milestone}/release-funds', [ProgramDisbursementController::class, 'releaseFunds']);
 
     // Extra - auto score applications
     Route::post('rounds/{round}/applications/auto-score', [ApplicationRoundProgressController::class, 'autoScoreApplications']);

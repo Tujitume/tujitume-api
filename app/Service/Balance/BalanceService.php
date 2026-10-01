@@ -7,13 +7,15 @@ use Illuminate\Support\Facades\Auth;
 
 class BalanceService
 {
-    public function updateBalance(int $userId, float $amount, string $method = null)
+    public function updateBalance(int $userId, float $amount, string $method)
     {
         $user = User::find($userId);
         $user->load('balance');
 
         $oldBalance = $user->balance?->balance ?? 0;
         $newBalance = $oldBalance + $amount;
+
+        $method = $method ?? 'lipr';
 
         // Update balance
         $balance = $user->balance()->firstOrCreate(
@@ -37,7 +39,7 @@ class BalanceService
         return $newBalance;
     }
 
-    public function updateBalanceMinus(int $userId, float $amount, string $method = null, float $unsettled_amount = 0)
+    public function updateBalanceMinus(int $userId, float $amount, string $method, float $unsettled_amount = 0)
     {
         $user = User::find($userId);
         $user->load('balance');
@@ -54,6 +56,9 @@ class BalanceService
         if ($balance->balance < $amount) {
             throw new \Exception('Insufficient balance');
         }
+
+        $method = $method ?? 'lipr';
+
         $balance->decrement('balance', $amount);
         $status = 'settled';
 

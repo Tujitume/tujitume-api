@@ -12,6 +12,7 @@ use App\Http\Controllers\Account\WalletController;
 use App\Http\Controllers\Account\WithdrawController;
 use App\Http\Controllers\CheckoutMpesaController;
 use App\Http\Controllers\CheckoutStripeController;
+use App\Http\Controllers\LiprPreviewController;
 use App\Http\Controllers\Program\ProgramDisbursementController;
 use App\Http\Controllers\Misc\PaymentMethodController;
 use App\Http\Controllers\Mpesa\MpesaPollingController;
@@ -35,8 +36,7 @@ Route::post('milestone/rmepFundsCommit', [CheckoutStripeController::class, 'rmep
 
 // LIPR Initiate payment
 Route::post('/lipr/initiate-payment', [CheckoutMpesaController::class,'initiate_payment']);
-
-Route::post('milestones/{milestone}/release-funds', [ProgramDisbursementController::class, 'releaseFunds']);
+Route::get('/lipr/preview', [LiprPreviewController::class, 'preview']);
 
 // Polling
 Route::post('/lipr-status-bids', [MpesaPollingController::class,'status_bids']);
@@ -44,10 +44,10 @@ Route::post('/lipr-status-bidsAwaiting', [MpesaPollingController::class,'status_
 Route::post('/lipr-status-service', [MpesaPollingController::class,'status_service']);
 Route::post('/lipr-status-smallFee', [MpesaPollingController::class,'status_smallFee']);
 
-Route::post('/lipr-status-program', [MpesaPollingController::class,'programDisbursementStatus']);
+Route::post('/lipr/disbursement-status', [MpesaPollingController::class,'programDisbursementStatus']);
 
-Route::post('/lipr-status-program-bulk', [CheckoutMpesaController::class,'program_milestone_bulk']);
-Route::post('/lipr-status-capital', [MpesaPollingController::class,'capitalDisbursementStatus']);
+Route::post('/lipr-disbursement-status-bulk', [CheckoutMpesaController::class,'program_milestone_bulk']);
+Route::post('/lipr-capital-disbursement-status', [MpesaPollingController::class,'capitalDisbursementStatus']);
 
 
 // Wallet Balances & Deposits

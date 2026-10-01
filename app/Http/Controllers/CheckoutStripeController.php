@@ -67,7 +67,7 @@ class CheckoutStripeController extends Controller
                     if ($payment) {
                         $payment->update(['status' => 'failed']);
                         // Reverse User Balance
-                        $balance->updateBalance($payment->user_id, $amount, 'stripe');
+                        $balance->updateBalance($payment->user_id, $amount, 'lipr');
 
                         $text = 'Your latest withdraw via Stripe was failed and you were credited the amount back. Reason: '.$message;
                         $this->notification->create($payment->user_id, null, $text,'account', 'withdraw');
@@ -183,7 +183,7 @@ class CheckoutStripeController extends Controller
                  }
              }
              // D B
-            $this->balance->updateBalance($owner->id, $amount, 'stripe');
+            $this->balance->updateBalance($owner->id, $amount, 'lipr');
 
              DB::commit();
              return response()->json(['status' => 200, 'message' => 'Payment Successful, redirecting...'], 200);
@@ -987,7 +987,7 @@ class CheckoutStripeController extends Controller
                 ]);
 
                 //Update User Wallet
-                $this->balance->updateBalance($pitch->user_id, (float)$amount, 'stripe');
+                $this->balance->updateBalance($pitch->user_id, (float)$amount, 'lipr');
                 DB::commit();
             }
             catch(\Exception $e){
@@ -1157,7 +1157,7 @@ class CheckoutStripeController extends Controller
                 ]);
 
                 //Update User Wallet
-                $this->balance->updateBalance($pitch->user_id, (float)$amount, 'stripe');
+                $this->balance->updateBalance($pitch->user_id, (float)$amount, 'lipr');
                 DB::commit();
             }
             catch(\Exception $e){

@@ -22,6 +22,9 @@ class ProgramDisbursementController extends Controller
     protected $liprW2W;
     protected $mpesaTransfer;
     protected $tujitume_lipr;
+    protected $disbursementService;
+    protected $balance;
+
     public function __construct(ProgramDisbursementService $disbursementService)
     {
         parent::__construct();
@@ -379,17 +382,23 @@ class ProgramDisbursementController extends Controller
         }
     }
 
-    // Milestone Release
+
+    // Milestone Release LIPR | from program wallet
     public function releaseFunds(Request $request, ProgramMilestone $milestone)
     {
         $userId      = auth()->id();
         $application = $milestone->application;
 
+        $request->validate([
+            'type' => 'required|string|in:pay_from_escrow,pay_from_wallet',
+        ]);
+
         if ($application->program->user_id !== $userId) {
             return response()->json(['message' => 'Unauthorized.'], 403);
         }
 
-        if (!$application->escrow_funded) {
+        // applicant can fund the total application amount to escrow, then release milestone by milestone with type=pay_from_escrow
+        if ($request->type == 'pay_from_escrow' && !$application->escrow_funded) {
             return response()->json([
                 'message' => 'Funds not yet in escrow. Please complete payment first.'
             ], 422);
@@ -401,6 +410,7 @@ class ProgramDisbursementController extends Controller
             ], 422);
         }
 
+
         try {
             $supplier = $milestone->suppliers()->first();
 
@@ -409,20 +419,27 @@ class ProgramDisbursementController extends Controller
             }
             $pitch     = $milestone->application;
 
-            $amountToTransfer = $this->checkoutCalculator->mpesaGC($milestone->amount, 'mpesa');
-            $amountKes = round($this->usdToKes * $amountToTransfer, 2);
+            $finalRecipientAmount = $this->checkoutCalculator->mpesaGC($milestone->amount, 'mpesa');
 
+            $amountKes = 20; //round($finalRecipientAmount, 2); //round($this->usdToKes * $finalRecipientAmount, 2);
+    
             $transfer = null;
 
-            DB::transaction(function () use ($milestone, $supplier, $pitch, $amountKes, &$transfer) {
+            DB::transaction(function () use (
+                $milestone, $supplier, $pitch, $amountKes, &$transfer, $request, $finalRecipientAmount
+                ) {
 
                 // Initiate supplier transfer
                 if ($supplier->payment_route == 'direct_to_supplier') {
-                    $transfer = $this->disbursementService->disburse($milestone, $amountKes, 'checkout');
+
+                    $transfer = $this->disbursementService->disburse($milestone, $amountKes, $request->type);
+                
                 } elseif ($supplier->payment_route == 'direct_to_applicant') {
+                   
                     $transfer = $this->liprW2W->send(
                         $amountKes, $pitch->sme->lipr_wallet, $this->tujitume_lipr, $milestone
                     );
+                
                 } else {
                     throw new \Exception("Unsupported payment route: {$supplier->payment_route}", 422);
                 }
@@ -449,11 +466,34 @@ class ProgramDisbursementController extends Controller
                 $this->transaction->create($pitch->program_owner_id, 'program_milestone', 'lipr', $milestone->amount, $transfer['reference'], $pitch->user_id);
                 $this->transaction->create($pitch->user_id, 'program_milestone', 'lipr', $milestone->amount, $transfer['reference'], $pitch->user_id);
 
-                // Balance update for direct_to_applicant
-                if ($supplier->payment_route == 'direct_to_applicant') {
-                    $this->balance->updateBalance($pitch->user_id, $milestone->amount, 'lipr');
+                // Balance update for direct_to_supplier if exists
+                if ($supplier->payment_route == 'direct_to_supplier' && $supplier->supplierDirectory->user) {
+                    $this->balance->updateBalance($supplier->supplierDirectory->user_id, $finalRecipientAmount, 'lipr');
+
+                }
+                else{
+                    //update  balance directly to applicant
+                    $this->balance->updateBalance($pitch->user_id, $finalRecipientAmount, 'lipr');
                 }
             });
+
+
+            // Send email to supplier if direct disbursement
+
+            if ($transfer !== null && $supplier->payment_route === 'direct_to_supplier' && filled($supplier->supplierDirectory?->email)) {
+                $supplierDirectory = $supplier->supplierDirectory;
+                $this->emailService->send(
+                    'Your Payment Is on the Way',
+                    'programs.disbursement_supplier_processing',
+                    [
+                        'recipientName' => $supplierDirectory->contact_person ?: $supplierDirectory->legal_name,
+                        'supplier_name' => $supplierDirectory->legal_name,
+                        'amount' => $transfer['disbursement']->amount,
+                        'payment_reference' => $transfer['reference'] ?? null,
+                    ],
+                    $supplierDirectory->email
+                );
+            }
 
             // Notify
             $this->programNotification->send('disbursement.created', [

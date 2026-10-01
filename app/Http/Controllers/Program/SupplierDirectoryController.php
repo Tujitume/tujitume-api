@@ -210,8 +210,8 @@ class SupplierDirectoryController extends Controller
                 ], 422);
             }
 
-            // Add user_id
-            $validated['user_id'] = $userId;
+            // Add added_by
+            $validated['added_by'] = $userId;
 
             // Create supplier
             $supplier = SupplierDirectory::create($validated);
@@ -262,7 +262,7 @@ class SupplierDirectoryController extends Controller
 
         DB::beginTransaction();
         try {
-            $supplier = SupplierDirectory::where('user_id', $userId)
+            $supplier = SupplierDirectory::where('id', $supplierId)
                 ->findOrFail($supplierId);
 
             $validated = $request->validate([
@@ -336,7 +336,7 @@ class SupplierDirectoryController extends Controller
 
         DB::beginTransaction();
         try {
-            $supplier = SupplierDirectory::where('user_id', $userId)
+            $supplier = SupplierDirectory::where('id', $supplierId)
                 ->findOrFail($supplierId);
 
             // Check if supplier is assigned to any milestones
@@ -379,7 +379,7 @@ class SupplierDirectoryController extends Controller
 
         DB::beginTransaction();
         try {
-            $supplier = SupplierDirectory::where('user_id', $userId)
+            $supplier = SupplierDirectory::where('id', $supplierId)
                 ->findOrFail($supplierId);
 
             $supplier->update(['is_active' => false]);
@@ -411,7 +411,7 @@ class SupplierDirectoryController extends Controller
 
         DB::beginTransaction();
         try {
-            $supplier = SupplierDirectory::where('user_id', $userId)
+            $supplier = SupplierDirectory::where('id', $supplierId)
                 ->findOrFail($supplierId);
 
             $supplier->update(['is_active' => true]);

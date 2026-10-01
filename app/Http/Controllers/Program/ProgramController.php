@@ -1024,7 +1024,7 @@ class ProgramController extends Controller
             'max_advancing' => $roundData['max_advancing'] ?? null,
             'tie_breaker_rule' => $roundData['tie_breaker_rule'] ?? null,
 
-            'status' => 'published',
+            'status' => 'draft',
         ]);
 
         $program->status = 'published';

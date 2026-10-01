@@ -81,7 +81,13 @@ class ProgramSupplierController extends Controller
      */
     public function update(Request $request, string $id)
     {
-        //
+        $supplier = MilestoneSupplier::with('milestone.application')->find($id);
+
+        if ($supplier?->milestone?->application?->funding_setup_status === 'completed') {
+            return response()->json([
+                'error' => 'Funding setup is completed. Suppliers cannot be edited or deleted.',
+            ], 403);
+        }
     }
 
     /**
@@ -89,7 +95,35 @@ class ProgramSupplierController extends Controller
      */
     public function destroy(string $id)
     {
-        //
+        try {
+            $supplier = MilestoneSupplier::with('milestone.application.program')->findOrFail($id);
+            $milestone = $supplier->milestone;
+            $application = $milestone->application;
+            $userId = auth()->id();
+
+            $isProgramOwner = $application->program->user_id === $userId;
+            $isPermittedApplicant = $application->user_id === $userId
+                && $milestone->canApplicantEdit('can_add_suppliers');
+
+            if (!$isProgramOwner && !$isPermittedApplicant) {
+                return response()->json(['error' => 'Unauthorized'], 403);
+            }
+
+            if ($application->funding_setup_status === 'completed') {
+                return response()->json([
+                    'error' => 'Funding setup is completed. Suppliers cannot be deleted.',
+                ], 403);
+            }
+
+            $supplier->delete();
+
+            return response()->json(['message' => 'Supplier removed from milestone successfully.'], 200);
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json(['error' => 'Supplier assignment not found'], 404);
+        } catch (\Exception $e) {
+            ErrorLogService::report($e, ['supplier_id' => $id]);
+            return response()->json(['message' => 'Something went wrong'], 500);
+        }
     }
 
     public function budget_item_index(ProgramMilestone $milestone)
@@ -138,9 +172,50 @@ class ProgramSupplierController extends Controller
         }
     }
 
+    public function budget_item_destroy(ProgramMilestone $milestone, string $budgetItemId)
+    {
+        try {
+            $application = $milestone->application;
+            $userId = auth()->id();
+
+            $isProgramOwner = $application->program->user_id === $userId;
+            $isPermittedApplicant = $application->user_id === $userId
+                && $milestone->canApplicantEdit('can_add_budget_items');
+
+            if (!$isProgramOwner && !$isPermittedApplicant) {
+                return response()->json(['error' => 'Unauthorized'], 403);
+            }
+
+            if ($application->funding_setup_status === 'completed') {
+                return response()->json([
+                    'error' => 'Funding setup is completed. Budget items cannot be deleted.',
+                ], 403);
+            }
+
+            $budgetItem = $milestone->budgetItems()->findOrFail($budgetItemId);
+            $budgetItem->delete();
+
+            return response()->json(['message' => 'Budget item deleted successfully.'], 200);
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json(['error' => 'Budget item not found for this milestone'], 404);
+        } catch (\Exception $e) {
+            ErrorLogService::report($e, [
+                'milestone_id' => $milestone->id,
+                'budget_item_id' => $budgetItemId,
+            ]);
+            return response()->json(['message' => 'Something went wrong'], 500);
+        }
+    }
+
 
     public function budget_item_store(Request $request, ProgramMilestone $milestone)
     {
+        if ($milestone->application->funding_setup_status === 'completed') {
+            return response()->json([
+                'error' => 'Funding setup is completed. Budget items cannot be added.',
+            ], 403);
+        }
+
         $applicantId = $milestone->application->user_id;
 
         $addedBy = 'program_owner';

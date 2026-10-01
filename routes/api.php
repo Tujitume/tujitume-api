@@ -16,20 +16,25 @@ use Illuminate\Support\Facades\Route;
 // THIRD PARTY CALLBACKS (Public)
 // =============================================================
 
-    Route::post('/lipr-callback', [MpesaCallbackController::class, 'callback']);
     Route::post('/stripe-callback', [CheckoutStripeController::class, 'callback']);
 
-    // programs
-    Route::post('/lipr-callback-program-escrow', [MpesaCallbackController::class, 'callbackProgramEscrow']);
+    Route::post('/lipr-callback', [MpesaCallbackController::class, 'callback']);
 
-    Route::post('/lipr-callback-program-direct', [MpesaCallbackController::class, 'callbackProgramDirectDisburse']);
-    Route::post('/lipr-callback-program-supplier', [MpesaCallbackController::class, 'callbackForProgramSupplier']);
+    // d1. direct to applicant or supplier immeadiately after checkout
+    Route::post('/lipr-callback/disbursement-direct', [MpesaCallbackController::class, 'callbackProgramDisburseDirect']);
+
+    // d2. send to supplier 2nd leg callback for direct
+    Route::post('/lipr-callback/transfer-to-supplier', [MpesaCallbackController::class, 'callbackForProgramDisburseToSupplier']);
+
+    // to pay full application (total milestones sum) to escrow, then release milestone by milestone
+    Route::post('/lipr-callback/disbursement-escrow', [MpesaCallbackController::class, 'callbackProgramDisburseToEscrow']);
+    
 
     // Reviewer payment callbacks
-    Route::post('/lipr-callback-reviewer-payment', [MpesaCallbackController::class, 'callbackForReviewerPayment']);
-    Route::post('/lipr-callback-reviewer-payment-leg2', [MpesaCallbackController::class, 'callbackForReviewerPaymentLeg2']);
+    Route::post('/lipr-callback/reviewer-payment', [MpesaCallbackController::class, 'callbackForReviewerPayment']);
+    Route::post('/lipr-callback/reviewer-payment-leg2', [MpesaCallbackController::class, 'callbackForReviewerPaymentLeg2']);
 
-Route::prefix('v1')->group(function () {
+    Route::prefix('v1')->group(function () {
 
     // PUBLIC ROUTES (No Auth Required)
     // =============================================================

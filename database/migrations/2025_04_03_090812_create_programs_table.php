@@ -77,7 +77,7 @@ return new class extends Migration
             ])->default('draft');
 
             $table->tinyInteger('visible')->default(1);
-            $table->char('currency', 3)->default('USD');
+            $table->enum('currency', ['kes', 'usd'])->default('kes');
 
             $table->enum('program_type', ['single_round', 'multi_round'])->default('single_round');
             $table->integer('total_rounds')->default(1);// new: multi-currency ready

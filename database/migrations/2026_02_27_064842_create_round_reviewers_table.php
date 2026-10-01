@@ -28,7 +28,7 @@ return new class extends Migration
             $table->json('expertise_tags')->nullable(); // ['agri', 'tech', 'energy']
 
             $table->decimal('reviewer_fee', 10, 2)->nullable();
-            $table->string('fee_currency', 10)->default('USD');
+            $table->enum('fee_currency', ['kes', 'usd'])->default('kes');
             
 
             $table->integer('queue_position')->nullable();

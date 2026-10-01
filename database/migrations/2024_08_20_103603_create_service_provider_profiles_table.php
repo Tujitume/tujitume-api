@@ -28,10 +28,10 @@ return new class extends Migration
             $table->json('available_days')->nullable();      // ['monday', 'tuesday'...]
             $table->string('available_from', 10)->nullable(); // '09:00'
             $table->string('available_to', 10)->nullable();   // '17:00'
-            $table->string('timezone')->nullable();
+            $table->string('timezone')->default('Africa/Nairobi');
 
             // ─── Preferences ─────────────────────────────────────────────
-            $table->string('preferred_currency', 10)->default('USD');
+            $table->enum('preferred_currency', ['kes', 'usd'])->default('kes');
             $table->string('preferred_language', 10)->default('en');
 
             $table->timestamps();

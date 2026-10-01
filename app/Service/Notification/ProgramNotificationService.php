@@ -279,6 +279,14 @@ class ProgramNotificationService
                 'link'          => $this->link('dashboard.programOrg.programDealroomDetail', $data, 'funding-setup'),
             ],
 
+            'disbursement.supplier_processing' => [
+                'title'         => 'Supplier Payment Processing',
+                'message'       => "A payment of {$data['amount']} is being processed for {$data['supplier_name']}",
+                'email_subject' => 'Your Payment Is on the Way',
+                'email_view'    => $this->view_base . 'disbursement_supplier_processing',
+                'link'          => '',
+            ],
+
             'disbursement.completed' => [
                 'title'         => 'Payment Completed',
                 'message'       => "Payment of {$data['amount']} completed to {$data['supplier_name']}",

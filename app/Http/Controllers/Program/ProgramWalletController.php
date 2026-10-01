@@ -77,7 +77,7 @@ class ProgramWalletController extends Controller
 
             // Deduct from main wallet and add to program wallet
             DB::transaction(function () use ($user, $wallet, $amount) {
-                $this->balance->updateBalanceMinus($user->id, $amount, 'stripe');
+                $this->balance->updateBalanceMinus($user->id, $amount, 'lipr');
                 $wallet->balance += $amount;
                 $wallet->total_deposited += $amount;
                 $wallet->status = 'active';

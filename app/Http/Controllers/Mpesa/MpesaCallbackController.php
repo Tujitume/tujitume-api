@@ -20,6 +20,11 @@ use Illuminate\Support\Facades\Log;
 
 class MpesaCallbackController extends Controller
 {
+    protected $balance;
+    protected $liprW2W;
+    protected $disbursementService;
+    protected $tujitume_lipr;
+    protected $programNotification;
 
     public function __construct(ProgramDisbursementService $disbursementService)
     {
@@ -33,66 +38,27 @@ class MpesaCallbackController extends Controller
         $this->programNotification = new ProgramNotificationService();
     }
 
-    public function auth()
-    {
-        try {
-            $liprAuth = new LiprAuthService();
-            $token = $liprAuth->authorize(); return $token;
-        } catch (\Exception $e) {
-            ErrorLogService::report($e, [
-                'input' => request()->except(['password', 'token']),
-            ]);
-            if (in_array($e->getCode(), [404, 422])) {
-                return response()->json(['message' => $e->getMessage()], $e->getCode());
-            }
 
-            return response()->json([
-                'message' => 'Something went wrong, please try again later.'
-            ], 500);
-        }
-    }
 
     public function callback(Request $request, CurrencyConverter $convert)
     {
         try {
-  
-            Log::info('LIPR CALLBACK', [
-                'payload' => $request->all(),
-                'raw' => $request->getContent(),
-            ]);
-
+            $callbackData = $this->extractCallbackData($request, 'LIPR CALLBACK');
             $provided_ip = '13.51.220.45';
 //            if ($request->ip() !== $provided_ip) {
 //                return response()->json(['message' => 'Forbidden'], 403);
 //            }
 
-            // Extract necessary data from the request
-            $payload = $request->all();
-
-            if (empty($payload)) {
-                $payload = json_decode($request->getContent(), true) ?? [];
-            }
-
-            $transaction = $payload['transaction'] ?? [];
-
-            $referenceId = $transaction['reference'] ?? null;
-            $transactionId = $transaction['id'] ?? null;
-            $status = $transaction['transactionStatus'] ?? null;
-            $amount = $transaction['amount'] ?? 0;
-            $requestId = $payload['requestId'] ?? null;
+            $referenceId = $callbackData['referenceId'];
+            $transactionId = $callbackData['transactionId'];
+            $status = $callbackData['status'];
+            $amount = $callbackData['amount'];
+            $requestId = $callbackData['requestId'];
 
             $kesToUsd = $convert->KesToUsd();
             $amountUsd = $kesToUsd*$amount;
 
-
-            $lipr = LiprPayment::create([
-                'reference_id' => $referenceId,
-                'transaction_id' => $transactionId,
-                'status' => $status,
-                'amount' => $amount,
-                'amount_usd' => $amountUsd,
-            ]);
-
+            $lipr = $this->recordLiprPayment($referenceId, $transactionId, $status, $amount, $amountUsd);
 
             return response()->json(['message' => 'Callback received'], 200);
         } catch (\Exception $e) {
@@ -109,26 +75,18 @@ class MpesaCallbackController extends Controller
             ], 500);
         }
     }
-    public function callbackProgramEscrow(Request $request, CurrencyConverter $convert)
+
+
+    // direct to applicant or direct to supplier immeadiately after checkout
+    public function callbackProgramDisburseDirect(Request $request, CurrencyConverter $convert)
     {
         try {
-            Log::info('LIPR PROGRAM CALLBACK', [
-                'payload' => $request->all(),
-                'raw'     => $request->getContent(),
-            ]);
-
-            $payload     = !empty($request->all()) ? $request->all() : json_decode($request->getContent(), true) ?? [];
-            $transaction = $payload['transaction'] ?? [];
-
-            $referenceId   = $transaction['reference'] ?? null;
-            $transactionId = $transaction['id'] ?? null;
-            $status        = $transaction['transactionStatus'] ?? null;
-            $amount        = $transaction['amount'] ?? 0;
-            //$listing_id    = $payload['metadata']['listingId'] ?? null;
-
-            $metadata = $payload['metadata'] ?? ''; preg_match('/listingId=(\d+)/', $metadata, $matches);
-
-            $listing_id = $matches[1] ?? null;
+            $callbackData = $this->extractCallbackData($request, 'LIPR PROGRAM CALLBACK');
+            $referenceId = $callbackData['referenceId'];
+            $transactionId = $callbackData['transactionId'];
+            $status = $callbackData['status'];
+            $amount = $callbackData['amount'];
+            $listing_id = $callbackData['listingId'];
 
             $kesToUsd = $convert->KesToUsd();
             $amountUsd = $kesToUsd * $amount;
@@ -139,92 +97,7 @@ class MpesaCallbackController extends Controller
             }
 
             // Record payment
-            $payment = LiprPayment::create([
-                'reference_id'   => $referenceId,
-                'transaction_id' => $transactionId,
-                'status'         => $status,
-                'amount'         => $amount,
-                'amount_usd'     => $amountUsd,
-            ]);
-
-            // Only proceed if payment successful
-            if (strtolower($status) !== 'successful') {
-                return response()->json(['message' => 'Callback received'], 200);
-            }
-
-            $milestone = ProgramMilestone::findOrFail($listing_id);
-
-            // check duplicate callback
-            $existingCompleted = LiprPayment::where('reference_id', $referenceId)
-                ->where('status', 'completed')->exists();
-
-            if ($existingCompleted || $milestone->fund_release_status !== 'approved') {
-                Log::info('LIPR PROGRAM CALLBACK: Already processed', ['reference_id' => $referenceId]);
-                return response()->json(['message' => 'Callback received'], 200);
-            }
-
-            $application = $milestone->application;
-
-            $application->update([
-                'escrow_funded'    => true,
-                'escrow_funded_at' => now(),
-                'escrow_amount'    => $application->total_amount_requested,
-            ]);
-
-            // Notify GO that funds are in escrow
-//            $this->programNotification->send('disbursement.escrow_funded', [
-//                $application->program->owner
-//            ], [
-//                'program_title' => $application->program->program_title,
-//                'amount'      => $application->total_amount_requested,
-//            ]);
-
-            return response()->json(['message' => 'Callback received'], 200);
-
-        } catch (\Exception $e) {
-            ErrorLogService::report($e, ['input' => request()->except(['password', 'token'])]);
-            return response()->json(['message' => 'Something went wrong, please try again later.'], 500);
-        }
-    }
-
-
-    public function callbackProgramDirectDisburse(Request $request, CurrencyConverter $convert)
-    {
-        try {
-            Log::info('LIPR PROGRAM CALLBACK', [
-                'payload' => $request->all(),
-                'raw'     => $request->getContent(),
-            ]);
-
-            $payload     = !empty($request->all()) ? $request->all() : json_decode($request->getContent(), true) ?? [];
-            $transaction = $payload['transaction'] ?? [];
-
-            $referenceId   = $transaction['reference'] ?? null;
-            $transactionId = $transaction['id'] ?? null;
-            $status        = $transaction['transactionStatus'] ?? null;
-            $amount        = $transaction['amount'] ?? 0;
-            //$listing_id    = $payload['metadata']['listingId'] ?? null;
-
-            $metadata = $payload['metadata'] ?? ''; preg_match('/listingId=(\d+)/', $metadata, $matches);
-
-            $listing_id = $matches[1] ?? null;
-
-            $kesToUsd = $convert->KesToUsd();
-            $amountUsd = $kesToUsd * $amount;
-
-            $existingPayment = LiprPayment::where('reference_id', $referenceId)->exists();
-            if ($existingPayment) {
-                return response()->json(['message' => 'Callback already received'], 200);
-            }
-
-            // Record payment
-            $payment = LiprPayment::create([
-                'reference_id'   => $referenceId,
-                'transaction_id' => $transactionId,
-                'status'         => $status,
-                'amount'         => $amount,
-                'amount_usd'     => $amountUsd,
-            ]);
+            $payment = $this->recordLiprPayment($referenceId, $transactionId, $status, $amount, $amountUsd);
 
             // Only proceed if payment successful
             if (strtolower($status) !== 'successful') {
@@ -261,17 +134,19 @@ class MpesaCallbackController extends Controller
             }
 
             $amountToTransfer = $this->checkoutCalculator->mpesaGC($milestone->amount, 'mpesa');
-            $amountKes = round($this->usdToKes * $amountToTransfer, 2);
+            $amountKes = 20; //round($amountToTransfer, 0);
 
             DB::transaction(function () use ($milestone, $supplier, $pitch, $payment, $amountKes, $referenceId) {
 
                 // Initiate supplier transfer
                 if ($supplier->payment_route == 'direct_to_supplier')
                 {
+                    // Disburse for supplier
                     $transfer = $this->disbursementService->disburse($milestone, $amountKes, 'checkout');
                 }
                 elseif ($supplier->payment_route == 'direct_to_applicant')
                 {
+                    // Disburse Wallet to Wallet for applicant
                     $transfer = $this->liprW2W->send(
                         $amountKes, $pitch->sme->lipr_wallet, $this->tujitume_lipr, $milestone
                     );
@@ -331,36 +206,87 @@ class MpesaCallbackController extends Controller
     }
 
 
-    public function callbackForProgramSupplier(Request $request, CurrencyConverter $convert)
+    // to pay full application (total milestones sum) to escrow, then release milestone by milestone
+    public function callbackProgramDisburseToEscrow(Request $request, CurrencyConverter $convert)
     {
         try {
-            Log::info('LIPR PROGRAM SUPPLIER CALLBACK', [
-                'payload' => $request->all(),
-                'raw'     => $request->getContent(),
+            $callbackData = $this->extractCallbackData($request, 'LIPR PROGRAM CALLBACK');
+            $referenceId = $callbackData['referenceId'];
+            $transactionId = $callbackData['transactionId'];
+            $status = $callbackData['status'];
+            $amount = $callbackData['amount'];
+            $listing_id = $callbackData['listingId'];
+
+            $kesToUsd = $convert->KesToUsd();
+            $amountUsd = $kesToUsd * $amount;
+
+            $existingPayment = LiprPayment::where('reference_id', $referenceId)->exists();
+            if ($existingPayment) {
+                return response()->json(['message' => 'Callback already received'], 200);
+            }
+
+            // Record payment
+            $payment = $this->recordLiprPayment($referenceId, $transactionId, $status, $amount, $amountUsd);
+
+            // Only proceed if payment successful
+            if (strtolower($status) !== 'successful') {
+                return response()->json(['message' => 'Callback received'], 200);
+            }
+
+            $milestone = ProgramMilestone::findOrFail($listing_id);
+
+            // check duplicate callback
+            $existingCompleted = LiprPayment::where('reference_id', $referenceId)
+                ->where('status', 'completed')->exists();
+
+            if ($existingCompleted || $milestone->fund_release_status !== 'approved') {
+                Log::info('LIPR PROGRAM CALLBACK: Already processed', ['reference_id' => $referenceId]);
+                return response()->json(['message' => 'Callback received'], 200);
+            }
+
+            $application = $milestone->application;
+
+            $application->update([
+                'escrow_funded'    => true,
+                'escrow_funded_at' => now(),
+                'escrow_amount'    => $application->total_amount_requested,
             ]);
 
-            $payload     = !empty($request->all()) ? $request->all() : json_decode($request->getContent(), true) ?? [];
-            $transaction = $payload['transaction'] ?? [];
+            // Notify GO that funds are in escrow
+            //            $this->programNotification->send('disbursement.escrow_funded', [
+            //                $application->program->owner
+            //            ], [
+            //                'program_title' => $application->program->program_title,
+            //                'amount'      => $application->total_amount_requested,
+            //            ]);
 
-            $referenceId   = $transaction['reference'] ?? null;
-            $transactionId = $transaction['id'] ?? null;
-            $status        = strtolower($transaction['transactionStatus'] ?? '');
-            $amount        = $transaction['amount'] ?? 0;
-            //$listing_id    = $payload['metadata']['listingId'] ?? null;
+            return response()->json(['message' => 'Callback received'], 200);
+        } catch (\Exception $e) {
+            ErrorLogService::report($e, ['input' => request()->except(['password', 'token'])]);
+            return response()->json(['message' => 'Something went wrong, please try again later.'], 500);
+        }
+    }
 
-            $metadata = $payload['metadata'] ?? ''; preg_match('/listingId=(\d+)/', $metadata, $matches);
 
-            $listing_id = $matches[1] ?? null;
+    public function callbackForProgramDisburseToSupplier(Request $request, CurrencyConverter $convert)
+    {
+        try {
+            $callbackData = $this->extractCallbackData($request, 'LIPR PROGRAM SUPPLIER CALLBACK');
+            $referenceId = $callbackData['referenceId'];
+            $transactionId = $callbackData['transactionId'];
+            $status = strtolower($callbackData['status'] ?? '');
+            $amount = $callbackData['amount'];
+            $listing_id = $callbackData['listingId'];
 
 
             // Record payment
-            LiprPayment::create([
-                'reference_id'   => $referenceId,
-                'transaction_id' => $transactionId,
-                'status'         => $status,
-                'amount'         => $amount,
-                'amount_usd'     => $convert->KesToUsd() * $amount,
-            ]);
+            $this->recordLiprPayment(
+                $referenceId,
+                $transactionId,
+                $status,
+                $amount,
+                $convert->KesToUsd() * $amount
+            );
 
             $milestone   = ProgramMilestone::findOrFail($listing_id);
 
@@ -373,7 +299,7 @@ class MpesaCallbackController extends Controller
             $supplier    = $milestone->suppliers()->first();
             $disbursement = $milestone->disbursements()->latest()->first();
 
-            if ($status === 'successful') {
+            if (strtolower($status) === 'successful') {
                 DB::transaction(function () use ($milestone, $disbursement, $pitch, $supplier) {
                     // Update milestone
                     $milestone->update([
@@ -391,10 +317,7 @@ class MpesaCallbackController extends Controller
 
                     // Deduct from program wallet
                     $wallet = $pitch->program->wallet;
-//                    $wallet->update([
-//                        'total_reserved'  => $wallet->total_reserved - $milestone->amount,
-//                        'total_disbursed' => $wallet->total_disbursed + $milestone->amount,
-//                    ]);
+
                 });
 
                 // Notify
@@ -447,31 +370,18 @@ class MpesaCallbackController extends Controller
     public function callbackForReviewerPayment(Request $request, CurrencyConverter $convert)
     {
         try {
-            Log::info('LIPR REVIEWER PAYMENT CALLBACK', [
-                'payload' => $request->all(),
-                'raw'     => $request->getContent(),
-            ]);
-
-            $payload     = !empty($request->all()) ? $request->all() : json_decode($request->getContent(), true) ?? [];
-            $transaction = $payload['transaction'] ?? [];
-
-            $referenceId   = $transaction['reference'] ?? null;
-            $transactionId = $transaction['id'] ?? null;
-            $status        = strtolower($transaction['transactionStatus'] ?? '');
-            $amount        = $transaction['amount'] ?? 0;
-            $orderId       = $payload['metadata']['listingId'] ?? null;
+            $callbackData = $this->extractCallbackData($request, 'LIPR REVIEWER PAYMENT CALLBACK');
+            $referenceId = $callbackData['referenceId'];
+            $transactionId = $callbackData['transactionId'];
+            $status = strtolower($callbackData['status'] ?? '');
+            $amount = $callbackData['amount'];
+            $orderId = $callbackData['listingId'];
 
             $kesToUsd  = $convert->KesToUsd();
             $amountUsd = $kesToUsd * $amount;
 
             // Record payment (Leg 1)
-            LiprPayment::create([
-                'reference_id'      => $referenceId,
-                'transaction_id'    => $transactionId,
-                'status'            => $status,
-                'amount'            => $amount,
-                'amount_usd'        => $amountUsd,
-            ]);
+            $this->recordLiprPayment($referenceId, $transactionId, $status, $amount, $amountUsd);
 
             if ($status !== 'successful') {
                 // Payment failed — update order
@@ -535,18 +445,11 @@ class MpesaCallbackController extends Controller
     public function callbackForReviewerPaymentLeg2(Request $request, CurrencyConverter $convert)
     {
         try {
-            Log::info('LIPR REVIEWER PAYMENT LEG2 CALLBACK', [
-                'payload' => $request->all(),
-                'raw'     => $request->getContent(),
-            ]);
-
-            $payload     = !empty($request->all()) ? $request->all() : json_decode($request->getContent(), true) ?? [];
-            $transaction = $payload['transaction'] ?? [];
-
-            $referenceId = $transaction['reference'] ?? null;
-            $status      = strtolower($transaction['transactionStatus'] ?? '');
-            $amount      = $transaction['amount'] ?? 0;
-            $orderId     = $payload['metadata']['listingId'] ?? null;
+            $callbackData = $this->extractCallbackData($request, 'LIPR REVIEWER PAYMENT LEG2 CALLBACK');
+            $referenceId = $callbackData['referenceId'];
+            $status = strtolower($callbackData['status'] ?? '');
+            $amount = $callbackData['amount'];
+            $orderId = $callbackData['listingId'];
 
             $order = ReviewerOrder::with('reviewer', 'program')->findOrFail($orderId);
 
@@ -593,6 +496,86 @@ class MpesaCallbackController extends Controller
         } catch (\Exception $e) {
             ErrorLogService::report($e, ['input' => $request->except(['password', 'token'])]);
             return response()->json(['message' => 'Something went wrong, please try again later.'], 500);
+        }
+    }
+
+
+    // P R I V A T E    H E L P E R    M E T H O D S
+
+    private function extractListingId($metadata): ?int
+    {
+        if (is_array($metadata)) {
+            $listingId = $metadata['listingId'] ?? $metadata['listing_id'] ?? null;
+
+            if (is_int($listingId) && $listingId > 0) {
+                return $listingId;
+            }
+
+            return is_string($listingId) && ctype_digit($listingId) && (int) $listingId > 0
+                ? (int) $listingId
+                : null;
+        }
+
+        if (is_string($metadata) && preg_match('/listingId=(\d+)/i', $metadata, $matches)) {
+            return (int) $matches[1];
+        }
+
+        return null;
+    }
+
+    private function extractCallbackData(Request $request, string $logMessage): array
+    {
+        Log::info($logMessage, [
+            'payload' => $request->all(),
+            'raw' => $request->getContent(),
+        ]);
+
+        $payload = $request->all();
+        if (empty($payload)) {
+            $payload = json_decode($request->getContent(), true) ?? [];
+        }
+
+        $transaction = $payload['transaction'] ?? [];
+
+        return [
+            'referenceId' => $transaction['reference'] ?? null,
+            'transactionId' => $transaction['id'] ?? null,
+            'status' => $transaction['transactionStatus'] ?? null,
+            'amount' => $transaction['amount'] ?? 0,
+            'requestId' => $payload['requestId'] ?? null,
+            'listingId' => $this->extractListingId($payload['metadata'] ?? null),
+        ];
+    }
+
+    private function recordLiprPayment($referenceId, $transactionId, $status, $amount, $amountUsd): LiprPayment
+    {
+        return LiprPayment::create([
+            'reference_id' => $referenceId,
+            'transaction_id' => $transactionId,
+            'status' => $status,
+            'amount' => $amount,
+            'amount_usd' => $amountUsd,
+        ]);
+    }
+
+
+    public function auth()
+    {
+        try {
+            $liprAuth = new LiprAuthService();
+            $token = $liprAuth->authorize();
+            return $token;
+        } catch (\Exception $e) {
+            ErrorLogService::report($e, [
+                'input' => request()->except(['password', 'token']),
+            ]);
+            if (in_array($e->getCode(), [404, 422])) {
+                return response()->json(['message' => $e->getMessage()], $e->getCode());
+            }
+
+            return response()->json([
+                'message' => 'Something went wrong, please try again later.'
+            ], 500);
         }
     }
 

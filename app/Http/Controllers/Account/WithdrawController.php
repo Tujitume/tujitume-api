@@ -444,7 +444,7 @@ class WithdrawController extends Controller
                     //Use webhook to mark it as paid
 
                     //Balance Update $
-                    $this->balance->updateBalanceMinus($user->id, $payout_amount, 'stripe');
+                    $this->balance->updateBalanceMinus($user->id, $payout_amount, 'lipr');
 
                     $this->transaction->create(
                         $user->id,'withdraw','stripe', $payout_amount, $payout_id, 'pending'

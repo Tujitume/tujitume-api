@@ -48,7 +48,7 @@ class ProgramDisbursementService
         $this->validateDisbursement($disbursement, $milestone, $sourceWallet, $supplier);
 
         // Route to correct payment method
-        $response = $this->routePayment($milestone->id, $supplier, $amountKes, $sourceWallet);
+        $response = $this->routePayment($supplier, $amountKes, $sourceWallet, $milestone->id);
 
         if (!$this->lipr->isSuccess($response)) {
             throw new \Exception($this->lipr->getError($response));
@@ -218,7 +218,7 @@ class ProgramDisbursementService
             $sourceWallet = Setting::where('key', 'platform_lipr_wallet')->value('value');
         }
         elseif ($type == 'pay_from_wallet'){
-            $sourceWallet = $wallet = $milestone->application->program->wallet->lipr_wallet ?? null;
+            $sourceWallet = $wallet = $milestone->application->program->owner->lipr_wallet ?? null;
         }
 
         if ($milestone->fund_release_status !== 'approved') {
@@ -251,10 +251,12 @@ class ProgramDisbursementService
             $response = $this->disburseToSupplier($disbursement, $milestone, $sourceWallet, $amountKes);
 
             // Update wallet (move from reserved to disbursed)
+            $programWallet = $milestone->application->program->wallet;
+
             if($type == 'pay_from_wallet'){
-                $wallet->balance -= $disburseAmount;
-                $wallet->total_disbursed += $disburseAmount;
-                $wallet->save();
+                $programWallet->balance -= $disburseAmount;
+                $programWallet->total_disbursed += $disburseAmount;
+                $programWallet->save();
             }
 
             $reference = $this->lipr->getReferenceId($response);
