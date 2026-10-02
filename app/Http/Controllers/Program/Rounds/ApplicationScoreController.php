@@ -37,6 +37,11 @@ class ApplicationScoreController extends Controller
             return response()->json(['error' => 'Application not in an active round'], 422);
         }
 
+        // Scoring closes once the round is finalized; results and reviewer pay are based on the scores as they stand.
+        if ($round->status === 'finalized') {
+            return response()->json(['message' => 'This round has been finalized. Scores can no longer be submitted or changed.'], 422);
+        }
+
         $isReviewer = $round->reviewers()->where('user_id', $userId)->exists()
             || $round->program->user_id === $userId;
 
