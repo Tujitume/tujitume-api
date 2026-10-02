@@ -34,3 +34,7 @@ class DatabaseSeeder extends Seeder
         // ]);
     }
 }
+
+// To run all seeders with tinker, use the following command:
+// php artisan tinker, "fakerphp/faker": "^1.9.1" if needed
+// foreach ([CategorySeeder::class,ProgramIndustrySeeder::class,RoleSeeder::class,PlatformSettingSeeder::class,UserTypeSeeder::class,UserSeeder::class,OrganizationSeeder::class,AdminSeeder::class,ListingSeeder::class,ServiceSeeder::class] as $seeder) app()->make($seeder)->run();

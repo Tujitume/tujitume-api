@@ -155,11 +155,28 @@ class AdminController extends Controller
             return back()->with('error', 'Only submitted KYC records can be verified.');
         }
 
+        $user = $kyc->user;
+
         $kyc->update([
             'status' => 'verified',
             'reviewed_at' => now(),
             'rejection_reason' => null,
         ]);
+
+        if ($user?->email) {
+            $name = trim(($user->first_name ?? '') . ' ' . ($user->last_name ?? ''))
+                ?: ($user->display_name ?: 'there');
+
+            $this->emailService->send(
+                'Your KYC verification is complete',
+                'kyc.verified',
+                [
+                    'name' => $name,
+                    'verificationType' => ucfirst(str_replace('_', ' ', $kyc->verification_type)),
+                ],
+                $user->email
+            );
+        }
 
         return back()->with('success', 'KYC record marked as verified.');
     }
