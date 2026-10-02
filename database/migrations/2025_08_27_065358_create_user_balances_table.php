@@ -15,7 +15,7 @@ return new class extends Migration
             $table->id();
             $table->foreignId('user_id')->unique()->constrained()->onDelete('cascade');
             $table->decimal('balance', 12, 2)->default(0);
-            $table->enum('currency', ['kes', 'usd'])->default('kes');
+            $table->enum('currency', ['KES', 'USD'])->default('KES');
             $table->timestamps();
         });
     }

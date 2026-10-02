@@ -23,7 +23,7 @@ return new class extends Migration
             $table->enum('subscription_status', ['active', 'inactive'])->default('inactive');
             $table->enum('profile_visibility', ['public', 'private'])->default('public');
             $table->string('language', 10)->default('en');
-            $table->enum('currency', ['kes', 'usd'])->default('kes');
+            $table->enum('currency', ['KES', 'USD'])->default('KES');
             $table->string('timezone', 50)->default('Africa/Nairobi');
 
             $table->string('date_format', 20)->default('DD/MM/YYYY');

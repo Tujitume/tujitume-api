@@ -50,7 +50,7 @@ abstract class ProgramTestCase extends TestCase
 
         $this->createVerifiedKyc($this->orgUser, 'organization', $this->organization->id);
         $this->createVerifiedKyc($this->applicantUser, 'entrepreneur');
-        $this->createVerifiedKyc($this->reviewerUser, 'service_provider');
+        $this->createVerifiedKyc($this->reviewerUser, 'service_provider'); 
         $this->program = Program::factory()->create(['user_id' => $this->orgUser->id, 'status' => 'published']);
         $this->wallet = ProgramWallet::factory()->create(['program_id' => $this->program->id, 'status' => 'active', 'balance' => 100000]);
         $this->round = ProgramRound::factory()->create(['program_id' => $this->program->id, 'round_number' => 1, 'status' => 'published', 'advancement_mode' => 'manual']);

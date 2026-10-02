@@ -21,7 +21,7 @@ return new class extends Migration
         $table->foreignId('site_visit_id')->nullable()->constrained('m_e_site_visits')->onDelete('set null');
         $table->decimal('fee_usd', 10, 2)->default(0);
         $table->decimal('fee_kes', 10, 2)->nullable();
-        $table->enum('currency', ['kes', 'usd'])->default('kes');
+        $table->enum('currency', ['KES', 'USD'])->default('KES');
         $table->enum('work_status', [
             'pending','assigned', 'in_progress', 'delivered',
             'modification_requested', 'approved', 'rejected',
