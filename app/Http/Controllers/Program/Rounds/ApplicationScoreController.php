@@ -17,9 +17,11 @@ use Illuminate\Validation\ValidationException;
 
 class ApplicationScoreController extends Controller
 {
-    public function __construct(
-
-    ) {}
+    public function __construct()
+    {
+        // The base controller builds the shared services ($this->programNotification etc.).
+        parent::__construct();
+    }
 
     /**
      * Submit score for application
