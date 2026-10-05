@@ -172,8 +172,8 @@ class AdminController extends Controller
             [$intro, $next, $linkKey, $linkLabel] = match ($kyc->verification_type) {
                 'entrepreneur' => [
                     'Your identity has been confirmed.',
-                    'You can now apply to programs and funding opportunities, and set up your businesses on Tujitume.',
-                    'dashboard.entrepreneur.programsDiscover', 'Explore Programs',
+                    'The next step is to list your first business on Tujitume, so it is ready when you want to apply for funding.',
+                    'dashboard.entrepreneur.myBusinesses.create', 'List Your First Business',
                 ],
                 'service_provider' => [
                     'Your identity has been confirmed.',
