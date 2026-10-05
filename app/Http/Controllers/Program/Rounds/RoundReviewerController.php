@@ -355,6 +355,7 @@ class RoundReviewerController extends Controller
                 'program_id'    => $round->program_id,
                 'program_title' => $round->program->program_title,
                 'round_name'    => $round->round_name,
+                'round_id'      => $round->id,
                 'reviewer_name' => auth()->user()->first_name . ' ' . auth()->user()->last_name,
             ]);
 
@@ -408,6 +409,7 @@ class RoundReviewerController extends Controller
             'program_id'    => $round->program_id,
             'program_title' => $round->program->program_title,
             'round_name'    => $round->round_name,
+            'round_id'      => $round->id,
             'reviewer_name' => auth()->user()->first_name . ' ' . auth()->user()->last_name,
         ]);
 

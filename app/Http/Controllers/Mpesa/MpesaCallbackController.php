@@ -195,6 +195,7 @@ class MpesaCallbackController extends Controller
                 'amount'         => $milestone->amount,
                 'supplier_name'  => $supplier->supplierDirectory->legal_name,
                 'application_id' => $milestone->app_id,
+                'milestone_number' => $milestone->sequence_order,
             ]);
 
             return response()->json(['message' => 'Callback received'], 200);
@@ -327,6 +328,8 @@ class MpesaCallbackController extends Controller
                 ], [
                     'amount'        => $milestone->amount,
                     'supplier_name' => $supplier?->supplierDirectory->legal_name,
+                    'application_id'    => $milestone->app_id,
+                    'milestone_number' => $milestone->sequence_order,
                 ]);
 
                 // supplier invoice
@@ -353,6 +356,8 @@ class MpesaCallbackController extends Controller
                     'amount'        => $milestone->amount,
                     'supplier_name' => $supplier?->supplierDirectory->legal_name,
                     'reason'        => 'Supplier transfer failed',
+                    'application_id'    => $milestone->app_id,
+                    'milestone_number' => $milestone->sequence_order,
                 ]);
             }
 

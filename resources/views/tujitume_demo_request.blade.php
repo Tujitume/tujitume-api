@@ -1,19 +1,11 @@
 <div style="max-width:1024px;margin:auto;margin-top:4rem;background-color:white;border-radius:0.5rem;box-shadow:0 4px 6px rgba(0,0,0,0.1);overflow:hidden;">
-    <!-- Header -->
-    <div style="background-color:#14532d;padding:0.9rem 0;text-align:center;color:#ffffff;">
-        <img
-            src="{{ $message->embed(public_path('images/Email/EmailWhite.png')) }}"
-            alt="Tujitume Logo"
-            style="height:3rem;width:auto;margin:0 auto;" />
-        <h1 style="font-size:2rem;font-weight:700;margin-top:1rem;">New Demo Request</h1>
-    </div>
+    @include('programs.partials.brand_header', ['title' => 'New Demo Request'])
 
     <div style="padding:20px;font-size:14px;line-height:1.6;">
         <p>Hi Tujitume Team,</p>
-
         <p>You have received a new demo request. Please find the details below:</p>
 
-        <div style="background-color:#f3f4f6;padding:1rem;border-radius:0.5rem;margin:1.5rem 0;">
+        <div style="background-color:#f3f4f6;padding:1rem 1.25rem;border-radius:0.5rem;margin:1.5rem 0;">
             <p style="margin:0.5rem 0;"><strong>Name:</strong> {{ $name }}</p>
             <p style="margin:0.5rem 0;"><strong>Organization:</strong> {{ $org }}</p>
             <p style="margin:0.5rem 0;"><strong>Email:</strong> {{ $email }}</p>
@@ -27,15 +19,9 @@
         <p>Please follow up with this request at your earliest convenience.</p>
 
         <div style="text-align:center;margin-top:2rem;">
-            <a href="mailto:{{ $email }}" style="background-color:#14532d;color:white;padding:0.75rem 1.5rem;border-radius:0.5rem;text-decoration:none;font-weight:500;font-size:1rem;">
-                Reply to {{ $name }}
-            </a>
+            <a href="mailto:{{ $email }}" style="background-color:#14532d;color:white;display:inline-block;padding:0.85rem 2rem;border-radius:999px;text-decoration:none;font-weight:700;font-size:1rem;box-shadow:0 4px 12px rgba(0,0,0,0.18);">Reply to {{ $name }}</a>
         </div>
 
-        <!-- Footer -->
-        <div style="margin-top:2rem;font-size:12px;color:gray;">
-            <img src="{{ $message->embed(public_path('images/Email/EmailWhite.png')) }}" alt="Tujitume Logo" style="height:3rem;width:auto;float:left;margin-right:1rem;margin-top:-0.2rem;margin-bottom:4rem;" />
-            <p style="font-weight:600;">Best regards,<br />The Tujitume Team</p>
-        </div>
+        @include('programs.partials.brand_footer')
     </div>
 </div>

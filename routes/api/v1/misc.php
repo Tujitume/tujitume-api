@@ -81,6 +81,7 @@ Route::post('serviceReply', [MessageController::class, 'serviceReply'])->name('s
 // Notifications
 Route::get('/notifications', [DashboardController::class, 'notifications']);
 Route::get('/notifSetRead', [DashboardController::class, 'notificationSetRead']);
+Route::post('/notifications/read', [DashboardController::class, 'notificationMarkRead']);
 
 // Disputes
 Route::get('checkDispute/{id}/{type}', [ResolutionController::class ,'checkDispute']);

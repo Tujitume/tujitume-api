@@ -156,6 +156,8 @@ class ApplicationScoreController extends Controller
                         'round_name'    => $round->round_name,
                         'reviewer_name' => Auth::user()->first_name . ' ' . Auth::user()->last_name,
                         'order_id'      => $order->id,
+                        'program_id'    => $round->program_id,
+                        'round_id'      => $round->id,
                     ]);
                 }
             }

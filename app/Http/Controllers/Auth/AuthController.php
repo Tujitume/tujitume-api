@@ -12,6 +12,7 @@ use App\Models\EmailVerificationCode;
 use App\Service\Account\DeviceVerificationService;
 use App\Service\Account\RegisterService;
 use App\Service\Misc\ErrorLogService;
+use App\Service\Notification\EmailBrand;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -43,7 +44,7 @@ class AuthController extends Controller
         ]);
 
         // Send email
-        Mail::send('verify_mail', ['code' => $code], function ($msg) use ($email) {
+        Mail::send('verify_mail', ['code' => $code, 'brand' => EmailBrand::forEmail($email)], function ($msg) use ($email) {
             $msg->to($email)->subject('Email Verification');
         });
 

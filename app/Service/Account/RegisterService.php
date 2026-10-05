@@ -13,6 +13,7 @@ use App\Models\Users\InvestorProfile;
 use App\Models\Users\ServiceProviderProfile;
 use App\Service\File\ImageUploadService;
 use App\Service\Misc\ErrorLogService;
+use App\Service\Notification\EmailBrand;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -466,6 +467,7 @@ class RegisterService
 
             try {
                 Mail::send('organization_team_invitation', [
+                    'brand' => EmailBrand::forOrganization($organization),
                     'teamMember' => $user,
                     'organization' => $organization,
                     'inviter' => $inviter,
@@ -558,6 +560,7 @@ class RegisterService
 
             try {
                 Mail::send('external_reviewer_invitation', [
+                    'brand' => EmailBrand::forOrganization($organization),
                     'teamMember' => $user,
                     'organization' => $organization,
                     'inviter' => $inviter,
