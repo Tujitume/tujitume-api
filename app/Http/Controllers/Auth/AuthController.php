@@ -44,8 +44,9 @@ class AuthController extends Controller
         ]);
 
         // Send email
-        Mail::send('verify_mail', ['code' => $code, 'brand' => EmailBrand::forEmail($email)], function ($msg) use ($email) {
-            $msg->to($email)->subject('Email Verification');
+        // Code in the subject + a plain-text part is what lets Gmail offer its "Copy code" chip
+        Mail::send(['html' => 'verify_mail', 'text' => 'verify_mail_text'], ['code' => $code, 'brand' => EmailBrand::forEmail($email)], function ($msg) use ($email, $code) {
+            $msg->to($email)->subject("{$code} – your Tujitume verification code");
         });
 
         return response()->json([

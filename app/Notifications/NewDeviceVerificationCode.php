@@ -36,8 +36,9 @@ class NewDeviceVerificationCode extends Notification
     public function toMail(object $notifiable): MailMessage
     {
         return (new MailMessage)
-            ->subject('Verify new device')
-            ->view('device_verification_code', [
+            // Code in the subject + a plain-text part is what lets Gmail offer its "Copy code" chip
+            ->subject("{$this->code} – your Tujitume device verification code")
+            ->view(['device_verification_code', 'device_verification_code_text'], [
                 'brand'       => EmailBrand::forUser($notifiable),
                 'name'        => $notifiable->name,
                 'code'        => $this->code,
