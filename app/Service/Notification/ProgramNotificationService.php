@@ -20,7 +20,7 @@ class ProgramNotificationService
         'round.opened', 'round.closing_soon', 'round.closed', 'round.advanced', 'round.not_selected',
         'round.score_received', 'milestones.created', 'budget.completed',
         'mprv.approved', 'mprv.rejected', 'completion.approved', 'completion.rejected',
-        'milestone.unlocked', 'milestone.funds_released',
+        'milestone.unlocked', 'milestone.funds_released', 'dealroom.document_uploaded',
         'disbursement.created', 'disbursement.completed', 'disbursement.reversed',
     ];
 
@@ -293,7 +293,7 @@ class ProgramNotificationService
                 'message'       => "Your application to {$data['program_title']} was not selected",
                 'email_subject' => 'Program Application Update',
                 'email_view'    => $this->view_base . 'application_rejected',
-                'link'          => $this->applicantApplicationLink($data),
+                'link'          => $this->link('dashboard.entrepreneur.programsDiscover'), // rejected: point to other programs
             ],
 
             // ── ROUNDS ───────────────────────────────────────────────────────
@@ -335,7 +335,7 @@ class ProgramNotificationService
                 'message'       => "Sorry your application was rejected, thank you for your participation in {$data['round_name']}",
                 'email_subject' => 'Program Round Update',
                 'email_view'    => $this->view_base . 'round_not_selected',
-                'link'          => $this->applicantApplicationLink($data),
+                'link'          => $this->link('dashboard.entrepreneur.programsDiscover'), // rejected: point to other programs
             ],
 
             'round.scoring_assigned' => [

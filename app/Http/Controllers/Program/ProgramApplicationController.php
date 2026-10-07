@@ -182,8 +182,12 @@ class ProgramApplicationController extends Controller
                     ->exists();
             }
 
+            $closedReason = $program->applicationsClosedReason();
+
             $programData = [
                 ...$program->toArray(),
+                'accepting_applications' => $closedReason === null,
+                'applications_closed_reason' => $closedReason,
                 'status' => [
                     'value' => $program->status,
                     'color' => config('status.program.' . $program->status, 'gray'),
@@ -265,8 +269,9 @@ class ProgramApplicationController extends Controller
                 return response()->json(['message' => 'Only business owners can submit applications.'], 403);
             }
 
-            if ($program->status !== 'published') {
-                return response()->json(['message' => 'Program is not open for applications.'], 422);
+            // Closed once the first round is over and applicants have moved to the next round
+            if ($closedReason = $program->applicationsClosedReason()) {
+                return response()->json(['message' => $closedReason], 422);
             }
 
             $validated = $request->validate([
@@ -320,10 +325,8 @@ class ProgramApplicationController extends Controller
             // Auto-set fields
             $validated['program_id'] = $program->id;  $validated['program_owner_id'] = $program->user_id;
             $validated['user_id'] = auth()->id(); $validated['status'] = 'pending';
-            $validated['current_round_id'] = $program->rounds()
-                ->where('status', 'published')
-                ->orderBy('round_number')
-                ->first()?->id ?? $program->rounds()->orderBy('round_number')->first()?->id;
+            // New applications always enter the first round; later rounds only take advanced applicants
+            $validated['current_round_id'] = $program->applicationRound()?->id;
 
             if( !$validated['current_round_id']) {
                 return response()->json(['message' => 'No round exists for the program.'], 422);
@@ -393,16 +396,13 @@ class ProgramApplicationController extends Controller
             // }
 
             $text = 'You have a new application pitch.';
-            $this->notification->create(
-                $program->user_id, $application->user_id, $text,
-                // straight to this applicant (multi-round programs open the round they applied in)
-                $this->programNotification->orgApplicantLink([
-                    'program_id'     => $program->id,
-                    'application_id' => $application->id,
-                    'round_id'       => $program->grant_type === 'multi_round' ? $application->current_round_id : null,
-                ]),
-                'program'
-            );
+            // straight to this applicant (multi-round programs open the round they applied in)
+            $pitchLink = $this->programNotification->orgApplicantLink([
+                'program_id'     => $program->id,
+                'application_id' => $application->id,
+                'round_id'       => $program->grant_type === 'multi_round' ? $application->current_round_id : null,
+            ]);
+            $this->notification->create($program->user_id, $application->user_id, $text, $pitchLink, 'program');
 
             // Commit changes
             DB::commit();
@@ -412,7 +412,9 @@ class ProgramApplicationController extends Controller
             $smeName = $sme->first_name. ' '. $sme->last_name;
             $go_email = User::where('id', $program->user_id)->value('email');
 
-            $info=[ 'program'=>$program->program_title, 'SME'=>$smeName ];
+            // The email button opens this exact application, same as the in-app notification
+            $info=[ 'program'=>$program->program_title, 'SME'=>$smeName,
+                    'action_url' => \App\Service\Notification\EmailLink::url($pitchLink), 'action_label' => 'Review Pitch' ];
             $this->emailService->send('New Program Pitch', 'opportunities.program_pitch', $info, $go_email);
 
             return response()->json([

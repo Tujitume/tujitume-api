@@ -103,6 +103,7 @@ class ProgramController extends Controller
 
             // Public programs
             $programs = Program::withCount(['liked', 'applications'])->where('status', '!=', 'draft')->get();
+            Program::annotateApplicationState($programs);
             foreach ($programs as $program){
                 $program->pitch_count = $program->applications_count ?? 0;
 
@@ -135,6 +136,7 @@ class ProgramController extends Controller
         try{
             $user_id = Auth::id();
             $programs = Program::withCount(['liked', 'applications'])->get();
+            Program::annotateApplicationState($programs);
             foreach ($programs as $program){
                 $program->pitch_count = $program->applications_count ?? 0;
                 $program->liked = $user_id ? $program->liked()->where('user_id', $user_id)->exists() : false;

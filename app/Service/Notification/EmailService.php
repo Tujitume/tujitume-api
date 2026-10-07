@@ -11,8 +11,12 @@ class EmailService
         try{
             $data = $this->withDefaults($view, (array) $data, $email);
 
-            Mail::send($view, $data, function ($message) use ($email, $subject) {
+            // The sender's display name is the brand (program owner for applicants, the recipient's own org otherwise)
+            $fromName = !empty($data['brand']['custom']) ? $data['brand']['name'] : null;
+
+            Mail::send($view, $data, function ($message) use ($email, $subject, $fromName) {
                 $message->to($email)->subject($subject);
+                if ($fromName) $message->from(config('mail.from.address'), $fromName);
             });
         }
         catch (\Exception $e) {
