@@ -1,112 +1,21 @@
+<div style="max-width:1024px;margin:auto;margin-top:4rem;background-color:white;border-radius:0.5rem;box-shadow:0 4px 6px rgba(0,0,0,0.1);overflow:hidden;">
+    @include('programs.partials.brand_header', ['title' => 'Terms Agreement Offer'])
 
-<head>
-	<link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/css/bootstrap.min.css">
-</head>
+    <div style="padding:20px;font-size:14px;line-height:1.6;">
+        <p>Hi,</p>
+        @if($status && $status == 'accepted')
+            <p>A terms &amp; agreement offer was <strong>accepted</strong> for Capital <strong>{{ $capital }}</strong> and Startup <strong>{{ $startup }}</strong>.</p>
+        @elseif($status && $status == 'rejected')
+            <p>A terms &amp; agreement offer was <strong>rejected</strong> for Capital <strong>{{ $capital }}</strong> and Startup <strong>{{ $startup }}</strong>.</p>
+        @else
+            <p>A terms &amp; agreement offer was <strong>submitted</strong> for Capital <strong>{{ $capital }}</strong> and Startup <strong>{{ $startup }}</strong>.</p>
+        @endif
+        <p>Please review it on your Tujitume dashboard.</p>
 
+        <div style="text-align:center;margin-top:2rem;">
+            <a href="{{ config('app.app_url') }}dashboard/pitch-agreements" style="background-color:#14532d;color:white;display:inline-block;padding:0.85rem 2rem;border-radius:999px;text-decoration:none;font-weight:700;font-size:1rem;box-shadow:0 4px 12px rgba(0,0,0,0.18);">Review Offer</a>
+        </div>
 
-<script src="https://cdn.tailwindcss.com"></script>
-<div
-    style="
-        max-width: 1024px;
-        margin-left: auto;
-        margin-right: auto;
-        margin-top: 4rem;
-        background-color: white;
-        border-radius: 0.5rem;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        overflow: hidden;
-        position: relative;
-    "
->
-      <div
-        class="bg-green-900 py-10 text-center text-white relative z-10"
-        style="
-            background-color: #14532d;
-            padding: 0.9rem 0;
-            text-align: center;
-            color: #ffffff;
-            position: relative;
-            z-index: 10;
-        "
-    >
-        <img
-            src="{{ $message->embed(public_path('images/Email/EmailWhite.png'))}}"
-            alt="Company Logo"
-            class="h-12 w-auto mx-auto"
-            style="height: 3rem; width: auto; margin: 0 auto"
-        />
-        <h1
-            class="text-3xl font-bold mt-4"
-            style="font-size: 2rem; font-weight: 700; margin-top: 1rem"
-        >
-            Terms Agreement Offer Submitted
-        </h1>
+        @include('programs.partials.brand_footer')
     </div>
-
-        <div >
-        <div class="content" style="padding: 20px;">
-            @if($status && $status == 'accepted')
-                <p class="email-message" style="font-size: 13px; padding-top: 10px; line-height: 0.5; margin-bottom: 30px;">Hi, a terms & agreement offer was accepted for Capital <b>{{$capital}}</b> and Startup <b>{{$startup}}</b>. Please review on Tujitume dashboard.</p>
-            @elseif($status && $status == 'rejected')
-                <p class="email-message" style="font-size: 13px; padding-top: 10px; line-height: 0.5; margin-bottom: 30px;">Hi, a terms & agreement offer was rejected Capital <b>{{$capital}}</b> and Startup <b>{{$startup}}</b>. Please review on Tujitume dashboard.</p>
-            @else
-                <p class="email-message" style="font-size: 13px; padding-top: 10px; line-height: 0.5; margin-bottom: 30px;">Hi, a terms & agreement offer was submitted Capital <b>{{$capital}}</b> and Startup <b>{{$startup}}</b>. Please review on Tujitume dashboard.</p>
-            @endif
-
-            <p class="email-message" style="font-size: 12px; padding-top: 10px; line-height: 1.8; margin-bottom: 30px;">
-
-            <a target="_blank" href="<?php echo config('app.app_url');?>dashboard/pitch-agreements"
-               class="button button-primary" style="display: inline-block; padding: 12px 24px; text-decoration: none; color: #fff; border-radius: 6px; transition: background-color 0.3s ease; background-color: green;">
-                Review
-            </a>
-
-
-            <div
-                class="footer"
-                style="
-                    margin-top: 2rem;
-                    text-align: start;
-                    color: gray;
-                    font-size: 12px;
-                "
-            >
-                <p>
-                    <img
-                        src="{{ $message->embed(public_path('images/Email/EmailVertDark.png'))}}"
-                        alt="Company Logo"
-                        style="
-                            height: 3rem;
-                            width: auto;
-                            float: left;
-                            margin-right: 1rem;
-                            margin-top: -0.2rem;
-                            margin-bottom: 4rem;
-                        "
-                    />
-                </p>
-                 <p style="font-weight: 600">
-                    Best regards, <br/>
-                   <div style="margin-bottom:3px;">The Tujitume Team</div>
-                </p>
-            </div>
-	   </div>
-    </div>
-    </div>
-
-<script src="https://code.jquery.com/jquery-3.4.1.min.js" integrity="sha256-CSXorXvZcTkaix6Yvo6HppcZGetbYMGWSFlBw8HfCJo=" crossorigin="anonymous"></script>
-
-
-<script src="https://cdn.jsdelivr.net/npm/popper.js@1.16.0/dist/umd/popper.min.js" integrity="sha384-Q6E9RHvbIyZFJoft+2mJbHaEWldlvI9IOYy5n3zV9zzTtmI3UksdQRVvoxMfooAo" crossorigin="anonymous"></script>
-<script src="https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/js/bootstrap.min.js" integrity="sha384-wfSDF2E50Y2D1uUdj0O3uMBJnjuUD4Ih7YwaYd1iqfktj0Uod8GCExl3Og8ifwB6" crossorigin="anonymous"></script>
-
-    <script type="text/javascript">
-    	function openModal(val) {
-		if(val == 'hide')
-		$('#ConfirmModal').css('display','none');
-		else
-    	$('#ConfirmModal').css('display','block');
-    	}
-    </script>
-
-
-<!--Hidden Cart view-->
+</div>

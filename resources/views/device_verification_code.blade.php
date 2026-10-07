@@ -1,0 +1,21 @@
+<div style="max-width:1024px;margin:auto;margin-top:4rem;background-color:white;border-radius:0.5rem;box-shadow:0 4px 6px rgba(0,0,0,0.1);overflow:hidden;">
+    @include('programs.partials.brand_header', ['title' => 'Verify Your New Device'])
+
+    <div style="padding:20px;font-size:14px;line-height:1.6;">
+        <p>Hi {{ $name }},</p>
+
+        <p>A new device is trying to access your account: <strong>{{ $deviceLabel }}</strong></p>
+
+        <p>Use this verification code to confirm it is you:</p>
+
+        <div style="text-align:center;margin:1.5rem 0;">
+            <span style="display:inline-block;background-color:#f0fdf4;color:#14532d;border:2px dashed #14532d;border-radius:0.75rem;padding:0.9rem 2rem;font-size:2rem;font-weight:800;letter-spacing:0.4em;">{{ $code }}</span>
+        </div>
+
+        <p style="text-align:center;color:#dc2626;font-weight:700;">This code expires in 10 minutes.</p>
+
+        <p style="font-size:13px;color:#6b7280;">If this wasn’t you, we recommend changing your password right away.</p>
+
+        @include('programs.partials.brand_footer')
+    </div>
+</div>

@@ -394,7 +394,14 @@ class ProgramApplicationController extends Controller
 
             $text = 'You have a new application pitch.';
             $this->notification->create(
-                $program->user_id, $application->user_id,$text,'dashboard.programOrg.applications','program'
+                $program->user_id, $application->user_id, $text,
+                // straight to this applicant (multi-round programs open the round they applied in)
+                $this->programNotification->orgApplicantLink([
+                    'program_id'     => $program->id,
+                    'application_id' => $application->id,
+                    'round_id'       => $program->grant_type === 'multi_round' ? $application->current_round_id : null,
+                ]),
+                'program'
             );
 
             // Commit changes
@@ -555,7 +562,12 @@ class ProgramApplicationController extends Controller
             $text = $user->first_name.' '.$user->last_name. 'Has requested funding to the Program'.$pitch->program->program_title;
             $notification = new NotificationService();
             $notification->create($pitch->program->user_id,$pitch->user_id,$text,
-                'dashboard.programOrg.applications','program_fund_request');
+                $this->programNotification->orgApplicantLink([
+                    'program_id'     => $pitch->program_id,
+                    'application_id' => $pitch->id,
+                    'round_id'       => $pitch->program->grant_type === 'multi_round' ? $pitch->current_round_id : null,
+                ]),
+                'program_fund_request');
 
             //MAIL
             return response()->json(['message' => 'Fund Requested.'], 200);

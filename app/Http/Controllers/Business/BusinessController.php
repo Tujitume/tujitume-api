@@ -103,6 +103,15 @@ class BusinessController extends Controller
 
     public function storeListing(Request $request, SpamWordChecker $spam, SpamImageChecker $spamI)
     {
+        // Payments run on LIPR: a business cannot be listed until its owner's wallet exists
+        $walletOwner = User::find($request->user()->organizationOwnerId());
+        if (! $walletOwner?->lipr_wallet) {
+            return response()->json([
+                'message' => 'Connect your LIPR wallet in your account before creating a business.',
+                'code'    => 'lipr_required',
+            ], 422);
+        }
+
         $uploadedFiles = [];
 
         DB::beginTransaction();

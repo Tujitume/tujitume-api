@@ -895,6 +895,7 @@ class ProgramRoundController extends Controller
                     'awarded_count' => $awardedCount,
                     'total_amount'  => $awardedCount * $application->program->funding_per_business,
                     'program_id'    => $application->program->id,
+                    'application_id' => $application->id,
                     'recipientName' => $application->user->first_name,
                 ]);
 

@@ -17,9 +17,11 @@ use Illuminate\Validation\ValidationException;
 
 class ApplicationScoreController extends Controller
 {
-    public function __construct(
-
-    ) {}
+    public function __construct()
+    {
+        // The base controller builds the shared services ($this->programNotification etc.).
+        parent::__construct();
+    }
 
     /**
      * Submit score for application
@@ -33,6 +35,11 @@ class ApplicationScoreController extends Controller
 
         if (!$round) {
             return response()->json(['error' => 'Application not in an active round'], 422);
+        }
+
+        // Scoring closes once the round is finalized; results and reviewer pay are based on the scores as they stand.
+        if ($round->status === 'finalized') {
+            return response()->json(['message' => 'This round has been finalized. Scores can no longer be submitted or changed.'], 422);
         }
 
         $isReviewer = $round->reviewers()->where('user_id', $userId)->exists()
@@ -149,6 +156,8 @@ class ApplicationScoreController extends Controller
                         'round_name'    => $round->round_name,
                         'reviewer_name' => Auth::user()->first_name . ' ' . Auth::user()->last_name,
                         'order_id'      => $order->id,
+                        'program_id'    => $round->program_id,
+                        'round_id'      => $round->id,
                     ]);
                 }
             }
@@ -205,7 +214,7 @@ class ApplicationScoreController extends Controller
         foreach ($criterionScores as $criterion) {
             $config     = $criteriaMap->get($criterion['criterion']);
             $weight     = $config['weight'] ?? 0;      // e.g. 30 means 30%
-            $scoreRange = $config['score_range'] ?? 100;
+            $scoreRange = $this->maxScoreFor($config);
 
             // Normalize score to 0-100 then apply weight
             $normalized  = ($criterion['score'] / $scoreRange) * 100;
@@ -213,6 +222,27 @@ class ApplicationScoreController extends Controller
         }
 
         return round($totalScore, 2);
+    }
+
+    /**
+     * Highest score a criterion allows. The round config saves it as "scoreRange"
+     * in the form "0-10" or "1-5"; older data may carry a numeric "score_range".
+     * Reading only "score_range" made every criterion default to 100, so a score
+     * of 8 out of 10 counted as 8%.
+     */
+    private function maxScoreFor($config): float
+    {
+        $range = $config['score_range'] ?? $config['scoreRange'] ?? null;
+
+        if (is_numeric($range)) {
+            return max((float) $range, 1.0);
+        }
+
+        if (is_string($range) && preg_match_all('/\d+(?:\.\d+)?/', $range, $matches) && ! empty($matches[0])) {
+            return max((float) end($matches[0]), 1.0);
+        }
+
+        return 100.0;
     }
 
     private function calculatePassFail(array $criterionScores): float

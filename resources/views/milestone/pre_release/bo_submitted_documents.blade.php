@@ -1,18 +1,12 @@
 <div style="max-width:1024px;margin:auto;margin-top:4rem;background-color:white;border-radius:0.5rem;box-shadow:0 4px 6px rgba(0,0,0,0.1);overflow:hidden;">
-    <div style="background-color:#14532d;padding:0.9rem 0;text-align:center;color:#ffffff;">
-        <img src="{{ $message->embed(public_path('images/Email/EmailWhite.png')) }}" alt="Tujitume Logo" style="height:3rem;width:auto;margin:0 auto;" />
-        <h1 style="font-size:2rem;font-weight:700;margin-top:1rem;">Review Required: Business Owner Has Submitted Documents</h1>
-    </div>
+    @include('programs.partials.brand_header', ['title' => 'Review Required: Business Owner Has Submitted Documents'])
     <div style="padding:20px;font-size:14px;line-height:1.6;">
         <p>Hello {{ $investorName }},</p>
         <p>The business owner has submitted the required documents for milestone <strong>{{ $milestoneName }}</strong>.</p>
         <p>Please review and approve or request corrections.</p>
         <div style="text-align:center;margin-top:2rem;">
-            <a href="{{ $reviewUrl }}" style="background-color:#14532d;color:white;padding:0.75rem 1.5rem;border-radius:0.5rem;text-decoration:none;font-weight:500;font-size:1rem;">Review Documents</a>
+            <a href="{{ $reviewUrl }}" style="background-color:#14532d;color:white;display:inline-block;padding:0.85rem 2rem;border-radius:999px;text-decoration:none;font-weight:700;font-size:1rem;box-shadow:0 4px 12px rgba(0,0,0,0.18);">Review Documents</a>
         </div>
-        <div style="margin-top:2rem;font-size:12px;color:gray;">
-            <img src="{{ $message->embed(public_path('images/Email/EmailVertDark.png')) }}" alt="Tujitume Logo" style="height:3rem;width:auto;float:left;margin-right:1rem;margin-top:-0.2rem;margin-bottom:4rem;" />
-            <p style="font-weight:600;">Best regards,<br/>The Tujitume Team</p>
-        </div>
+        @include('programs.partials.brand_footer')
     </div>
 </div>

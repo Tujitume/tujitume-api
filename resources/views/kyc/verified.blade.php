@@ -1,18 +1,22 @@
-<!doctype html>
-<html lang="en">
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>KYC verification complete</title>
-</head>
-<body style="margin: 0; padding: 24px; background: #f4f6f4; color: #26332b; font-family: Arial, sans-serif;">
-    <main style="max-width: 600px; margin: 0 auto; padding: 32px; background: #ffffff; border-top: 4px solid #14532d;">
-        <p style="margin: 0 0 24px; color: #14532d; font-size: 14px; font-weight: 700;">TUJITUME</p>
-        <h1 style="margin: 0 0 20px; font-size: 24px;">Your KYC is verified</h1>
-        <p>Hello {{ $name }},</p>
-        <p>Your {{ strtolower($verificationType) }} verification has been approved. Your KYC status is now verified.</p>
-        <p>You can continue using Tujitume with your verified account.</p>
-        <p style="margin-top: 32px;">Regards,<br>The Tujitume Team</p>
-    </main>
-</body>
-</html>
+<div style="max-width:1024px;margin:auto;margin-top:4rem;background-color:white;border-radius:0.5rem;box-shadow:0 4px 6px rgba(0,0,0,0.1);overflow:hidden;">
+    @include('programs.partials.brand_header', ['title' => 'You’re Verified'])
+
+    <div style="padding:20px;font-size:14px;line-height:1.6;">
+        <p>Hi {{ $name }},</p>
+
+        <p>Great news! {{ $intro }}</p>
+
+        <div style="background-color:#f0fdf4;padding:1rem 1.25rem;border-radius:0.5rem;margin:1.5rem 0;border-left:4px solid #14532d;">
+            <p style="margin:0 0 0.5rem;font-weight:700;color:#14532d;">&#10003; Verified</p>
+            <p style="margin:0.25rem 0;"><strong>Name:</strong> {{ $legalName }}</p>
+            <p style="margin:0.25rem 0;"><strong>Verification:</strong> {{ $verificationType }}</p>
+            <p style="margin:0.25rem 0;"><strong>Verified on:</strong> {{ $verifiedAt }}</p>
+        </div>
+
+        <p>{{ $next }}</p>
+
+        @include('programs.partials.brand_button')
+
+        @include('programs.partials.brand_footer')
+    </div>
+</div>

@@ -1,8 +1,5 @@
 <div style="max-width:1024px;margin:auto;margin-top:4rem;background-color:white;border-radius:0.5rem;box-shadow:0 4px 6px rgba(0,0,0,0.1);overflow:hidden;">
-    <div style="background-color:#14532d;padding:0.9rem 0;text-align:center;color:#ffffff;">
-        <img src="{{ $message->embed(public_path('images/Email/EmailWhite.png')) }}" alt="Tujitume Logo" style="height:3rem;width:auto;margin:0 auto;" />
-        <h1 style="font-size:2rem;font-weight:700;margin-top:1rem;">Milestone Pre Release Documents Required</h1>
-    </div>
+    @include('programs.partials.brand_header', ['title' => 'Milestone Pre Release Documents Required'])
     <div style="padding:20px;font-size:14px;line-height:1.6;">
         <p>Hello {{ $boName }},</p>
         <p>Investor <strong>{{ $investorName }}</strong> has requested the following documents before milestone funds can be released:</p>
@@ -17,11 +14,8 @@
         </ul>
         <p>Upload them in your dashboard to proceed.</p>
         <div style="text-align:center;margin-top:2rem;">
-            <a href="{{ $dashboardUrl }}" style="background-color:#14532d;color:white;padding:0.75rem 1.5rem;border-radius:0.5rem;text-decoration:none;font-weight:500;font-size:1rem;">Upload Documents</a>
+            <a href="{{ $dashboardUrl }}" style="background-color:#14532d;color:white;display:inline-block;padding:0.85rem 2rem;border-radius:999px;text-decoration:none;font-weight:700;font-size:1rem;box-shadow:0 4px 12px rgba(0,0,0,0.18);">Upload Documents</a>
         </div>
-        <div style="margin-top:2rem;font-size:12px;color:gray;">
-            <img src="{{ $message->embed(public_path('images/Email/EmailVertDark.png')) }}" alt="Tujitume Logo" style="height:3rem;width:auto;float:left;margin-right:1rem;margin-top:-0.2rem;margin-bottom:4rem;" />
-            <p style="font-weight:600;">Best regards,<br/>The Tujitume Team</p>
-        </div>
+        @include('programs.partials.brand_footer')
     </div>
 </div>

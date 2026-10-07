@@ -10,6 +10,7 @@ use App\Models\Communication\Notifications;
 use App\Models\Milestones\Milestones;
 use App\Models\Services\Services;
 use App\Service\Misc\ErrorLogService;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
 class DashboardController extends Controller
@@ -120,6 +121,24 @@ class DashboardController extends Controller
         })->values();
 
         return response()->json(['data' => $result]);
+    }
+
+    // Mark a single notification as read (only the receiver's own)
+    public function notificationMarkRead(Request $request)
+    {
+        $validated = $request->validate(['id' => 'required|integer']);
+
+        $updated = Notifications::where('receiver_id', Auth::id())
+            ->where('id', $validated['id'])
+            ->update(['new' => 0]);
+
+        if (!$updated) {
+            // Already read, or not this user's notification — nothing to change
+            $exists = Notifications::where('receiver_id', Auth::id())->where('id', $validated['id'])->exists();
+            if (!$exists) return response()->json(['message' => 'Notification not found'], 404);
+        }
+
+        return response()->json(['message' => 'success'], 200);
     }
 
     public function notificationSetRead()
