@@ -86,7 +86,7 @@ class Program extends Model
      */
     public function applicationsClosedReason(): ?string
     {
-        if ($this->status !== 'published') return 'This program is not open for applications.';
+        if ($this->status !== 'published') return 'Program is not open for applications.';
 
         $round = $this->applicationRound();
         if (!$round) return 'No application round exists for this program.';
