@@ -13,6 +13,7 @@ use App\Models\Programs\Rounds\ApplicationRoundResponse;
 use App\Models\Programs\Rounds\ProgramRound;
 use App\Models\Programs\Rounds\RoundCustomQuestion;
 use App\Models\Programs\Rounds\RoundRequiredDocument;
+use App\Service\Program\ProgramAccess;
 use App\Service\Program\RoundHelperService;
 use App\Service\Program\RoundHistoryService;
 use App\Service\Misc\ErrorLogService;
@@ -35,6 +36,8 @@ class ProgramApplicationController extends Controller
     public function index($program_id)
     {
         $user_id = Auth::id();
+
+        (new ProgramAccess())->authorizeProgramStaff(auth()->user(), Program::findOrFail($program_id));
 
         $pitches = ProgramApplication::with('program_milestones')
             ->where('program_id', $program_id)->latest()->get();
@@ -62,6 +65,8 @@ class ProgramApplicationController extends Controller
                 'program:id,program_title,program_type,status,total_rounds,funding_per_business,mid_milestone_required',
                 'currentRound',
             ])->findOrFail($id);
+
+            (new ProgramAccess())->authorizeApplication(auth()->user(), $pitch);
 
             $roundData = null;
             $roundService = new RoundHelperService();
@@ -91,6 +96,9 @@ class ProgramApplicationController extends Controller
                 ],
                 'round_data' => $roundData,
             ]);
+
+        } catch (\Illuminate\Auth\Access\AuthorizationException $e) {
+            throw $e; // handled globally as a 403
 
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
             return response()->json(['message' => 'Application not found'], 404);
@@ -558,7 +566,10 @@ class ProgramApplicationController extends Controller
     public function fund_request($pitch_id)
     {
         try{
-            $pitch = ProgramApplication::with('program')->where('id',$pitch_id)->first();
+            $pitch = ProgramApplication::with('program')->findOrFail($pitch_id);
+            if (!(new ProgramAccess())->isApplicant(auth()->user(), $pitch)) {
+                throw new \Illuminate\Auth\Access\AuthorizationException(ProgramAccess::DENIED);
+            }
             $user = User::select('first_name','last_name')->where('id',$pitch->user_id)->first();
 
             $text = $user->first_name.' '.$user->last_name. 'Has requested funding to the Program'.$pitch->program->program_title;
@@ -573,6 +584,9 @@ class ProgramApplicationController extends Controller
 
             //MAIL
             return response()->json(['message' => 'Fund Requested.'], 200);
+        }
+        catch (\Illuminate\Auth\Access\AuthorizationException | \Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            throw $e;
         }
         catch (\Exception $e) {
             ErrorLogService::report($e, [

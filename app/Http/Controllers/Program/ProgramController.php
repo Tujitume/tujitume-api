@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Program;
 
+use App\Support\ApiContract;
 use App\Http\Controllers\Controller;
 use App\Models\Auth\User;
 use App\Models\Capital\CapitalProfile;
@@ -68,17 +69,18 @@ class ProgramController extends Controller
                     $user = $this->get_role();
 
                     if (in_array($user->role, ['editor', 'viewer', 'admin'])) {
-                        $programs = Program::withCount(['liked', 'applications'])->where('user_id',$user->program_owner_id)
-                            ->latest()->get();
+                        $query = Program::withCount(['liked', 'applications'])->where('user_id',$user->program_owner_id)
+                            ->latest();
                         $watchlistProgramIds = Watchlist::where('user_id', $user->program_owner_id)->pluck('org_id')->toArray();
                     }
                     else{
-                        $programs = Program::with('wallet')->withCount(['liked', 'applications'])
+                        $query = Program::with('wallet')->withCount(['liked', 'applications'])
                             ->where('user_id',$user->id)
-                            ->latest()->get();
+                            ->latest();
                         $watchlistProgramIds = Watchlist::where('user_id', $user->id)->pluck('org_id')->toArray();
                     }
 
+                    [$programs, $page] = ApiContract::fetch($query, request());
 
                     foreach ($programs as $program){
                         $program->pitch_count = $program->applications_count ?? 0;
@@ -86,15 +88,10 @@ class ProgramController extends Controller
                         $program->liked = $program->liked()->where('user_id', $user_id)->exists();
                         $program->owner_website = $program->owner->website ?? null;
 
-                        $status = $program->status; // âœ… store original value first
-
-                        $program->status = [
-                            'value' => $status,
-                            'color' => config('status.program.' . $status, 'gray'), // fallback
-                        ];
+                        $program->status = ApiContract::statusMeta('program', $program->status);
                     }
 
-                    return response()->json(['programs' => $programs]);
+                    return ApiContract::listResponse('Programs fetched successfully.', $programs, $page, ['programs']);
                 }
             }
             else{
@@ -102,7 +99,10 @@ class ProgramController extends Controller
             }
 
             // Public programs
-            $programs = Program::withCount(['liked', 'applications'])->where('status', '!=', 'draft')->get();
+            [$programs, $page] = ApiContract::fetch(
+                Program::withCount(['liked', 'applications'])->where('status', '!=', 'draft'),
+                request()
+            );
             Program::annotateApplicationState($programs);
             foreach ($programs as $program){
                 $program->pitch_count = $program->applications_count ?? 0;
@@ -110,14 +110,9 @@ class ProgramController extends Controller
                 $program->liked = $user_id ? $program->liked()->where('user_id', $user_id)->exists() : false;
                 $program->owner_website = $program->owner->website ?? null;
 
-                $status = $program->status; // âœ… store original value first
-
-                $program->status = [
-                    'value' => $status,
-                    'color' => config('status.program.' . $status, 'gray'), // fallback
-                ];
+                $program->status = ApiContract::statusMeta('program', $program->status);
             }
-            return response()->json(['programs' => $programs]);
+            return ApiContract::listResponse('Programs fetched successfully.', $programs, $page, ['programs']);
         }
         catch (\Exception $e) {
             ErrorLogService::report($e, [
@@ -135,21 +130,16 @@ class ProgramController extends Controller
     {
         try{
             $user_id = Auth::id();
-            $programs = Program::withCount(['liked', 'applications'])->get();
+            [$programs, $page] = ApiContract::fetch(Program::withCount(['liked', 'applications']), request());
             Program::annotateApplicationState($programs);
             foreach ($programs as $program){
                 $program->pitch_count = $program->applications_count ?? 0;
                 $program->liked = $user_id ? $program->liked()->where('user_id', $user_id)->exists() : false;
                 $program->owner_website = $program->owner->website ?? null;
 
-                $status = $program->status; // store original value first
-
-                $program->status = [
-                    'value' => $status,
-                    'color' => config('status.program.' . $status, 'gray'), // fallback
-                ];
+                $program->status = ApiContract::statusMeta('program', $program->status);
             }
-            return response()->json(['programs' => $programs]);
+            return ApiContract::listResponse('Programs fetched successfully.', $programs, $page, ['programs']);
         }
         catch (\Exception $e) {
         ErrorLogService::report($e, ['input' => request()->except(['password', 'token']),]);
@@ -613,6 +603,7 @@ class ProgramController extends Controller
             //  Handle not found
             if (!$program) {
                 return response()->json([
+                    'success' => false,
                     'message' => 'Program not found'
                 ], 404);
             }
@@ -627,10 +618,13 @@ class ProgramController extends Controller
                     ->exists();
             }
 
-            return response()->json([
-                'program_data' => $program,
-                'application_round' => $round1,
-            ], 200);
+            return ApiContract::itemResponse(
+                'Program fetched successfully.',
+                'program',
+                $program,
+                ['application_round' => $round1],
+                ['program_data' => $program, 'application_round' => $round1],
+            );
         }
         catch (\Exception $e) {
             ErrorLogService::report($e, [

@@ -112,7 +112,7 @@ class BookingController extends Controller
             $this->notification->create(
                 $service->user_id, $booker->id,
                 'You have a new booking from ' . $booker->first_name . ' ' . $booker->last_name,
-                'dashboard.serviceProvider.myBookings::' . $booking->id, 'customer'
+                'dashboard.serviceProvider.myBookings', 'customer'
             );
 
             $info = ['business_name' => $service->name, 'accept_deadline' => $acceptDeadline];
@@ -176,7 +176,7 @@ class BookingController extends Controller
 
                 // Notifications & Email
                 $text = "Your booking to {$service->name} has been accepted!";
-                $this->notification->create($booking->booker_id, $service->id, $text, 'dashboard.entrepreneur.mybookings::' . $booking->id, 'service');
+                $this->notification->create($booking->booker_id, $service->id, $text, $this->bookerBookingsLink($booking->booker_id), 'service');
 
                 $this->emailService->send(
                     'Booking Accepted', 'services.booking_mail',
@@ -219,7 +219,7 @@ class BookingController extends Controller
 
                 // Notifications & Email
                 $text = "Your booking to {$service->name} has been rejected due to {$reason}";
-                $this->notification->create($booking->booker_id, $service->id, $text, 'dashboard.entrepreneur.mybookings::' . $booking->id, 'service');
+                $this->notification->create($booking->booker_id, $service->id, $text, $this->bookerBookingsLink($booking->booker_id), 'service');
 
                 $this->emailService->send(
                     'Booking Rejected',
@@ -297,13 +297,13 @@ class BookingController extends Controller
                 $this->notification->create(
                     $owner->id, $booker->id,
                     'A booking to Service '.$serviceName.' was cancelled by '.$bookerName,
-                    'dashboard.serviceProvider.myBookings::' . $booking->id, 'service'
+                    'dashboard.serviceProvider.myBookings', 'service'
                 );
 
                 $this->notification->create(
                     $booker->id, $owner->id,
                     'Your booking to Service '.$serviceName.' was cancelled.',
-                    'dashboard.entrepreneur.mybookings::' . $booking->id, 'service'
+                    $this->bookerBookingsLink($booker->id), 'service'
                 );
 
                 $booking->delete();
@@ -335,4 +335,9 @@ class BookingController extends Controller
         return response()->json(['data' => $bookers]);
     }
 
+
+    private function bookerBookingsLink($bookerId): string
+    {
+        return \App\Service\Notification\EmailLink::bookingsFor($bookerId);
+    }
 }

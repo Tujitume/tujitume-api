@@ -14,6 +14,8 @@ use App\Models\ProgramEmailTemplate;
 use App\Models\ReviewerOrder;
 use App\Service\Program\KnockoutEvaluator;
 use App\Service\Program\RoundFinalizationService;
+use App\Service\Program\ProgramAccess;
+use App\Support\ApiContract;
 use App\Service\Program\RoundHelperService;
 use App\Service\Program\RoundHistoryService;
 use App\Service\Misc\ErrorLogService;
@@ -46,14 +48,11 @@ class ProgramRoundController extends Controller
             ->get()->map(function($round){
                 return[
                     ...$round->toArray(),
-                    'status' => [
-                        'value' => $round->status,
-                        'color' => config('status.program_round'. $round->status, 'gray'),
-                    ],
+                    'status' => ApiContract::statusMeta('program_round', $round->status),
                 ];
             });
 
-        return response()->json(['rounds' =>$rounds ], 200);
+        return ApiContract::listResponse('Rounds fetched successfully.', $rounds, null, ['rounds']);
     }
 
     //added by owen
@@ -70,10 +69,7 @@ class ProgramRoundController extends Controller
         return response()->json([
             'data' => [
                 ...$round->toArray(),
-                'status' => [
-                    'value' => $round->status,
-                    'color' => config('status.program_round.' . $round->status, 'gray'),
-                ],
+                'status' => ApiContract::statusMeta('program_round', $round->status),
                 'reviewers' => $round->reviewers,
                 'configuration_progress' => $this->configurationProgress($round),
             ]
@@ -151,6 +147,7 @@ class ProgramRoundController extends Controller
     public function applications($round_id)
     {
         $round = ProgramRound::findOrFail($round_id);
+        (new ProgramAccess())->authorizeRound(auth()->user(), $round);
 
         if ($round->status === 'finalized') {
             // Round is done - get all apps from history
@@ -221,6 +218,8 @@ class ProgramRoundController extends Controller
             'scores.reviewer',
             'roundDocuments',
         ])->findOrFail($application_id);  // ← also fixed: use findOrFail not where()->get()
+
+        (new ProgramAccess())->authorizeApplication(auth()->user(), $application);
 
         return response()->json([
             'application' => [

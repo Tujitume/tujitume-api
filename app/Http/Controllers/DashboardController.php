@@ -94,10 +94,21 @@ class DashboardController extends Controller
             'milestones' => $milestones,
         ]);
     }
-    public function notifications()
+    public function notifications(Request $request)
     {
-        $notifications = Notifications::where('receiver_id', Auth::id())
-            ->where('visible', 1)->latest()->get();
+        $query = Notifications::where('receiver_id', Auth::id())->where('visible', 1);
+
+        // Paged for the bell (?page=1&per_page=10): newest first, the app asks for more as the list is scrolled.
+        // Without per_page the full list is returned, as before.
+        $paged = $request->filled('per_page');
+        $page = null;
+        if ($paged) {
+            $perPage = min(max((int) $request->query('per_page'), 1), 50);
+            $page = (clone $query)->latest()->orderByDesc('id')->paginate($perPage);
+            $notifications = collect($page->items());
+        } else {
+            $notifications = $query->latest()->get();
+        }
 
         $result = $notifications->filter(function ($notice) {
             $notifier = match($notice->type) {
@@ -120,7 +131,21 @@ class DashboardController extends Controller
             return true;
         })->values();
 
-        return response()->json(['data' => $result]);
+        if (!$page) {
+            return response()->json(['data' => $result]);
+        }
+
+        return response()->json([
+            'data' => $result,
+            'meta' => [
+                'current_page' => $page->currentPage(),
+                'last_page'    => $page->lastPage(),
+                'total'        => $page->total(),
+                'has_more'     => $page->hasMorePages(),
+                // Unread across ALL pages, so the bell badge stays right while only 10 are loaded
+                'unread_count' => Notifications::where('receiver_id', Auth::id())->where('visible', 1)->where('new', 1)->count(),
+            ],
+        ]);
     }
 
     // Mark a single notification as read (only the receiver's own)

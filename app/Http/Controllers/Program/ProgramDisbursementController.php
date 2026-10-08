@@ -41,6 +41,7 @@ class ProgramDisbursementController extends Controller
      */
     public function disbursementData(ProgramMilestone $milestone)
     {
+        (new \App\Service\Program\ProgramAccess())->authorizeMilestone(auth()->user(), $milestone);
         $milestone->load([
             'application:id,program_id,user_id,program_owner_id,startup_name,contact_person_name,contact_person_email,status,funding_setup_status,awarded_amount,total_amount_requested,planning_mode',
             'application.program:id,program_title,program_type,funding_per_business,mid_milestone_required',

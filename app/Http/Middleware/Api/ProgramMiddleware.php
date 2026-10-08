@@ -50,17 +50,17 @@ class ProgramMiddleware
             if($role == 'editor')
             {
                 if(in_array($route_name, $editorForbidden)){
-                    return response()->json(['message' => 'Unauthorized','line' => __LINE__, 'status' => 401], 400);
+                    return response()->json(['success' => false, 'code' => 'forbidden', 'message' => "Your role doesn't allow this action.", 'error' => "Your role doesn't allow this action."], 403);
                 }
             }
             if($role == 'viewer')
             {
                 if($method == 'POST'){
-                    return response()->json(['message' => 'Unauthorized','line' => __LINE__, 'status' => 401], 400);
+                    return response()->json(['success' => false, 'code' => 'forbidden', 'message' => "Your role doesn't allow this action.", 'error' => "Your role doesn't allow this action."], 403);
                 }
                 else {
                     if(in_array($route_name, $viewerForbidden)){
-                        return response()->json(['message' => 'Unauthorized','line' => __LINE__, 'status' => 401], 400);
+                        return response()->json(['success' => false, 'code' => 'forbidden', 'message' => "Your role doesn't allow this action.", 'error' => "Your role doesn't allow this action."], 403);
                     }
                 }
             }

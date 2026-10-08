@@ -64,10 +64,11 @@ class ProgramNotificationService
             if (!$recipient) continue;
 
             // Events that reach people in different portals carry one link per user type
-            $link = $config['links'][$recipient->user_type_id] ?? $config['link'];
+            $link = $this->linkFor($config, $recipient);
 
+            // customer_id is who caused the notification (the signed-in user), else the recipient themselves
             $this->notification->create(
-                $recipient->id, $recipient->id, $config['message'], $link, $type,
+                $recipient->id, $data['actor_id'] ?? auth()->id() ?? $recipient->id, $config['message'], $link, $type,
             );
 
             $this->emailService->send(
@@ -119,6 +120,35 @@ class ProgramNotificationService
         $query = array_filter($query, fn ($value) => $value !== null && $value !== '' && $value !== false);
         if ($query) $link .= '?' . http_build_query($query);
         return $hash !== '' ? $link . '#' . $hash : $link;
+    }
+
+    /**
+     * The link key for one recipient. Events that reach several portals list one link per
+     * user type ('links'); a recipient with no entry there must not be handed another
+     * portal's page, so they get their own dashboard home instead.
+     */
+    private function linkFor(array $config, $recipient): string
+    {
+        $type = (int) $recipient->user_type_id;
+
+        if (!empty($config['links'])) {
+            return $config['links'][$type] ?? $this->roleHome($type);
+        }
+
+        return $config['link'] ?? $this->roleHome($type);
+    }
+
+    private function roleHome(int $userTypeId): string
+    {
+        return match ($userTypeId) {
+            1 => 'dashboard.entrepreneur',
+            2 => 'dashboard.investor',
+            3 => 'dashboard.serviceProvider',
+            4 => 'dashboard.programOrg',
+            5 => 'dashboard.capitalOrg',
+            6, 7 => 'dashboard.reviewerGrantOrg',
+            default => 'dashboard',
+        };
     }
 
     /** The deal-room card of the milestone this event is about, when we know which one. */

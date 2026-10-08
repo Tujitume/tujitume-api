@@ -23,6 +23,16 @@ class EmailLink
         return rtrim((string) config('app.app_url'), '/') . '/' . self::GO_PATH . '?to=' . rawurlencode($linkKey);
     }
 
+    /** The bookings page of whoever made a booking (investors, capital and program organisations each have their own). */
+    public static function bookingsFor($userId): string
+    {
+        return match ((int) \App\Models\Auth\User::whereKey($userId)->value('user_type_id')) {
+            4 => 'dashboard.programOrg.bookings',
+            5 => 'dashboard.capitalOrg.bookings',
+            default => 'dashboard.investor.bookings',
+        };
+    }
+
     /**
      * Older emails sent through EmailService carry no link of their own, so they get a
      * sensible destination per view. Every key here is one the frontend resolver already

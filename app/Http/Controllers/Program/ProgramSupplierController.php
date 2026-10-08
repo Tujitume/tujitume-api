@@ -130,6 +130,8 @@ class ProgramSupplierController extends Controller
     {
 
         try {
+            (new \App\Service\Program\ProgramAccess())->authorizeMilestone(auth()->user(), $milestone);
+
             // Get budget items directly
             $budgetItems = $milestone->budgetItems()->latest()->get();
 
@@ -160,6 +162,8 @@ class ProgramSupplierController extends Controller
                 ],
             ]);
 
+        } catch (\Illuminate\Auth\Access\AuthorizationException $e) {
+            throw $e;
         } catch (\Exception $e) {
             ErrorLogService::report($e, [
                 'milestone_id' => $milestone->id,

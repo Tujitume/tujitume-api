@@ -52,6 +52,23 @@ class UpgradeNotificationLinks extends Command
                 }
             });
 
+        // Booking notifications once pointed at a route that does not exist (dashboard.entrepreneur.mybookings::<id>)
+        Notifications::where('link', 'like', 'dashboard.entrepreneur.mybookings%')
+            ->orderBy('id')
+            ->chunkById(200, function ($rows) use ($apply) {
+                foreach ($rows as $notification) {
+                    $new = match ((int) \App\Models\Auth\User::whereKey($notification->receiver_id)->value('user_type_id')) {
+                        4 => 'dashboard.programOrg.bookings',
+                        5 => 'dashboard.capitalOrg.bookings',
+                        default => 'dashboard.investor.bookings',
+                    };
+
+                    $this->line("#{$notification->id}  {$notification->link}  ->  {$new}");
+                    if ($apply) $notification->update(['link' => $new]);
+                    $this->changed++;
+                }
+            });
+
         $verb = $apply ? 'Updated' : 'Would update';
         $this->info("{$verb} {$this->changed} notification(s); left {$this->skipped} unchanged.");
         if (!$apply && $this->changed > 0) $this->comment('Re-run with --apply to save these links.');
