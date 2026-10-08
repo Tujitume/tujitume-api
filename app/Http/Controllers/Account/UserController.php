@@ -100,7 +100,6 @@ class UserController extends Controller
                 'fname' => $user->first_name,
                 'lname' => $user->last_name,
                 'image' => $user->image,
-                'messages' => [],
             ],
         ], 200);
     }

@@ -12,11 +12,26 @@ use App\Service\Misc\ErrorLogService;
 use Exception;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
+use Throwable;
 
 class MessageController extends Controller
 {
     private const PAGE_SIZE = 20;
+
+    /**
+     * Real-time push is best effort. The message is already saved, so an
+     * unreachable websocket server must not fail the request.
+     */
+    private function broadcastChat(array $payload, $toId): void
+    {
+        try {
+            event(new ChatNotification($payload, $toId));
+        } catch (Throwable $e) {
+            Log::warning('Chat broadcast failed: ' . $e->getMessage());
+        }
+    }
 
     /**
      * A page of one conversation, newest first. `before` is the id of the oldest
@@ -186,6 +201,9 @@ class MessageController extends Controller
                 return response()->json(['message' => 'You cannot send message to yourself'], 422);
             }
 
+            // Email only for the first unread message from this sender, so a burst of messages is one email
+            $hadUnreadFromSender = Messages::where('from_id', $from_id)->where('to_id', $to_id)->where('is_new', 1)->exists();
+
             $message = Messages::create([
                 'msg' => $validated['msg'],
                 'to_id' => $to_id,
@@ -193,22 +211,24 @@ class MessageController extends Controller
             ]);
 
             // NotificationService
-            event(new ChatNotification(['message' => 'Encrypted!'], $to_id));
+            $this->broadcastChat(['message' => 'Encrypted!'], $to_id);
 
-            if( ($userTo->user_type_id == 4 && $user->user_type_id == 1) ||
-                ($user->user_type_id == 4 && $userTo->user_type_id == 1) ||
-                ($user->user_type_id == 4 && $userTo->user_type_id == 5) ||
-                ($user->user_type_id == 5 && $userTo->user_type_id == 4)
-            ){
-                //E m a i l
-                $receiver = User::find($to_id);
-                $sender = User::find($from_id);
+            // Email the person who received the DM. Best effort: the message is already saved.
+            if (! $hadUnreadFromSender) {
+                try {
+                    $receiver = User::with('settings')->find($to_id);
+                    $sender = User::find($from_id);
 
-                $user['to'] = $receiver->email;
-                $info=[ 'sender'=>$sender->first_name, 'msg'=>$validated['msg'] ];
-                Mail::send('bids.conv_mail', $info, function($msg) use ($user){
-                    $msg->to($user['to']); $msg->subject('Message Received.');
-                });
+                    if ($receiver?->email && $sender && ($receiver->settings?->email_notifications ?? true)) {
+                        $info = ['sender' => $sender->first_name, 'msg' => $validated['msg']];
+                        \Illuminate\Support\Facades\Mail::send('bids.conv_mail', $info, function ($msg) use ($receiver) {
+                            $msg->to($receiver->email);
+                            $msg->subject('Message Received.');
+                        });
+                    }
+                } catch (Throwable $e) {
+                    Log::warning('Message email failed: ' . $e->getMessage());
+                }
             }
 
             return response()->json([
@@ -329,7 +349,7 @@ class MessageController extends Controller
                 'from_id'          => $booker->id,
             ]);
 
-            event(new ChatNotification(['message' => 'new message'], $owner->user_id));
+            $this->broadcastChat(['message' => 'new message'], $owner->user_id);
 
             return response()->json(['message' => 'Message sent.'], 200);
 
@@ -368,7 +388,7 @@ class MessageController extends Controller
                     'from_id'          => $fromId,
                 ]);
 
-                event(new ChatNotification(['message' => 'new message'], $toId));
+                $this->broadcastChat(['message' => 'new message'], $toId);
                 return response()->json(['message' => 'Message sent.', 'status' => 200], 200);
             }
 
@@ -413,7 +433,7 @@ class MessageController extends Controller
                 $receiver->email
             );
 
-            event(new ChatNotification(['message' => 'new message'], $toId));
+            $this->broadcastChat(['message' => 'new message'], $toId);
 
             return response()->json(['message' => 'Message sent.', 'status' => 200], 200);
 

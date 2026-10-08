@@ -94,6 +94,17 @@ class DashboardController extends Controller
             'milestones' => $milestones,
         ]);
     }
+    // Who a notification is from, or null when that sender/business no longer exists
+    private function notifierFor($notice)
+    {
+        return match($notice->type) {
+            'investor', 'customer' => User::find($notice->customer_id),
+            'business'             => Listing::find($notice->customer_id),
+            'program'              => 'Program',
+            default                => 'Tujitume',
+        };
+    }
+
     public function notifications(Request $request)
     {
         $query = Notifications::where('receiver_id', Auth::id())->where('visible', 1);
@@ -111,12 +122,7 @@ class DashboardController extends Controller
         }
 
         $result = $notifications->filter(function ($notice) {
-            $notifier = match($notice->type) {
-                'investor', 'customer' => User::find($notice->customer_id),
-                'business'             => Listing::find($notice->customer_id),
-                'program'                 => 'Program',
-                default                 => 'Tujitume',
-            };
+            $notifier = $this->notifierFor($notice);
 
             if (!$notifier) return false;
 
@@ -143,7 +149,11 @@ class DashboardController extends Controller
                 'total'        => $page->total(),
                 'has_more'     => $page->hasMorePages(),
                 // Unread across ALL pages, so the bell badge stays right while only 10 are loaded
-                'unread_count' => Notifications::where('receiver_id', Auth::id())->where('visible', 1)->where('new', 1)->count(),
+                // Only ones that can actually be shown: a notification whose sender or business
+                // was deleted is hidden from the list, so it must not be counted either.
+                'unread_count' => Notifications::where('receiver_id', Auth::id())->where('visible', 1)->where('new', 1)->get()
+                    ->filter(fn ($n) => (bool) $this->notifierFor($n))
+                    ->count(),
             ],
         ]);
     }
