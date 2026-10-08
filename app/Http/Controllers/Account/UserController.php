@@ -82,13 +82,41 @@ class UserController extends Controller
         //
     }
 
+    /** Friendly label for a user type, as shown on a chat profile. */
+    private function chatRoleLabel(User $user): string
+    {
+        return match ((int) $user->user_type_id) {
+            1 => 'Entrepreneur',
+            2 => 'Investor',
+            3 => 'Service Provider',
+            4 => 'Program Organization',
+            5 => 'Capital Provider',
+            6 => 'External Reviewer',
+            7 => 'Admin',
+            default => 'Member',
+        };
+    }
+
+    /** The business / company a person is known by, depending on who they are. */
+    private function chatAffiliation(User $user): ?string
+    {
+        $name = match ((int) $user->user_type_id) {
+            1 => $user->listings()->value('name'),              // entrepreneur: their business
+            3 => $user->services()->value('name'),              // service provider: their service
+            4, 6 => $user->organization?->name,                 // organization staff and reviewers
+            default => null,
+        };
+
+        return $name ?: ($user->organization?->name ?: $user->display_name);
+    }
+
     /**
-     * Minimal public contact card (name + avatar) used to start a chat with a user
-     * who has no message history yet.
+     * Public contact card used by chat: name, photo and a small profile.
+     * No email or phone; any signed-in user can call this.
      */
     public function contact($id)
     {
-        $user = User::find($id);
+        $user = User::with('organization')->find($id);
         if (! $user) {
             return response()->json(['message' => 'User not found. The account may have been deleted.'], 404);
         }
@@ -100,6 +128,11 @@ class UserController extends Controller
                 'fname' => $user->first_name,
                 'lname' => $user->last_name,
                 'image' => $user->image,
+                'role' => $this->chatRoleLabel($user),
+                'affiliation' => $this->chatAffiliation($user),
+                'city' => $user->city,
+                'country' => $user->country,
+                'member_since' => $user->created_at,
             ],
         ], 200);
     }

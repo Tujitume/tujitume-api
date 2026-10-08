@@ -1,13 +1,13 @@
-<div style="max-width:1024px;margin:auto;margin-top:4rem;background-color:white;border-radius:0.5rem;box-shadow:0 4px 6px rgba(0,0,0,0.1);overflow:hidden;">
-    @include('programs.partials.brand_header', ['title' => 'Message Received'])
+<div style="max-width:1024px;margin:auto;margin-top:4rem;background-color:white;border-radius:1.25rem;box-shadow:0 4px 6px rgba(0,0,0,0.1);overflow:hidden;">
+    @include('programs.partials.brand_header', ['title' => 'New Message'])
 
     <div style="padding:20px;font-size:14px;line-height:1.6;">
         <p>Hi,</p>
-        <p><strong>{{ $sender }}</strong> sent you a message regarding the equipment verification process.</p>
+        <p><strong>{{ $sender }}</strong> sent you a message:</p>
 
-        <div style="text-align:center;margin-top:2rem;">
-            <a href="{{ config('app.app_url') }}dashboard/messages" style="background-color:#14532d;color:white;display:inline-block;padding:0.85rem 2rem;border-radius:999px;text-decoration:none;font-weight:700;font-size:1rem;box-shadow:0 4px 12px rgba(0,0,0,0.18);">View Message</a>
-        </div>
+        <div style="margin:1rem 0 0;padding:1rem 1.25rem;background-color:#f3f4f6;border-left:4px solid {{ $brand['accent'] }};border-radius:12px;color:#111827;white-space:pre-line;">{{ $msg }}</div>
+
+        @include('programs.partials.brand_button')
 
         @include('programs.partials.brand_footer')
     </div>

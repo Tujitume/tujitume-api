@@ -9,6 +9,9 @@ use App\Models\Communication\Messages;
 use App\Models\Services\ServiceMessages;
 use App\Models\Services\Services;
 use App\Service\Misc\ErrorLogService;
+use App\Service\Notification\EmailBrand;
+use App\Service\Notification\EmailLink;
+use App\Service\Notification\EmailService;
 use Exception;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -213,21 +216,41 @@ class MessageController extends Controller
             // NotificationService
             $this->broadcastChat(['message' => 'Encrypted!'], $to_id);
 
-            // Email the person who received the DM. Best effort: the message is already saved.
+            // Email the person who received the DM: the exact message, and a button straight to that chat.
+            // Best effort: the message is already saved.
             if (! $hadUnreadFromSender) {
                 try {
                     $receiver = User::with('settings')->find($to_id);
                     $sender = User::find($from_id);
 
                     if ($receiver?->email && $sender && ($receiver->settings?->email_notifications ?? true)) {
-                        $info = ['sender' => $sender->first_name, 'msg' => $validated['msg']];
-                        \Illuminate\Support\Facades\Mail::send('bids.conv_mail', $info, function ($msg) use ($receiver) {
-                            $msg->to($receiver->email);
-                            $msg->subject('Message Received.');
-                        });
+                        $root = match ((int) $receiver->user_type_id) {
+                            1 => 'entrepreneur',
+                            2 => 'investor',
+                            3 => 'serviceProvider',
+                            4 => 'programOrg',
+                            5 => 'capitalOrg',
+                            default => 'reviewerGrantOrg',
+                        };
+                        $senderName = trim($sender->first_name . ' ' . $sender->last_name);
+
+                        (new EmailService())->send(
+                            'New message from ' . $senderName,
+                            'bids.conv_mail',
+                            [
+                                'sender'       => $senderName,
+                                'msg'          => $validated['msg'],
+                                // Opens the chat with this sender ("@" marks an id the app obfuscates)
+                                'action_url'   => EmailLink::url("dashboard.{$root}.messages?chat=@{$from_id}"),
+                                'action_label' => 'View Message',
+                                // From an organisation member the email wears the organisation's look and name
+                                'brand'        => EmailBrand::forUser($sender),
+                            ],
+                            $receiver->email
+                        );
                     }
-                } catch (Throwable $e) {
-                    Log::warning('Message email failed: ' . $e->getMessage());
+                } catch (\Throwable $e) {
+                    \Log::warning('Message email failed: ' . $e->getMessage());
                 }
             }
 
