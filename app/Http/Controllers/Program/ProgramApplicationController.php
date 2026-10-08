@@ -101,7 +101,7 @@ class ProgramApplicationController extends Controller
             throw $e; // handled globally as a 403
 
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
-            return response()->json(['message' => 'Application not found'], 404);
+            throw $e; // handled globally as a standard 404 not_found response
 
         } catch (\Exception $e) {
             ErrorLogService::report($e, ['input' => request()->except(['password', 'token'])]);
