@@ -21,8 +21,18 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        $this->app->singleton(StripeClient::class, function(){
-        return new StripeClient(config('services.stripe.secret_key'));
+        $this->app->singleton(StripeClient::class, function () {
+            $secret = config('services.stripe.secret_key');
+
+            if (is_string($secret) && trim($secret) !== '') {
+                return new StripeClient($secret);
+            }
+
+            if ($this->app->runningUnitTests()) {
+                return new StripeClient('sk_test_placeholder');
+            }
+
+            throw new \RuntimeException('Stripe secret key is not configured.');
         });
 
         Validator::extend('recaptcha', 'App\\Validators\\ReCaptcha@validate');
