@@ -82,6 +82,29 @@ class UserController extends Controller
         //
     }
 
+    /**
+     * Minimal public contact card (name + avatar) used to start a chat with a user
+     * who has no message history yet.
+     */
+    public function contact($id)
+    {
+        $user = User::find($id);
+        if (! $user) {
+            return response()->json(['message' => 'User not found. The account may have been deleted.'], 404);
+        }
+
+        return response()->json([
+            'status' => 200,
+            'user' => [
+                'id' => $user->id,
+                'fname' => $user->first_name,
+                'lname' => $user->last_name,
+                'image' => $user->image,
+                'messages' => [],
+            ],
+        ], 200);
+    }
+
     public function me(CalculateUserFunds $funds)
     {
         $user = Auth::user();

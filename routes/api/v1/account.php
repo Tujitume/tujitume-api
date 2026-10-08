@@ -35,6 +35,7 @@ Route::get('users/types', function () {
 
 Route::get('users', [UserController::class, 'index']);
 Route::get('users/me', [UserController::class, 'me']);
+Route::get('users/{id}/contact', [UserController::class, 'contact'])->whereNumber('id');
 Route::delete('users/{id}', [UserController::class, 'destroy']);
 Route::delete('organizations/team-members/{teamMember}', [UserController::class, 'destroyOrgTeamMember']);
 Route::patch('organizations/team-members/{teamMember}/status', [UserController::class, 'updateOrgTeamMemberStatus']);

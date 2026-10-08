@@ -16,6 +16,69 @@ use Illuminate\Validation\ValidationException;
 
 class MessageController extends Controller
 {
+    private const PAGE_SIZE = 20;
+
+    /**
+     * A page of one conversation, newest first. `before` is the id of the oldest
+     * message the client already has.
+     */
+    private function threadPage(int $authId, int $partnerId, ?int $before, int $limit): array
+    {
+        $rows = Messages::where(function ($q) use ($authId, $partnerId) {
+            $q->where(function ($q) use ($authId, $partnerId) {
+                $q->where('from_id', $authId)->where('to_id', $partnerId);
+            })->orWhere(function ($q) use ($authId, $partnerId) {
+                $q->where('from_id', $partnerId)->where('to_id', $authId);
+            });
+        })
+            ->when($before, fn ($q) => $q->where('id', '<', $before))
+            ->orderByDesc('id')
+            ->limit($limit + 1)
+            ->get();
+
+        $hasMore = $rows->count() > $limit;
+
+        $messages = $rows->take($limit)->map(function ($msg) use ($authId) {
+            $msg->sender = $msg->from_id === $authId ? 'me' : '';
+            return $msg;
+        })->values();
+
+        return ['messages' => $messages, 'has_more' => $hasMore];
+    }
+
+    /**
+     * Older messages for one conversation: GET messages/thread/{partnerId}?before=<id>&limit=20
+     */
+    public function thread(Request $request, $partnerId)
+    {
+        try {
+            $validated = $request->validate([
+                'before' => 'nullable|integer|min:1',
+                'limit'  => 'nullable|integer|min:1|max:50',
+            ]);
+
+            return response()->json(
+                $this->threadPage(
+                    (int) Auth::id(),
+                    (int) $partnerId,
+                    isset($validated['before']) ? (int) $validated['before'] : null,
+                    (int) ($validated['limit'] ?? self::PAGE_SIZE)
+                ),
+                200
+            );
+        } catch (ValidationException $e) {
+            throw $e;
+        } catch (Exception $e) {
+            ErrorLogService::report($e, [
+                'input' => request()->except(['password', 'token']),
+            ]);
+
+            return response()->json([
+                'message' => 'Something went wrong, please try again later.'
+            ], 500);
+        }
+    }
+
     /**
      * Display a listing of the resource.
      */
@@ -33,33 +96,27 @@ class MessageController extends Controller
                 ->distinct()
                 ->pluck('partner_id');
 
-            // Step 2: Build a structured response for each chat partner
+            // Step 2: One entry per chat partner: profile, unread count and only the
+            // latest page of messages. Older messages load through thread().
             $results = $partnerIds->map(function ($partnerId) use ($authId) {
-                // Fetch full conversation (both directions)
-                $conversation = Messages::where(function ($q) use ($authId, $partnerId) {
-                    $q->where('from_id', $authId)
-                        ->where('to_id', $partnerId);
-                })
-                    ->orWhere(function ($q) use ($authId, $partnerId) {
-                        $q->where('from_id', $partnerId)
-                            ->where('to_id', $authId);
-                    })
-                    ->latest()
-                    ->get()
-                    ->map(function ($msg) use ($authId) {
-                        // Tag sender for frontend use
-                        $msg->sender = $msg->from_id === $authId ? 'me' : '';
-                        return $msg;
-                    });
-
-                // Get the partner (sender) info
                 $partner = User::find($partnerId);
-                if (!$partner) return null;
+                if (! $partner) return null;
+
+                $page = $this->threadPage($authId, $partnerId, null, self::PAGE_SIZE);
 
                 return [
-                    'sender'   => $partner->first_name . ' ' . $partner->last_name,
-                    'email'    => $partner->email,
-                    'messages' => $conversation,
+                    'id'           => $partner->id,
+                    'fname'        => $partner->first_name,
+                    'lname'        => $partner->last_name,
+                    'image'        => $partner->image,
+                    'sender'       => $partner->first_name . ' ' . $partner->last_name,
+                    'email'        => $partner->email,
+                    'unread_count' => Messages::where('from_id', $partnerId)
+                        ->where('to_id', $authId)
+                        ->where('is_new', 1)
+                        ->count(),
+                    'has_more'     => $page['has_more'],
+                    'messages'     => $page['messages'],
                 ];
             })->filter()->values();
 
