@@ -423,7 +423,11 @@ class UserController extends Controller
             ->where('user_id', $teamMember->id)
             ->first();
 
-        if (! $membership) {
+        // External reviewers belong to an organization only through users.organization_id and have no membership row.
+        $isExternalReviewer = (int) $teamMember->user_type_id === 6
+            && (int) $teamMember->organization_id === (int) $user->organization_id;
+
+        if (! $membership && ! $isExternalReviewer) {
             return response()->json(['message' => 'Team member not found in your organization.'], 404);
         }
 
