@@ -3,10 +3,14 @@
 namespace App\Http\Controllers\Program;
 
 use App\Http\Controllers\Controller;
+use App\Models\Auth\User;
 use App\Models\Programs\ProgramMilestone;
 use App\Models\Programs\MilestoneSupplier;
 use App\Models\Programs\SupplierDirectory;
 use App\Service\Misc\ErrorLogService;
+use App\Service\Notification\EmailBrand;
+use App\Service\Notification\EmailService;
+use App\Service\Notification\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -49,6 +53,7 @@ class SupplierDirectoryController extends Controller
 
             // Order by name
             $suppliers = $query->orderBy('legal_name')->paginate(20);
+            $this->attachOnboardingStatus($suppliers->getCollection());
 
             return response()->json($suppliers, 200);
 
@@ -69,6 +74,8 @@ class SupplierDirectoryController extends Controller
         try {
             $supplier = SupplierDirectory::where('user_id', $userId)
                 ->findOrFail($supplierId);
+
+            $this->attachOnboardingStatus(collect([$supplier]));
 
             return response()->json(['data' => $supplier], 200);
 
@@ -218,27 +225,30 @@ class SupplierDirectoryController extends Controller
             // Create supplier
             $supplier = SupplierDirectory::create($validated);
 
-            //email
-            $this->emailService->send(
-                'You have been added as a Supplier on Tujitume',
+            // Sent as the adding organisation, not as Tujitume
+            $adder = auth()->user();
+            $orgName = $this->orgName($adder);
+            (new EmailService())->send(
+                "{$orgName} has added you as a supplier",
                 'programs.supplier_welcome',
                 [
+                    'brand'          => EmailBrand::forUser($adder),
                     'recipientName'  => $validated['contact_person'] ?? $validated['legal_name'],
-                    'recipientEmail' => $validated['email'],
-                    'added_by'       => auth()->user()->first_name . ' ' . auth()->user()->last_name,
-                    'org_name'       => auth()->user()->first_name.' Funders',
+                    'added_by'       => trim($adder->first_name . ' ' . $adder->last_name),
+                    'org_name'       => $orgName,
                     'supplier_name'  => $validated['legal_name'],
                     'supplier_type'  => $validated['supplier_type'] ?? null,
                 ],
                 $validated['email']
             );
 
+            $this->notifySupplier($supplier, "{$orgName} added you as a supplier on Tujitume.");
 
             DB::commit();
 
             return response()->json([
                 'message' => 'Supplier added successfully',
-                'data' => $supplier,
+                'data' => tap($supplier, fn ($sup) => $this->attachOnboardingStatus(collect([$sup]))),
             ], 201);
 
         } catch (ValidationException $e) {
@@ -276,7 +286,7 @@ class SupplierDirectoryController extends Controller
                 'supplier_type' => 'nullable|string|max:100',
 
                 // Payment Method
-                'payment_method' => 'nullable|in:mpesa_paybill,mpesa_till,mpesa_mobile,bank_transfer,other',
+                'payment_method' => 'nullable|in:mpesa_lipr,mpesa_paybill,mpesa_till,mpesa_mobile,bank_transfer,other',
 
                 // LIPR Details
                 'lipr_wallet' => 'nullable|string|max:30',
@@ -303,13 +313,18 @@ class SupplierDirectoryController extends Controller
                 'is_active' => 'nullable|boolean',
             ]);
 
+            $before = $supplier->only(self::PAYMENT_FIELDS);
+            $wasActive = (bool) $supplier->is_active;
+
             $supplier->update($validated);
 
             DB::commit();
 
+            $this->notifyUpdate($supplier->fresh(), $before, $wasActive);
+
             return response()->json([
                 'message' => 'Supplier updated successfully',
-                'data' => $supplier->fresh(),
+                'data' => tap($supplier->fresh(), fn ($sup) => $this->attachOnboardingStatus(collect([$sup]))),
             ], 200);
 
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
@@ -388,6 +403,8 @@ class SupplierDirectoryController extends Controller
 
             DB::commit();
 
+            $this->notifyStatusChange($supplier, false);
+
             return response()->json([
                 'message' => 'Supplier deactivated successfully',
                 'data' => $supplier->fresh()
@@ -420,6 +437,8 @@ class SupplierDirectoryController extends Controller
 
             DB::commit();
 
+            $this->notifyStatusChange($supplier, true);
+
             return response()->json([
                 'message' => 'Supplier activated successfully',
                 'data' => $supplier->fresh()
@@ -433,6 +452,150 @@ class SupplierDirectoryController extends Controller
             ErrorLogService::report($e);
             return response()->json(['message' => 'Something went wrong'], 500);
         }
+    }
+
+    private const PAYMENT_FIELDS = [
+        'payment_method', 'lipr_wallet', 'lipr_mobile_number',
+        'mpesa_paybill_number', 'mpesa_paybill_account', 'mpesa_till_number', 'mpesa_account_reference',
+        'bank_name', 'bank_account_number', 'bank_branch', 'bank_swift_code',
+    ];
+
+    private const PAYMENT_LABELS = [
+        'mpesa_lipr'    => 'Tujitume Wallet Transfer',
+        'mpesa_paybill' => 'M-Pesa Paybill',
+        'mpesa_till'    => 'M-Pesa Till',
+        'mpesa_mobile'  => 'M-Pesa Mobile',
+        'bank_transfer' => 'Bank Transfer',
+        'other'         => 'Other',
+    ];
+
+    /**
+     * Adds `status` to each supplier: "onboarded" once the supplier has a Tujitume
+     * account (matched by email), otherwise "invited". One query for the whole page.
+     */
+    private function attachOnboardingStatus($suppliers): void
+    {
+        $emails = $suppliers->pluck('email')->filter()->map(fn ($e) => strtolower($e))->unique()->values()->all();
+        $registered = [];
+        if ($emails) {
+            foreach (User::whereIn(DB::raw('LOWER(email)'), $emails)->get(['id', 'email']) as $user) {
+                $registered[strtolower($user->email)] = $user->id;
+            }
+        }
+
+        foreach ($suppliers as $supplier) {
+            $accountId = $supplier->user_id ?: ($registered[strtolower((string) $supplier->email)] ?? null);
+            $supplier->setAttribute('status', $accountId ? 'onboarded' : 'invited');
+            $supplier->setAttribute('onboarded', (bool) $accountId);
+        }
+    }
+
+    private function orgName($user): string
+    {
+        return $user->organization?->display_name
+            ?: $user->organization?->name
+            ?: $user->display_name
+            ?: trim($user->first_name . ' ' . $user->last_name);
+    }
+
+    private function supplierAccountId(SupplierDirectory $supplier)
+    {
+        return $supplier->user_id
+            ?: User::whereRaw('LOWER(email) = ?', [strtolower((string) $supplier->email)])->value('id');
+    }
+
+    /** In-app notification for the supplier, when they already have an account. */
+    private function notifySupplier(SupplierDirectory $supplier, string $text): void
+    {
+        try {
+            if ($receiverId = $this->supplierAccountId($supplier)) {
+                (new NotificationService())->create($receiverId, auth()->id(), $text, 'overview/account', 'supplier');
+            }
+        } catch (\Throwable $e) {
+            ErrorLogService::report($e);
+        }
+    }
+
+    /** Email (branded as the organisation) and in-app notification telling the supplier what changed. */
+    private function notifyChange(SupplierDirectory $supplier, string $subject, string $title, string $message, array $details = []): void
+    {
+        $adder = auth()->user();
+
+        (new EmailService())->send(
+            $subject,
+            'programs.supplier_update',
+            [
+                'brand'         => EmailBrand::forUser($adder),
+                'title'         => $title,
+                'recipientName' => $supplier->contact_person ?: $supplier->legal_name,
+                'org_name'      => $this->orgName($adder),
+                'summary'       => $message,
+                'details'       => $details,
+                'onboarded'     => (bool) $this->supplierAccountId($supplier),
+            ],
+            $supplier->email
+        );
+
+        $this->notifySupplier($supplier, $message);
+    }
+
+    private function notifyStatusChange(SupplierDirectory $supplier, bool $active): void
+    {
+        try {
+            $orgName = $this->orgName(auth()->user());
+
+            $this->notifyChange(
+                $supplier,
+                $active ? "{$orgName} reactivated your supplier profile" : "{$orgName} deactivated your supplier profile",
+                $active ? 'Supplier profile reactivated' : 'Supplier profile deactivated',
+                $active
+                    ? "{$orgName} has reactivated {$supplier->legal_name}. You can receive payments from them again."
+                    : "{$orgName} has deactivated {$supplier->legal_name}. You will not receive new payments from them until it is reactivated.",
+                ['Supplier' => $supplier->legal_name, 'Status' => $active ? 'Active' : 'Inactive']
+            );
+        } catch (\Throwable $e) {
+            ErrorLogService::report($e);
+        }
+    }
+
+    private function notifyUpdate(SupplierDirectory $supplier, array $before, bool $wasActive): void
+    {
+        try {
+            if ($wasActive !== (bool) $supplier->is_active) {
+                $this->notifyStatusChange($supplier, (bool) $supplier->is_active);
+            }
+
+            if ($before != $supplier->only(self::PAYMENT_FIELDS)) {
+                $orgName = $this->orgName(auth()->user());
+                $this->notifyChange(
+                    $supplier,
+                    "{$orgName} updated your payment details",
+                    'Payment details updated',
+                    "{$orgName} has updated the payment details on file for {$supplier->legal_name}. If this is not what you expected, please contact them.",
+                    array_merge(['Supplier' => $supplier->legal_name], $this->describePayment($supplier))
+                );
+            }
+        } catch (\Throwable $e) {
+            ErrorLogService::report($e);
+        }
+    }
+
+    /** Payment details for the email, with account numbers masked to the last four digits. */
+    private function describePayment(SupplierDirectory $s): array
+    {
+        $mask = fn ($v) => $v ? str_repeat('•', max(strlen($v) - 4, 0)) . substr($v, -4) : null;
+
+        $rows = ['Payment method' => self::PAYMENT_LABELS[$s->payment_method] ?? $s->payment_method];
+        $rows += match ($s->payment_method) {
+            'mpesa_mobile'  => ['Mobile number' => $mask($s->lipr_mobile_number)],
+            'mpesa_lipr'    => ['Tujitume wallet' => $mask($s->lipr_wallet)],
+            'mpesa_paybill' => ['Paybill number' => $s->mpesa_paybill_number, 'Account number' => $mask($s->mpesa_paybill_account)],
+            'mpesa_till'    => ['Till number' => $s->mpesa_till_number],
+            'bank_transfer' => ['Bank' => $s->bank_name, 'Account number' => $mask($s->bank_account_number), 'Branch' => $s->bank_branch],
+            default         => [],
+        };
+
+        return array_filter($rows, fn ($v) => $v !== null && $v !== '');
     }
 
     public function assignToMilestone(Request $request, ProgramMilestone $milestone)
