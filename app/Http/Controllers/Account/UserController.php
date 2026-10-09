@@ -366,12 +366,12 @@ class UserController extends Controller
                 'first_name' => 'sometimes|required|string|max:100',
                 'last_name' => 'sometimes|required|string|max:100',
                 'display_name' => 'sometimes|required|string|max:100',
-                'country' => 'sometimes|required|string|max:100',
-                'city' => 'sometimes|required|string|max:100',
-                'website' => 'sometimes|required|url|max:255',
+                'country' => 'sometimes|nullable|string|max:100',
+                'city' => 'sometimes|nullable|string|max:100',
+                'website' => 'sometimes|nullable|url|max:255',
                 'dob' => 'sometimes|date',
-                'phone' => 'sometimes|required|string|max:20',
-                'gender' => 'sometimes|required|string|in:Male,Female,other',
+                'phone' => 'sometimes|nullable|string|max:20',
+                'gender' => 'sometimes|nullable|string|in:Male,Female,other',
                 'image' => 'sometimes|file|mimes:jpg,jpeg,png,webp|max:2048',
             ]);
 
