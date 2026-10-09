@@ -487,6 +487,7 @@ class SupplierDirectoryController extends Controller
             $accountId = $supplier->user_id ?: ($registered[strtolower((string) $supplier->email)] ?? null);
             $supplier->setAttribute('status', $accountId ? 'onboarded' : 'invited');
             $supplier->setAttribute('onboarded', (bool) $accountId);
+            $supplier->setAttribute('account_id', $accountId ? (int) $accountId : null);
         }
     }
 
