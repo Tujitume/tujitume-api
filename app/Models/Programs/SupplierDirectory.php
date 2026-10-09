@@ -16,6 +16,7 @@ class SupplierDirectory extends Model
 
     protected $fillable = [
         'user_id',
+        'added_by',
 
         // Basic Identity
         'legal_name',

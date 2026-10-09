@@ -23,7 +23,9 @@ class SupplierDirectoryController extends Controller
         $userId = auth()->id();
 
         try {
-            $query = SupplierDirectory::where('user_id', $userId);
+            $query = SupplierDirectory::where(function ($q) use ($userId) {
+                $q->where('user_id', $userId)->orWhere('added_by', $userId);
+            });
 
             // Filter by active status
             if ($request->has('is_active')) {
