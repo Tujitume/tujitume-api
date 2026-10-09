@@ -14,7 +14,9 @@
             </div>
         @endif
 
-        @if (empty($onboarded))
+        @if (($show_action ?? true) === false)
+            {{-- nothing further to do for this supplier --}}
+        @elseif (empty($onboarded))
             <p>Create your free Tujitume account to follow your payments and manage your details with {{ $org_name }}.</p>
             @include('programs.partials.brand_button', ['label' => 'Join ' . $org_name . ' on Tujitume', 'url' => rtrim((string) config('app.app_url'), '/') . '/auth/create/service'])
         @else

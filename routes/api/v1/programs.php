@@ -194,6 +194,8 @@ Route::prefix('/programs')->middleware(['program', 'program.response'])->group(f
 
     // Funding Setup & Supplier Directory
     Route::get('supplier-directory/{supplierId}/assigned-milestones', [SupplierDirectoryController::class, 'assignedMilestones']);
+    Route::post('supplier-directory/{supplierId}/activate', [SupplierDirectoryController::class, 'activate']);
+    Route::post('supplier-directory/{supplierId}/deactivate', [SupplierDirectoryController::class, 'deactivate']);
     Route::apiResource('supplier-directory', SupplierDirectoryController::class);
     // Add supplier to milestone
     Route::post('milestones/{milestone}/assign-suppliers', [SupplierDirectoryController::class, 'assignToMilestone']);

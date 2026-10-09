@@ -232,7 +232,7 @@ class SupplierDirectoryController extends Controller
                 "{$orgName} has added you as a supplier",
                 'programs.supplier_welcome',
                 [
-                    'brand'          => EmailBrand::forUser($adder),
+                    'brand'          => $this->brandFor($adder),
                     'recipientName'  => $validated['contact_person'] ?? $validated['legal_name'],
                     'added_by'       => trim($adder->first_name . ' ' . $adder->last_name),
                     'org_name'       => $orgName,
@@ -372,6 +372,8 @@ class SupplierDirectoryController extends Controller
 
             DB::commit();
 
+            $this->notifyRemoved($supplier);
+
             return response()->json([
                 'message' => 'Supplier deleted successfully'
             ], 200);
@@ -493,6 +495,21 @@ class SupplierDirectoryController extends Controller
         }
     }
 
+    /**
+     * Email branding for the organisation sending the email. When the organisation has no saved
+     * logo/colours, the email still carries its name (header, sender, footer) instead of Tujitume's.
+     */
+    private function brandFor($user): array
+    {
+        $brand = EmailBrand::forUser($user);
+        if (empty($brand['custom'])) {
+            $brand['custom'] = true;
+            $brand['name']   = $this->orgName($user);
+        }
+
+        return $brand;
+    }
+
     private function orgName($user): string
     {
         return $user->organization?->display_name
@@ -520,7 +537,7 @@ class SupplierDirectoryController extends Controller
     }
 
     /** Email (branded as the organisation) and in-app notification telling the supplier what changed. */
-    private function notifyChange(SupplierDirectory $supplier, string $subject, string $title, string $message, array $details = []): void
+    private function notifyChange(SupplierDirectory $supplier, string $subject, string $title, string $message, array $details = [], bool $showAction = true): void
     {
         $adder = auth()->user();
 
@@ -528,13 +545,14 @@ class SupplierDirectoryController extends Controller
             $subject,
             'programs.supplier_update',
             [
-                'brand'         => EmailBrand::forUser($adder),
+                'brand'         => $this->brandFor($adder),
                 'title'         => $title,
                 'recipientName' => $supplier->contact_person ?: $supplier->legal_name,
                 'org_name'      => $this->orgName($adder),
                 'summary'       => $message,
                 'details'       => $details,
                 'onboarded'     => (bool) $this->supplierAccountId($supplier),
+                'show_action'   => $showAction,
             ],
             $supplier->email
         );
@@ -549,12 +567,30 @@ class SupplierDirectoryController extends Controller
 
             $this->notifyChange(
                 $supplier,
-                $active ? "{$orgName} reactivated your supplier profile" : "{$orgName} deactivated your supplier profile",
-                $active ? 'Supplier profile reactivated' : 'Supplier profile deactivated',
+                $active ? "You've been reactivated as a supplier at {$orgName}" : "You've been deactivated as a supplier at {$orgName}",
+                $active ? 'Reactivated as a supplier' : 'Deactivated as a supplier',
                 $active
-                    ? "{$orgName} has reactivated {$supplier->legal_name}. You can receive payments from them again."
-                    : "{$orgName} has deactivated {$supplier->legal_name}. You will not receive new payments from them until it is reactivated.",
+                    ? "{$orgName} has reactivated {$supplier->legal_name} as a supplier. You can receive payments from them again."
+                    : "{$orgName} has deactivated {$supplier->legal_name} as a supplier. You will not receive new payments from them unless they reactivate you.",
                 ['Supplier' => $supplier->legal_name, 'Status' => $active ? 'Active' : 'Inactive']
+            );
+        } catch (\Throwable $e) {
+            ErrorLogService::report($e);
+        }
+    }
+
+    private function notifyRemoved(SupplierDirectory $supplier): void
+    {
+        try {
+            $orgName = $this->orgName(auth()->user());
+
+            $this->notifyChange(
+                $supplier,
+                "You've been removed as a supplier at {$orgName}",
+                'Removed as a supplier',
+                "{$orgName} has removed {$supplier->legal_name} from their supplier list. You will not receive further payments from them through Tujitume.",
+                ['Supplier' => $supplier->legal_name],
+                false
             );
         } catch (\Throwable $e) {
             ErrorLogService::report($e);
