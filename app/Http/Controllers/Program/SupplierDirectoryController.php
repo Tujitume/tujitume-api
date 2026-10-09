@@ -478,16 +478,18 @@ class SupplierDirectoryController extends Controller
         $emails = $suppliers->pluck('email')->filter()->map(fn ($e) => strtolower($e))->unique()->values()->all();
         $registered = [];
         if ($emails) {
-            foreach (User::whereIn(DB::raw('LOWER(email)'), $emails)->get(['id', 'email']) as $user) {
-                $registered[strtolower($user->email)] = $user->id;
+            foreach (User::whereIn(DB::raw('LOWER(email)'), $emails)->get(['id', 'email', 'image']) as $user) {
+                $registered[strtolower($user->email)] = $user;
             }
         }
 
         foreach ($suppliers as $supplier) {
-            $accountId = $supplier->user_id ?: ($registered[strtolower((string) $supplier->email)] ?? null);
+            $account = $registered[strtolower((string) $supplier->email)] ?? null;
+            $accountId = $supplier->user_id ?: $account?->id;
             $supplier->setAttribute('status', $accountId ? 'onboarded' : 'invited');
             $supplier->setAttribute('onboarded', (bool) $accountId);
             $supplier->setAttribute('account_id', $accountId ? (int) $accountId : null);
+            $supplier->setAttribute('account_image', $account?->image);
         }
     }
 
