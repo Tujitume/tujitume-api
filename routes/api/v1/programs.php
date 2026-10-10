@@ -126,6 +126,7 @@ Route::prefix('/programs')->middleware(['program', 'program.response'])->group(f
     Route::apiResource('/{program}/rounds', ProgramRoundController::class)->shallow();
     Route::get('rounds/{round}', [ProgramRoundController::class, 'showRound']);
     Route::patch('rounds/{round}', [ProgramRoundController::class, 'update']);
+    Route::post('rounds/{round}/configuration-steps', [ProgramRoundController::class, 'confirmStep']);
     Route::delete('rounds/{round}', [ProgramRoundController::class, 'destroy']);
 
     Route::post('rounds/{round}/publish', [ApplicationRoundProgressController::class, 'publish']);

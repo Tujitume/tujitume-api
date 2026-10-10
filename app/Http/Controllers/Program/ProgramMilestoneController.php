@@ -365,6 +365,10 @@ class ProgramMilestoneController extends Controller
                     'remaining' => $approvedAmount - $totalAmount,
                     'is_complete' => abs($approvedAmount - $totalAmount) < 0.01, // Account for floating point
                     'funding_setup_status' => $application->funding_setup_status,
+                    // Which deal room step the person is on, and what is left in funding setup (decided here, not in the browser)
+                    'dealroom_progress' => \App\Service\Program\DealRoomProgress::forApplication(
+                        $application, $templates, (float) $totalAmount, (float) $approvedAmount
+                    ),
                 ],
             ], 200);
 

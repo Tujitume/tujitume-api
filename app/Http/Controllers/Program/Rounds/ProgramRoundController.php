@@ -22,6 +22,7 @@ use App\Service\Misc\ErrorLogService;
 use App\Service\Notification\ProgramNotificationService;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -45,10 +46,12 @@ class ProgramRoundController extends Controller
         $rounds = ProgramRound::with('applications')
             ->withCount('applications')
             ->where('program_id', $program->id)
-            ->get()->map(function($round){
+            ->get()->map(function($round) use ($program){
                 return[
                     ...$round->toArray(),
                     'status' => ApiContract::statusMeta('program_round', $round->status),
+                    // A multi-round program is only finished at its last planned round, not at the last one created so far
+                    'program_total_rounds' => (int) ($program->total_rounds ?? 1),
                 ];
             });
 
@@ -76,23 +79,71 @@ class ProgramRoundController extends Controller
         ], 200);
     }
 
-    private function configurationProgress(ProgramRound $round): array
+    /**
+     * Is this the program's last planned round, the one whose advancing applicants are awarded?
+     * Rounds are created one at a time, so "no later round exists yet" says nothing: a 3-round program with
+     * only round 1 created is not finished after round 1.
+     */
+    private function isFinalRound(ProgramRound $round): bool
     {
+        $program = $round->program;
+
+        if (($program->program_type ?? 'single_round') !== 'multi_round') {
+            return true;
+        }
+
+        return (int) $round->round_number >= max(1, (int) ($program->total_rounds ?? 1));
+    }
+
+    private function nextRoundExists(ProgramRound $round): bool
+    {
+        return ProgramRound::where('program_id', $round->program_id)
+            ->where('round_number', $round->round_number + 1)
+            ->exists();
+    }
+
+    // The confirmed wizard steps live in the application cache, not in a column: no schema change is needed.
+    private function confirmedStepsKey(ProgramRound $round): string
+    {
+        return 'program_round:' . $round->id . ':confirmed_steps';
+    }
+
+    private function confirmedSteps(ProgramRound $round): array
+    {
+        return (array) Cache::get($this->confirmedStepsKey($round), []);
+    }
+
+    /** The wizard steps a person confirms themselves; publishing is decided by the round's status. */
+    private const CONFIRMABLE_STEPS = ['setup', 'questions', 'reviewers', 'notifications'];
+
+    /**
+     * Where the person is in the round wizard. A step is done when its data is valid AND the person has
+     * confirmed it (saved or moved on). Data alone is not enough: the first round is created with the
+     * program, so its dates and questions exist before anyone has opened the wizard.
+     * A round that is already live counts every step as done.
+     */
+    private function configurationProgress(ProgramRound $round, bool $requireConfirmation = true): array
+    {
+        $isLive = $round->status !== 'draft';
+        $confirmed = $this->confirmedSteps($round);
+        $confirms = fn (string $step) => ! $requireConfirmation || $isLive || in_array($step, $confirmed, true);
+
         $steps = [
-            'setup' => $this->setupStepComplete($round),
+            'setup' => $this->setupStepComplete($round) && $confirms('setup'),
             'questions' => RoundCustomQuestion::where('round_id', $round->id)
                 ->where('question_type', '!=', 'knockout')
-                ->exists(),
-            'reviewers' => $round->assignment_type === 'owner_only'
-                || $round->reviewers()->count() >= max(1, (int) ($round->min_reviewers_required ?? 1)),
+                ->exists() && $confirms('questions'),
+            'reviewers' => ($round->assignment_type === 'owner_only'
+                || $round->reviewers()->count() >= max(1, (int) ($round->min_reviewers_required ?? 1)))
+                && $confirms('reviewers'),
             'notifications' => ProgramEmailTemplate::where('program_id', $round->program_id)
                 ->whereIn('event', ['round.advanced', 'round.not_selected'])
                 ->whereNotNull('body_html')
                 ->where('body_html', '!=', '')
                 ->pluck('event')
                 ->unique()
-                ->count() === 2,
-            'publish' => $round->status !== 'draft',
+                ->count() === 2 && $confirms('notifications'),
+            'publish' => $isLive,
         ];
 
         $completed = collect($steps)
@@ -110,6 +161,38 @@ class ProgramRoundController extends Controller
             'active_step' => $activeStep === false ? count($stepOrder) - 1 : $activeStep,
             'active_step_id' => $activeStep === false ? end($stepOrder) : $stepOrder[$activeStep],
         ];
+    }
+
+    /**
+     * The person confirms a wizard step (saved it, or moved on from it).
+     * POST /programs/rounds/{round}/configuration-steps  { step }
+     * Refused while the step's data is still incomplete, so a step can never show done when it is not.
+     */
+    public function confirmStep(Request $request, ProgramRound $round)
+    {
+        if (!\App\Service\Program\ProgramAccess::owns($round->program)) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
+        $step = $request->validate([
+            'step' => 'required|string|in:' . implode(',', self::CONFIRMABLE_STEPS),
+        ])['step'];
+
+        $ready = $this->configurationProgress($round, false)['steps'][$step] ?? false;
+        if (!$ready) {
+            return response()->json([
+                'message' => 'This step is not complete yet.',
+                'configuration_progress' => $this->configurationProgress($round),
+            ], 422);
+        }
+
+        $confirmed = collect($this->confirmedSteps($round))->push($step)->unique()->values()->all();
+        Cache::forever($this->confirmedStepsKey($round), $confirmed);
+
+        return response()->json([
+            'message' => 'Step confirmed.',
+            'configuration_progress' => $this->configurationProgress($round->fresh()),
+        ], 200);
     }
 
     private function setupStepComplete(ProgramRound $round): bool
@@ -570,8 +653,15 @@ class ProgramRoundController extends Controller
             }
 
             // Check if this is the final round
-            $isFinalRound = !ProgramRound::where('program_id', $round->program_id)
-                ->where('round_number', '>', $round->round_number)->exists();
+            $isFinalRound = $this->isFinalRound($round);
+
+            // Applicants cannot advance to a round that has not been created yet
+            if (!$isFinalRound && !$this->nextRoundExists($round)) {
+                DB::rollBack();
+                return response()->json([
+                    'error' => 'Create round ' . ($round->round_number + 1) . ' before finalizing this round, so the applicants who advance have somewhere to go.',
+                ], 422);
+            }
 
             if ($round->advancement_mode === 'score_threshold') {
                 // Score-based advancement
@@ -791,8 +881,7 @@ class ProgramRoundController extends Controller
             ]);
 
             $program        = $application->program;
-            $isFinalRound = !ProgramRound::where('program_id', $round->program_id)
-                ->where('round_number', '>', $round->round_number)->exists();
+            $isFinalRound = $this->isFinalRound($round);
 
             $nextRound = null;
 
