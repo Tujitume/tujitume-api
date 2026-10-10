@@ -170,6 +170,7 @@ Route::prefix('/programs')->middleware(['program', 'program.response'])->group(f
 
 
     Route::get('reviewer/assigned-requests', [RoundReviewerController::class, 'myAssignedRequests']);
+    Route::get('reviewer/assignment-counts', [RoundReviewerController::class, 'assignmentCounts']);
 
     Route::get('rounds/{round}/reviewer-orders', [ReviewerOrderController::class, 'roundOrders']);
     Route::post('reviewer-orders/{order}/deliver', [ReviewerOrderController::class, 'deliver']);

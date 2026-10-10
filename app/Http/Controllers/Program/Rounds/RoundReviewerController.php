@@ -34,7 +34,7 @@ class RoundReviewerController extends Controller
         }
 
         $reviewers = $round->reviewers()
-            ->withPivot(['reviewer_type', 'max_apps_assigned', 'expertise_tags'])
+            ->withPivot(['reviewer_type', 'max_apps_assigned', 'expertise_tags', 'reviewer_fee', 'fee_type', 'fee_currency', 'acceptance_status'])
             ->get()
             ->map(function ($user) {
                 return [
@@ -44,6 +44,12 @@ class RoundReviewerController extends Controller
                     'image' => $user->image,
                     'reviewer_type' => $user->pivot->reviewer_type,
                     'max_apps_assigned' => $user->pivot->max_apps_assigned,
+                    // How this reviewer is paid, as the round setup form names it
+                    'reviewer_fee' => $user->pivot->reviewer_fee,
+                    'fee_type' => $user->pivot->fee_type,
+                    'fee_currency' => $user->pivot->fee_currency,
+                    'reviewer_payment_basis' => $user->pivot->fee_type === 'per_application' ? 'per_application' : 'flat_round_fee',
+                    'acceptance_status' => $user->pivot->acceptance_status,
                     'expertise_tags' => $user->pivot->expertise_tags
                         ? json_decode($user->pivot->expertise_tags, true)
                         : [],
@@ -113,7 +119,16 @@ class RoundReviewerController extends Controller
                 'reviewer_fee'        => 'nullable|numeric|min:0',
                 'fee_type'            => 'nullable|in:flat,per_application',
                 'fee_currency'        => 'nullable|string|max:10',
+                // What the round setup form sends ("Per application reviewed" / "Flat round fee")
+                'reviewer_payment_basis' => 'nullable|in:per_application,flat_round_fee',
             ]);
+
+            // The form's payment basis decides the fee type; before this it was ignored and every reviewer became "flat"
+            $feeType = match ($validated['reviewer_payment_basis'] ?? null) {
+                'per_application' => 'per_application',
+                'flat_round_fee'  => 'flat',
+                default           => $validated['fee_type'] ?? 'flat',
+            };
 
             $userId = $validated['user_id'];
 
@@ -158,7 +173,7 @@ class RoundReviewerController extends Controller
                     'assigned_percentage' => $validated['assigned_percentage'] ?? null,
                     'expertise_tags'      => isset($validated['expertise_tags']) ? json_encode($validated['expertise_tags']) : null,
                     'reviewer_fee'        => $validated['reviewer_fee'] ?? null,
-                    'fee_type'            => $validated['fee_type'] ?? 'flat',
+                    'fee_type'            => $feeType,
                     'fee_currency'        => $validated['fee_currency'] ?? 'USD',
                     'acceptance_status'   => 'pending',
                 ]);
@@ -173,7 +188,7 @@ class RoundReviewerController extends Controller
                     'expertise_tags'      => isset($validated['expertise_tags'])
                         ? json_encode($validated['expertise_tags']) : null,
                     'reviewer_fee'        => $validated['reviewer_fee'] ?? null,
-                    'fee_type'            => $validated['fee_type'] ?? 'flat',
+                    'fee_type'            => $feeType,
                     'fee_currency'        => $validated['fee_currency'] ?? 'USD',
                     'acceptance_status'   => 'pending',
                 ]);
@@ -209,6 +224,8 @@ class RoundReviewerController extends Controller
                 'expertise_tags' => $validated['expertise_tags'] ?? [],
                 'program_id' => $round->program_id,
                 'proposed_fee' => $validated['reviewer_fee'] ?? null,
+                'fee_type' => $feeType,
+                'fee_currency' => $validated['fee_currency'] ?? null,
                 'recipientName' => $user->first_name ?? $user->display_name,
             ]);
 
@@ -267,6 +284,30 @@ class RoundReviewerController extends Controller
             ->get();
 
         return response()->json(['assignment_requests' => $assignments], 200);
+    }
+
+    // ─── Sidebar counts for the signed-in reviewer ───────────────
+    // GET /programs/reviewer/assignment-counts
+    public function assignmentCounts()
+    {
+        $userId = auth()->id();
+
+        // Rounds that asked this person to review and are waiting for their answer
+        $pendingRequests = DB::table('round_reviewers')
+            ->where('user_id', $userId)
+            ->where('acceptance_status', 'pending')
+            ->count();
+
+        // Applications handed to them that they have not finished scoring
+        $toReview = ReviewerApplicationAssignment::where('reviewer_id', $userId)
+            ->whereIn('status', ['assigned', 'in_review'])
+            ->count();
+
+        return response()->json([
+            'pending_requests' => $pendingRequests,
+            'to_review'        => $toReview,
+            'total'            => $pendingRequests + $toReview,
+        ], 200);
     }
 
     // ─── Reviewer accepts assignment ─────────────────────────────

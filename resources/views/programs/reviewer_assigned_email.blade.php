@@ -18,7 +18,11 @@
             @endif
 
             @if(!empty($proposed_fee))
-            <p style="margin:0.5rem 0;"><strong>Proposed Fee per application:</strong> {{ $proposed_fee }}</p>
+                @if(($fee_type ?? 'flat') === 'per_application')
+                <p style="margin:0.5rem 0;"><strong>Fee per application reviewed:</strong> {{ $fee_currency ?? '' }} {{ number_format((float) $proposed_fee, 2) }}</p>
+                @else
+                <p style="margin:0.5rem 0;"><strong>Flat fee for the round:</strong> {{ $fee_currency ?? '' }} {{ number_format((float) $proposed_fee, 2) }}</p>
+                @endif
             @endif
 
 
