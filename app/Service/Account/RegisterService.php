@@ -465,6 +465,8 @@ class RegisterService
             $invitationUrl = rtrim(config('app.app_url'), '/')
                 .'/organization-invitations/accept?token='.$invitationToken;
 
+            $emailSent = true;
+
             try {
                 Mail::send('organization_team_invitation', [
                     'brand' => EmailBrand::forOrganization($organization),
@@ -480,6 +482,7 @@ class RegisterService
                 });
             } catch (\Throwable $mailException) {
                 // The pending membership remains valid so the invite can be resent.
+                $emailSent = false;
                 ErrorLogService::report($mailException, [
                     'organization_id' => $organization->id,
                     'team_member_id' => $user->id,
@@ -487,7 +490,10 @@ class RegisterService
             }
 
             return response()->json([
-                'message' => 'Team member invited successfully.',
+                'message' => $emailSent
+                    ? 'Team member invited successfully.'
+                    : 'Team member added, but the invitation email could not be sent. Check the mail settings, then resend the invite.',
+                'email_sent' => $emailSent,
                 'user' => new UserResource($user->load('organizationRoles.role')),
                 'invitation_expires_at' => now()->addDays(7)->toISOString(),
             ], 201);
@@ -558,6 +564,8 @@ class RegisterService
             $invitationUrl = rtrim(config('app.app_url'), '/')
                 . '/organization-invitations/accept?token=' . $invitationToken;
 
+            $emailSent = true;
+
             try {
                 Mail::send('external_reviewer_invitation', [
                     'brand' => EmailBrand::forOrganization($organization),
@@ -573,6 +581,7 @@ class RegisterService
                 });
             } catch (\Throwable $mailException) {
                 // The pending membership remains valid so the invite can be resent.
+                $emailSent = false;
                 ErrorLogService::report($mailException, [
                     'organization_id' => $organization->id,
                     'team_member_id' => $user->id,
@@ -580,7 +589,10 @@ class RegisterService
             }
 
             return response()->json([
-                'message' => 'External reviewer invited successfully.',
+                'message' => $emailSent
+                    ? 'External reviewer invited successfully.'
+                    : 'Reviewer added, but the invitation email could not be sent. Check the mail settings, then resend the invite.',
+                'email_sent' => $emailSent,
                 'user' => new UserResource($user->load('organizationRoles.role')),
                 'invitation_expires_at' => now()->addDays(7)->toISOString(),
             ], 201);
