@@ -567,14 +567,18 @@ class UserController extends Controller
                         hash('sha256', $data['token'])
                     )->lockForUpdate()->first();
 
-                    if (! $user) {
+                    if (! $user || ($user->invitation_expires_at && \Illuminate\Support\Carbon::parse($user->invitation_expires_at)->isPast())) {
                         abort(422, 'This invitation is invalid or has expired.');
                     }
 
                     $user->update([
                         'display_name' => $data['display_name'],
+                        'phone' => $data['phone'],
                         'image' => $uploadedImage,
                         'password' => Hash::make($data['password']),
+                        // One use only
+                        'invitation_token_hash' => null,
+                        'invitation_expires_at' => null,
                     ]);
 
                     return [
@@ -591,6 +595,7 @@ class UserController extends Controller
 
                 $membership->user->update([
                     'display_name' => $data['display_name'],
+                    'phone' => $data['phone'],
                     'image' => $uploadedImage,
                     'password' => Hash::make($data['password']),
                 ]);
