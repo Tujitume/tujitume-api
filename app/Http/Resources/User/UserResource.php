@@ -23,10 +23,12 @@ class UserResource extends JsonResource
         $isOrganization = $userTypeId === 4;
         $isCapital = $userTypeId === 5;
 
-        if ($isOrganization) {
+        // An external reviewer works inside the organization that invited them, so they get its name, logo and
+        // dashboard address too (their look comes from the organization's settings, see effectiveSettings()).
+        if ($isOrganization || $userTypeId === 6) {
             $this->loadMissing('organization.workspaces', 'organization.programIndustry');
 
-            if ($this->resource->exists) {
+            if ($isOrganization && $this->resource->exists) {
                 $this->loadMissing('organizationRole.role');
             }
         } elseif ($isInvestor) {
