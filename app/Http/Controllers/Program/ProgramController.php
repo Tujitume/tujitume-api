@@ -56,7 +56,8 @@ class ProgramController extends Controller
     {
         $user = Auth::user()->load('organizationRole.role');
         $user->role = $user->organizationRole?->role?->name ?? 'super-admin';
-        $user->program_owner_id = null;
+        // The organization owner's id (the user's own id when they are the owner), whose data a team member works on
+        $user->program_owner_id = $user->organizationOwnerId();
         return $user;
     }
     // C O R E  Methods
@@ -69,7 +70,7 @@ class ProgramController extends Controller
                 if($user->user_type_id == 4){  //Program
                     $user = $this->get_role();
 
-                    if (in_array($user->role, ['editor', 'viewer', 'admin'])) {
+                    if (in_array($user->role, ['editor', 'viewer', 'admin', 'super_admin'])) {
                         $query = Program::withCount(['liked', 'applications'])->where('user_id',$user->program_owner_id)
                             ->latest();
                         $watchlistProgramIds = Watchlist::where('user_id', $user->program_owner_id)->pluck('org_id')->toArray();

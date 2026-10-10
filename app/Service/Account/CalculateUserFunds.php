@@ -17,7 +17,7 @@ class CalculateUserFunds
     {
         $user = $user->load('organizationRole.role');
         $role = $user->organizationRole?->role?->name ?? 'super-admin';
-        $ownerId = in_array($role, ['editor', 'viewer', 'admin']) ? $user->organizationOwnerId() : $user->id;
+        $ownerId = in_array($role, ['editor', 'viewer', 'admin', 'super_admin']) ? $user->organizationOwnerId() : $user->id;
 
         $total_program_amount = Program::where('user_id', $ownerId)->sum('total_program_amount');
         $available_program_amount = Program::where('user_id', $ownerId)->sum('available_amount');

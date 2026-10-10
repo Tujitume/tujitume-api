@@ -176,7 +176,7 @@ class ScheduleMeetingController extends Controller
             else if($type == 2) //Program
             {
                 $user = $this->get_role();
-                if (in_array($user->role, ['editor', 'viewer', 'admin'])) {
+                if (in_array($user->role, ['editor', 'viewer', 'admin', 'super_admin'])) {
                     $user_id = $user->program_owner_id;
                 }
                 $client_ids = ProgramApplication::where('program_owner_id', $user_id)->pluck('user_id')

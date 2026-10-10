@@ -117,7 +117,7 @@ class ProgramApplicationController extends Controller
         $match_score = 0;
         $user = $this->get_role();
 
-        if (in_array($user->role, ['editor', 'viewer', 'admin'])) {
+        if (in_array($user->role, ['editor', 'viewer', 'admin', 'super_admin'])) {
             $watchlistPitchIds = ProgramWatchlist::where('program_owner_id', $user->program_owner_id)->pluck('pitch_id')->toArray();
             $pitches = ProgramApplication::with(['program', 'currentRound', 'program_milestones'])
                 ->where('program_owner_id', $user->program_owner_id)
