@@ -345,9 +345,12 @@ class AuthController extends Controller
 
     public function logout(Request $request)
     {
-        $user = $request->user();
+        // Public route: the token may already be expired or revoked, which still counts as logged out
+        $token = $request->user()?->currentAccessToken();
 
-        $user->currentAccessToken()->delete();
+        if ($token instanceof \Laravel\Sanctum\PersonalAccessToken) {
+            $token->delete();
+        }
 
         return response('',204);
     }
