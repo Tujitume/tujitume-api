@@ -442,10 +442,17 @@ class UserController extends Controller
         }
 
         try {
+            // Their account is about to be deleted, so tell them first (email only: there is no inbox left for a notification)
+            $roleName = $membership?->loadMissing('role')->role?->name ?? 'External Reviewer';
+            $memberSnapshot = $teamMember->replicate(['password']);
+            $memberSnapshot->email = $teamMember->email;
+
             DB::transaction(function () use ($teamMember): void {
                 // organization_user_roles.user_id cascades with the user deletion.
                 $teamMember->delete();
             });
+
+            $this->notifyTeamMember($memberSnapshot, $user, 'removed', $roleName, notify: false);
 
             return response()->json(['message' => 'Team member deleted.'], 200);
         } catch (\Exception $e) {
@@ -514,6 +521,14 @@ class UserController extends Controller
             });
 
             $membership->refresh()->load('role');
+
+            $this->notifyTeamMember(
+                $teamMember,
+                $user,
+                $membership->status === 'pending' ? 'reinvited' : 'revoked',
+                $membership->role?->name ?? 'Team member',
+                $invitationToken ? rtrim(config('app.app_url'), '/') . '/organization-invitations/accept?token=' . $invitationToken : null,
+            );
 
             return response()->json([
                 'message' => $membership->status === 'pending'
@@ -621,6 +636,62 @@ class UserController extends Controller
             ErrorLogService::report($e, ['input' => $request->except(['token', 'password', 'password_confirmation'])]);
 
             return response()->json(['message' => 'Something went wrong, please try again later.'], 500);
+        }
+    }
+
+    /**
+     * Tell a team member (internal or external reviewer) about a change to their access: an email, and
+     * an in-app notification unless their account no longer exists. Best effort: it never fails the action.
+     */
+    private function notifyTeamMember(User $member, User $actor, string $action, string $roleName, ?string $invitationUrl = null, bool $notify = true): void
+    {
+        try {
+            $organization = Organization::find($actor->organization_id);
+            if (! $organization || ! $member->email) {
+                return;
+            }
+
+            $orgName = $organization->name;
+            [$title, $body, $inAppText] = match ($action) {
+                'removed' => [
+                    "You were removed from {$orgName}",
+                    "You have been removed from {$orgName} and no longer have access to its workspace.",
+                    "You were removed from {$orgName}.",
+                ],
+                'revoked' => [
+                    "Your access to {$orgName} was deactivated",
+                    "Your access to {$orgName} has been deactivated. You can no longer use its workspace until it is restored.",
+                    "Your access to {$orgName} was deactivated.",
+                ],
+                default => [
+                    "You have been invited back to {$orgName}",
+                    "{$orgName} has reopened your invitation. Accept it to get access to the workspace again.",
+                    "{$orgName} reopened your invitation.",
+                ],
+            };
+
+            (new \App\Service\Notification\EmailService())->send(
+                $title,
+                'organization_team_update',
+                [
+                    'brand' => \App\Service\Notification\EmailBrand::forOrganization($organization),
+                    'title' => $title,
+                    'body' => $body,
+                    'recipientName' => $member->first_name ?: ($member->display_name ?: 'there'),
+                    'organization' => $organization,
+                    'role' => str_replace('_', ' ', $roleName),
+                    'actorName' => trim($actor->first_name . ' ' . $actor->last_name),
+                    'invitationUrl' => $invitationUrl,
+                    'expiresAt' => now()->addDays(7),
+                ],
+                $member->email
+            );
+
+            if ($notify && $member->exists) {
+                (new \App\Service\Notification\NotificationService())->create($member->id, $actor->id, $inAppText, '', 'program');
+            }
+        } catch (\Throwable $e) {
+            ErrorLogService::report($e, ['team_member_id' => $member->id, 'action' => $action]);
         }
     }
 

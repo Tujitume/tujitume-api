@@ -71,7 +71,7 @@ class OrganizationReviewerService
             ->where('organization_id', $organization->id)
             ->where('user_type_id', 6)
             ->orderBy('created_at')
-            ->get(['id', 'user_type_id', 'first_name', 'last_name', 'display_name', 'email', 'phone', 'image', 'organization_id']);
+            ->get(['id', 'user_type_id', 'first_name', 'last_name', 'display_name', 'email', 'phone', 'image', 'organization_id', 'password']);
     }
 
     private function assignmentIds(Collection $reviewerIds): array
@@ -118,6 +118,9 @@ class OrganizationReviewerService
             'phone' => $reviewer->phone,
             'image' => $reviewer->image,
             'organization_id' => $membership?->organization_id ?? $reviewer->organization_id,
+            // Internal reviewers are only listed once their membership is active. An external reviewer has no
+            // membership: they are invited without a password, so having one means the invitation was accepted.
+            'active' => $membership ? $membership->status === 'active' : ! empty($reviewer->getAttributes()['password'] ?? null),
             'role' => $membership ? [
                 'id' => $membership->role->id,
                 'name' => $membership->role->name,
