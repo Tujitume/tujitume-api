@@ -24,6 +24,7 @@ use App\Service\File\ImageCompressor;
 use App\Service\File\ImageUploadService;
 use App\Service\Misc\ErrorLogService;
 use App\Service\Notification\NotificationService;
+use App\Service\Organization\TeamMemberNotifier;
 use Hash;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
@@ -681,7 +682,14 @@ class ProgramController extends Controller
             $data = $request->except(['_token', 'id', 'role_id']);
             $user = User::findOrFail($request->id);
             $user->update($data); // performs mass update
+            $previousRoleId = $user->organizationRole?->role_id;
             $user->organizationRole()->update(['role_id' => $request->role_id]);
+
+            if ((int) $previousRoleId !== (int) $request->role_id && (int) $user->user_type_id === 4) {
+                $newRole = \App\Models\Auth\Role::find($request->role_id);
+                TeamMemberNotifier::notify($user, Auth::user(), 'role_changed', $newRole?->name ?? 'Team member');
+            }
+
             return response()->json(['message' => 'User updated.'], 200);
         }
         catch (\Exception $e) {
@@ -762,6 +770,8 @@ class ProgramController extends Controller
         DB::beginTransaction();
         try{
             $user = User::find($request->id);
+            $roleName = $user->organizationRole?->role?->name ?? 'Team member';
+            $memberSnapshot = $user->replicate(['password']);
             User::where('id',$request->id)->delete();
 
             if($user->user_type_id == 4) // Program organization
@@ -770,6 +780,11 @@ class ProgramController extends Controller
                 CapitalProfile::where('user_id',$request->id)->delete();
 
             DB::commit();
+
+            // Email only: the account is gone, so there is no inbox for an in-app notification
+            if ((int) $user->user_type_id === 4) {
+                TeamMemberNotifier::notify($memberSnapshot, Auth::user(), 'removed', $roleName, notify: false);
+            }
             return response()->json([ 'message' => 'User deleted'], 200);
         }
         catch (\Exception $e) {
