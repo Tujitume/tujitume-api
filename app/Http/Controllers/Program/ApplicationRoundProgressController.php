@@ -125,7 +125,7 @@ class ApplicationRoundProgressController extends Controller
     {
         $userId = auth()->id();
 
-        if ($round->program->user_id !== $userId) {
+        if (!\App\Service\Program\ProgramAccess::owns($round->program)) {
             return response()->json(['message' => 'Unauthorized.'], 403);
         }
 
@@ -291,7 +291,7 @@ class ApplicationRoundProgressController extends Controller
     public function autoScoreApplications(Request $request, ProgramRound $round)
     {
 
-        if ($round->program->user_id !== auth()->id()) {
+        if (!\App\Service\Program\ProgramAccess::owns($round->program)) {
             return response()->json(['message' => 'Unauthorized.'], 403);
         }
 

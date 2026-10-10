@@ -67,7 +67,7 @@ class MEController extends Controller
     // POST /program/applications/{app}/me/checkpoints
     public function storeCheckpoint(Request $request, ProgramApplication $app)
     {
-        if ($app->program->user_id !== auth()->id()) {
+        if (!\App\Service\Program\ProgramAccess::owns($app->program)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -112,7 +112,7 @@ class MEController extends Controller
     // PATCH /program/me/checkpoints/{checkpoint}
     public function updateCheckpoint(Request $request, MECheckpoint $checkpoint)
     {
-        if ($checkpoint->application->program->user_id !== auth()->id()) {
+        if (!\App\Service\Program\ProgramAccess::owns($checkpoint->application->program)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -149,7 +149,7 @@ class MEController extends Controller
     // DELETE /program/me/checkpoints/{checkpoint}
     public function deleteCheckpoint(MECheckpoint $checkpoint)
     {
-        if ($checkpoint->application->program->user_id !== auth()->id()) {
+        if (!\App\Service\Program\ProgramAccess::owns($checkpoint->application->program)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -258,7 +258,7 @@ class MEController extends Controller
     // POST /program/me/submissions/{submission}/verify
     public function verify(Request $request, MESubmission $submission)
     {
-        if ($submission->checkpoint->application->program->user_id !== auth()->id()) {
+        if (!\App\Service\Program\ProgramAccess::owns($submission->checkpoint->application->program)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -291,7 +291,7 @@ class MEController extends Controller
     // POST /program/me/submissions/{submission}/request-changes
     public function requestChanges(Request $request, MESubmission $submission)
     {
-        if ($submission->checkpoint->application->program->user_id !== auth()->id()) {
+        if (!\App\Service\Program\ProgramAccess::owns($submission->checkpoint->application->program)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -324,7 +324,7 @@ class MEController extends Controller
     // DELETE /program/monitoring/checkpoints/{checkpoint}/submissions
     public function deleteSubmissions(MECheckpoint $checkpoint)
     {
-        if ($checkpoint->application->program->user_id !== auth()->id()) {
+        if (!\App\Service\Program\ProgramAccess::owns($checkpoint->application->program)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -370,7 +370,7 @@ class MEController extends Controller
     // POST /program/me/checkpoints/{checkpoint}/site-visit/assign
     public function assignSiteVisit(Request $request, MECheckpoint $checkpoint)
     {
-        if ($checkpoint->application->program->user_id !== auth()->id()) {
+        if (!\App\Service\Program\ProgramAccess::owns($checkpoint->application->program)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 

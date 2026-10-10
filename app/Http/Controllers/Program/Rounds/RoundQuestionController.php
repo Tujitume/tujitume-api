@@ -38,7 +38,7 @@ class RoundQuestionController extends Controller
     {
         $userId = auth()->id();
 
-        if ($question->round->program->user_id !== $userId) {
+        if (!\App\Service\Program\ProgramAccess::owns($question->round->program)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -82,7 +82,7 @@ class RoundQuestionController extends Controller
     {
         $userId = auth()->id();
 
-        if ($round->program->user_id !== $userId) {
+        if (!\App\Service\Program\ProgramAccess::owns($round->program)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -129,7 +129,7 @@ class RoundQuestionController extends Controller
     {
         $userId = auth()->id();
 
-        if ($question->round->program->user_id !== $userId) {
+        if (!\App\Service\Program\ProgramAccess::owns($question->round->program)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 

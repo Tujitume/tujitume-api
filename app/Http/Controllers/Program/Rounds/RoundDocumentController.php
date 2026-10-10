@@ -142,7 +142,7 @@ class RoundDocumentController extends Controller
             $round = ProgramRound::findOrFail($roundId);
 
             // Authorization: Application owner or program owner
-            if ($application->user_id !== $userId && $application->program->user_id !== $userId) {
+            if ($application->user_id !== $userId && !\App\Service\Program\ProgramAccess::owns($application->program)) {
                 return response()->json(['error' => 'Unauthorized'], 403);
             }
 
@@ -199,7 +199,7 @@ class RoundDocumentController extends Controller
             $document = RoundRequiredDocument::findOrFail($documentId);
 
             // Authorization: Only program owner
-            if ($document->application->program->user_id !== $userId) {
+            if (!\App\Service\Program\ProgramAccess::owns($document->application->program)) {
                 return response()->json(['error' => 'Unauthorized'], 403);
             }
 
@@ -240,7 +240,7 @@ class RoundDocumentController extends Controller
             $document = RoundRequiredDocument::findOrFail($documentId);
 
             // Authorization: Only program owner
-            if ($document->application->program->user_id !== $userId) {
+            if (!\App\Service\Program\ProgramAccess::owns($document->application->program)) {
                 return response()->json(['error' => 'Unauthorized'], 403);
             }
 

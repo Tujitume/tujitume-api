@@ -29,7 +29,7 @@ class RoundReviewerController extends Controller
     {
         $userId = auth()->id();
 
-        if ($round->program->user_id !== $userId) {
+        if (!\App\Service\Program\ProgramAccess::owns($round->program)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -91,7 +91,7 @@ class RoundReviewerController extends Controller
     {
         $userId = auth()->id();
 
-        if ($round->program->user_id !== $userId) {
+        if (!\App\Service\Program\ProgramAccess::owns($round->program)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -242,7 +242,7 @@ class RoundReviewerController extends Controller
     {
         $userId = auth()->id();
 
-        if ($round->program->user_id !== $userId) {
+        if (!\App\Service\Program\ProgramAccess::owns($round->program)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -420,7 +420,7 @@ class RoundReviewerController extends Controller
     // POST /programs/rounds/{round}/reviewers/{reviewer}/assign-applications
     public function assignApplications(Request $request, ProgramRound $round, User $reviewer)
     {
-        if ($round->program->user_id !== auth()->id()) {
+        if (!\App\Service\Program\ProgramAccess::owns($round->program)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 

@@ -63,7 +63,7 @@ class ProgramRoundController extends Controller
         $roleUser = auth()->user()?->organization_id === $round->program->user?->organization_id;
 
 
-        if ($round->program->user_id !== $userId && !$roleUser) {
+        if (!\App\Service\Program\ProgramAccess::owns($round->program) && !$roleUser) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
         return response()->json([
@@ -249,7 +249,7 @@ class ProgramRoundController extends Controller
         $userId = auth()->id();
 
         // Authorization
-        if ($program->user_id !== $userId) {
+        if (!\App\Service\Program\ProgramAccess::owns($program)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -373,7 +373,7 @@ class ProgramRoundController extends Controller
         $userId = auth()->id();
 
         // Authorization
-        if ($round->program->user_id !== $userId) {
+        if (!\App\Service\Program\ProgramAccess::owns($round->program)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -497,7 +497,7 @@ class ProgramRoundController extends Controller
         $userId = auth()->id();
 
         // Authorization
-        if ($round->program->user_id !== $userId) {
+        if (!\App\Service\Program\ProgramAccess::owns($round->program)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -525,7 +525,7 @@ class ProgramRoundController extends Controller
     {
         $userId = auth()->id();
 
-        if ($round->program->user_id !== $userId) {
+        if (!\App\Service\Program\ProgramAccess::owns($round->program)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -760,7 +760,7 @@ class ProgramRoundController extends Controller
     {
         $userId = auth()->id();
 
-        if ($application->program->user_id !== $userId) {
+        if (!\App\Service\Program\ProgramAccess::owns($application->program)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -929,7 +929,7 @@ class ProgramRoundController extends Controller
     {
         $userId = auth()->id();
 
-        if ($application->program->user_id !== $userId) {
+        if (!\App\Service\Program\ProgramAccess::owns($application->program)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 

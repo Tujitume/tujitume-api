@@ -25,6 +25,27 @@ class ProgramAccess
 
     // ── Questions ────────────────────────────────────────────────────────────
 
+    /** Roles whose holders work on the organization's programs (reviewers have their own endpoints). */
+    private const PROGRAM_TEAM_ROLES = ['super_admin', 'super-admin', 'admin', 'editor', 'viewer'];
+
+    /**
+     * Is the signed-in user the program's owner, or a program-team member of the owner's organization?
+     * Used by the owner-only endpoints so a Viewer can open the organization's data. What each role may
+     * change is decided by ProgramMiddleware (Viewer: read only, Editor: no deleting), not here.
+     */
+    public static function owns(?Program $program): bool
+    {
+        $user = auth()->user();
+        if (!$user || !$program) return false;
+        if ((int) $user->id === (int) $program->user_id) return true;
+        if ((int) $user->user_type_id !== 4 || !$user->organization_id) return false;
+
+        $user->loadMissing('organizationRole.role');
+        if (!in_array($user->organizationRole?->role?->name, self::PROGRAM_TEAM_ROLES, true)) return false;
+
+        return (int) $user->organizationOwnerId() === (int) $program->user_id;
+    }
+
     /** The program owner's organisation (owner, creator and every team member). */
     public function ownsProgram(?User $user, Program $program): bool
     {

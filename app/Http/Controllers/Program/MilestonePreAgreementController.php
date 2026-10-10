@@ -98,7 +98,7 @@ class MilestonePreAgreementController extends Controller
         $userId      = auth()->id();
         $application = $milestone->application;
 
-        if ($application->program->user_id !== $userId) {
+        if (!\App\Service\Program\ProgramAccess::owns($application->program)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -171,7 +171,7 @@ class MilestonePreAgreementController extends Controller
         $userId      = auth()->id();
         $application = $milestone->application;
 
-        if ($application->program->user_id !== $userId) {
+        if (!\App\Service\Program\ProgramAccess::owns($application->program)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 

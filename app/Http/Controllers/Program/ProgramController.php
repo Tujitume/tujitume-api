@@ -294,7 +294,7 @@ class ProgramController extends Controller
             $user = Auth::user();
 
             // 1. Authorization (VERY IMPORTANT)
-            if ($program->user_id !== $user->id) {
+            if (!\App\Service\Program\ProgramAccess::owns($program)) {
                 return response()->json([
                     'message' => 'Unauthorized action.'
                 ], 403);
@@ -452,7 +452,7 @@ class ProgramController extends Controller
         $userId = auth()->id();
 
         // Authorization
-        if ($program->user_id !== $userId) {
+        if (!\App\Service\Program\ProgramAccess::owns($program)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -538,7 +538,7 @@ class ProgramController extends Controller
 
             // Authorization check (if needed)
             $userId = auth()->id();
-            if ($program->user_id !== $userId) {
+            if (!\App\Service\Program\ProgramAccess::owns($program)) {
                 return response()->json(['error' => 'Unauthorized'], 403);
             }
 

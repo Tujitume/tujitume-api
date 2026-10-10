@@ -202,7 +202,7 @@ class ProgramMilestoneController extends Controller
             $application = ProgramApplication::findOrFail($applicationId);
 
             // Authorization: Only program owner can create templates
-            if ($application->program->user_id !== $userId) {
+            if (!\App\Service\Program\ProgramAccess::owns($application->program)) {
                 return response()->json(['error' => 'Unauthorized'], 403);
             }
 
@@ -340,7 +340,7 @@ class ProgramMilestoneController extends Controller
             $application = ProgramApplication::findOrFail($applicationId);
 
             // Authorization: Program owner or applicant can view
-            if ($application->program->user_id !== $userId && $application->user_id !== $userId) {
+            if (!\App\Service\Program\ProgramAccess::owns($application->program) && $application->user_id !== $userId) {
                 return response()->json(['error' => 'Unauthorized'], 403);
             }
 
@@ -513,7 +513,7 @@ class ProgramMilestoneController extends Controller
             $application = ProgramApplication::findOrFail($applicationId);
 
             // Authorization: Only program owner can activate locked mode
-            if ( $application->planning_mode == 'locked' && $application->program->user_id !== $userId) {
+            if ( $application->planning_mode == 'locked' && !\App\Service\Program\ProgramAccess::owns($application->program)) {
                 return response()->json(['error' => 'Unauthorized'], 403);
             }
 
@@ -611,7 +611,7 @@ class ProgramMilestoneController extends Controller
             $milestone = ProgramMilestone::findOrFail($milestoneId); //where('is_template', true)
 
             // Authorization: Only program owner
-            if ($milestone->application->program->user_id !== $userId) {
+            if (!\App\Service\Program\ProgramAccess::owns($milestone->application->program)) {
                 return response()->json(['error' => 'Unauthorized'], 403);
             }
 
