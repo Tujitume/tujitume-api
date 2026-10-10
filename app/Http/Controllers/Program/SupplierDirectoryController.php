@@ -205,7 +205,18 @@ class SupplierDirectoryController extends Controller
                 'address' => 'nullable|string',
             ]);
 
-            //check if $validated['email']
+            // The same supplier cannot be added (and emailed) twice to one directory
+            $alreadyAdded = SupplierDirectory::where('added_by', $userId)
+                ->whereRaw('LOWER(email) = ?', [strtolower($validated['email'])])
+                ->exists();
+
+            if ($alreadyAdded) {
+                DB::rollBack();
+                return response()->json([
+                    'message' => 'A supplier with this email is already in your directory.',
+                    'errors'  => ['email' => ['A supplier with this email is already in your directory.']],
+                ], 422);
+            }
 
             if ($validated['payment_method'] === 'mpesa_lipr' && empty($validated['lipr_wallet'])) {
                 return response()->json([
@@ -238,6 +249,8 @@ class SupplierDirectoryController extends Controller
                     'org_name'       => $orgName,
                     'supplier_name'  => $validated['legal_name'],
                     'supplier_type'  => $validated['supplier_type'] ?? null,
+                    // Already has a Tujitume account: tell them they were added, no sign-up pitch
+                    'onboarded'      => User::whereRaw('LOWER(email) = ?', [strtolower($validated['email'])])->exists(),
                 ],
                 $validated['email']
             );
