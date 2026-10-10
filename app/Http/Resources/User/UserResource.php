@@ -135,7 +135,9 @@ class UserResource extends JsonResource
             'role' => $role,
             'organization_membership' => $organizationMembership,
             'workspaces' => $organizationWorkspaces,
-            'settings' => $this->getSettings()->toFrontendArray(),
+            // A team member sees the organization's look (theme, logo, regional settings) and cannot change it
+            'settings' => $this->effectiveSettings()->toFrontendArray(),
+            'is_team_member' => $this->isOrganizationTeamMember(),
         ];
 
         if (! $isOrganization) {

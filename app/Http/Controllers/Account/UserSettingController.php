@@ -16,6 +16,12 @@ class UserSettingController extends Controller
     // GET /user/settings
     public function show()
     {
+        $user = Auth::user();
+
+        if ($user->isOrganizationTeamMember()) {
+            return response()->json(['data' => $user->effectiveSettings()->toFrontendArray()], 200);
+        }
+
         $settings = UserSetting::firstOrCreate(
             ['user_id' => Auth::id()],
             UserSetting::defaults()
@@ -24,14 +30,24 @@ class UserSettingController extends Controller
         return response()->json(['data' => $settings->toFrontendArray()], 200);
     }
 
+    // Organization settings belong to the organization, so team members can look but not change
+    private function teamMemberDenied()
+    {
+        return response()->json(['message' => 'Only the organization owner can change organization settings.'], 403);
+    }
+
     // GET /user/settings/logo
     public function logo()
     {
         try {
-            $settings = UserSetting::firstOrCreate(
-                ['user_id' => Auth::id()],
-                UserSetting::defaults()
-            );
+            $user = Auth::user();
+
+            $settings = $user->isOrganizationTeamMember()
+                ? $user->effectiveSettings()
+                : UserSetting::firstOrCreate(
+                    ['user_id' => Auth::id()],
+                    UserSetting::defaults()
+                );
 
             if (!$settings->logo) {
                 return response()->json(['message' => 'No logo uploaded.'], 404);
@@ -70,6 +86,10 @@ class UserSettingController extends Controller
     // PATCH /user/settings
     public function update(Request $request, ImageUploadService $imageUpload)
     {
+        if (Auth::user()->isOrganizationTeamMember()) {
+            return $this->teamMemberDenied();
+        }
+
         try {
             $validated = $request->validate([
                 'theme'               => 'sometimes|in:' . implode(',', UserSetting::THEME_KEYS),
@@ -118,6 +138,10 @@ class UserSettingController extends Controller
     // DELETE /user/settings/reset
     public function reset()
     {
+        if (Auth::user()->isOrganizationTeamMember()) {
+            return $this->teamMemberDenied();
+        }
+
         try {
             $settings = UserSetting::updateOrCreate(
                 ['user_id' => Auth::id()],

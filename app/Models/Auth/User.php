@@ -173,6 +173,36 @@ class User extends Authenticatable
     }
 
     // Helper to get settings with defaults
+    /**
+     * A team member (any role, internal or external reviewer) of an organization they do not own.
+     * Their workspace looks and behaves like the organization's, and its settings are not theirs to change.
+     */
+    public function isOrganizationTeamMember(): bool
+    {
+        if (! in_array((int) $this->user_type_id, [4, 6], true) || ! $this->organization_id) {
+            return false;
+        }
+
+        $this->loadMissing('organization');
+        $ownerId = $this->organization?->owner_user_id;
+
+        return $ownerId && (int) $ownerId !== (int) $this->id;
+    }
+
+    /** The settings this user's dashboard runs on: the organization owner's for a team member, else their own. */
+    public function effectiveSettings(): UserSetting
+    {
+        if ($this->isOrganizationTeamMember()) {
+            $ownerSettings = UserSetting::where('user_id', $this->organization->owner_user_id)->first();
+
+            if ($ownerSettings) {
+                return $ownerSettings;
+            }
+        }
+
+        return $this->getSettings();
+    }
+
     public function getSettings(): UserSetting
     {
         return $this->settings ?? new UserSetting([
