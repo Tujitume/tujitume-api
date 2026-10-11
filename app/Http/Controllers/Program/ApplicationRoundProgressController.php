@@ -243,6 +243,12 @@ class ApplicationRoundProgressController extends Controller
             ], 422);
         }
 
+        // The owner chooses when it opens: 'now' makes today the open date, 'on_open_date' keeps the date they set
+        $mode = request()->input('mode');
+        if ($mode === 'now') {
+            $round->open_date = now()->startOfDay();
+        }
+
         // Checklist validation
         $errors = [];
 
@@ -315,6 +321,8 @@ class ApplicationRoundProgressController extends Controller
             $round->status = 'published';
             $round->save();
 
+            $opensNow = ! $round->open_date || $round->open_date->copy()->startOfDay()->lessThanOrEqualTo(now()->startOfDay());
+
             // Publishing the first round is what opens the program to applicants: it must be listed for them, with its dates
             // (a duplicated program starts hidden and without dates until this happens)
             if ((int) $round->round_number === 1) {
@@ -330,7 +338,13 @@ class ApplicationRoundProgressController extends Controller
                 $program->save();
             }
 
-            return response()->json(['message' => 'Round published successfully.'], 200);
+            return response()->json([
+                'message' => $opensNow
+                    ? 'Round published. It is open now.'
+                    : 'Round published. It opens on ' . $round->open_date->format('j M Y') . '.',
+                'opens_now' => $opensNow,
+                'open_date' => $round->open_date?->toDateString(),
+            ], 200);
 
         } catch (\Exception $e) {
             ErrorLogService::report($e, ['input' => request()->except(['password', 'token'])]);

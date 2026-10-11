@@ -402,10 +402,15 @@ class ProgramRoundController extends Controller
             return;
         }
 
+        // Finalized early: that round is over, whatever its planned close date was
+        if ($previous->status === 'finalized') {
+            return;
+        }
+
         $previousClose = $previous->close_date->copy()->startOfDay();
         if (\Carbon\Carbon::parse($openDate)->startOfDay()->lessThanOrEqualTo($previousClose)) {
             throw ValidationException::withMessages([
-                'open_date' => ['Round ' . $roundNumber . ' must open after Round ' . ($roundNumber - 1) . ' closes on ' . $previousClose->format('j M Y') . '.'],
+                'open_date' => ['Round ' . $roundNumber . ' must open after Round ' . ($roundNumber - 1) . ' closes on ' . $previousClose->format('j M Y') . ', unless Round ' . ($roundNumber - 1) . ' is finalized early.'],
             ]);
         }
     }
