@@ -95,14 +95,15 @@ class ReviewerPaymentService
                 $this->release($held['order']->id, $held['amount']);
 
                 $reason = $transfer['message'] ?? (implode(' ', $transfer['errors'] ?? []) ?: 'LIPR did not accept it');
-                // Show which wallets were used (last 4 characters only), so a wrong wallet is easy to spot
+                // The details stay in the server log (wallets shown by their last 4 characters only); the person is told
+                // something plain, because a refused transfer is a platform problem they cannot fix themselves
                 $tail = fn ($w) => '…' . substr((string) $w, -4);
                 Log::warning('Reviewer LIPR payment was refused', [
                     'order_id' => $held['order']->id, 'reason' => $reason,
                     'from' => $tail($held['payer']), 'from_source' => $held['payer_source'], 'to' => $tail($held['wallet']),
                 ]);
 
-                return ['ok' => false, 'message' => "The transfer could not be sent: {$reason}. It was sent from {$held['payer_source']} ({$tail($held['payer'])}) to the reviewer's wallet ({$tail($held['wallet'])}). Nothing was taken from the program wallet."];
+                return ['ok' => false, 'message' => 'Something went wrong on our side while sending this payment. Nothing was taken from the program wallet. Please try again in a little while, and contact support if it keeps happening.'];
             }
 
             $held['order']->update(['leg2_reference' => $transfer['reference'] ?? null]);
