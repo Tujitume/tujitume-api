@@ -31,6 +31,23 @@ class ProgramRound extends Model
         'announcement_date' => 'date',
     ];
 
+    /**
+     * Why nothing can be answered, uploaded or submitted for this round yet, or null once it is open.
+     * A round that is still a draft, or whose opening day has not come, can only be read.
+     */
+    public function notOpenReason(): ?string
+    {
+        $notOpen = $this->status === 'draft'
+            || ($this->open_date && $this->open_date->copy()->startOfDay()->isFuture());
+
+        if (! $notOpen) {
+            return null;
+        }
+
+        return 'This round has not opened yet' . ($this->open_date ? ' (it opens on ' . $this->open_date->format('j M Y') . ')' : '')
+            . '. You can read what it asks for now, and answer and submit once it opens.';
+    }
+
     public function program()
     {
         return $this->belongsTo(Program::class);

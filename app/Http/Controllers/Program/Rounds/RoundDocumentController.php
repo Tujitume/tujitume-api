@@ -47,6 +47,11 @@ class RoundDocumentController extends Controller
                 return response()->json(['error' => 'Application is not in this round'], 400);
             }
 
+            // A round that has not opened can only be read
+            if ($reason = $round->notOpenReason()) {
+                return response()->json(['message' => $reason, 'error' => $reason], 422);
+            }
+
             $validated = $request->validate([
                 'document_type' => 'required|string|max:100',
                 'file' => 'required|file|mimes:pdf,doc,docx,jpg,jpeg,png|max:10240', // 10MB

@@ -1549,8 +1549,13 @@ class ProgramRoundController extends Controller
                 return response()->json(['error' => 'Round cannot be submitted in current state'], 422);
             }
 
+            // A round that has not opened can only be read
+            if ($application->currentRound && ($reason = $application->currentRound->notOpenReason())) {
+                return response()->json(['message' => $reason, 'error' => $reason], 422);
+            }
+
             if (!$application->currentRound || $application->currentRound->status !== 'published') {
-                return response()->json(['error' => 'Round is not open for submissions'], 400);
+                return response()->json(['message' => 'This round is not open for submissions.', 'error' => 'Round is not open for submissions'], 400);
             }
 
             // ✅ SINGLE SERVICE handles everything

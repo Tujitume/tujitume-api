@@ -164,6 +164,11 @@ class RoundQuestionController extends Controller
                 ], 400);
             }
 
+            // A round that has not opened can only be read
+            if ($reason = $application->currentRound?->notOpenReason()) {
+                return response()->json(['message' => $reason, 'error' => $reason], 422);
+            }
+
             $validated = $request->validate([
                 'question_id' => 'required|exists:round_custom_questions,id',
                 'response' => 'required_without:file|nullable|string',
