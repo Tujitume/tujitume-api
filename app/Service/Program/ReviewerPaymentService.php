@@ -8,6 +8,7 @@ use App\Models\ReviewerOrder;
 use App\Service\LiprMpesa\LiprW2W;
 use App\Service\Misc\ErrorLogService;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 /**
  * Pays a reviewer from the program wallet, over LIPR: a wallet-to-wallet transfer from the program's own LIPR wallet
@@ -52,7 +53,7 @@ class ReviewerPaymentService
 
                 // Program deposits land in the program's own LIPR wallet, so that is where the money is sent from
                 // (the platform wallet only if this program has none of its own)
-                $payerWallet = $wallet->lipr_wallet ?: Setting::where('key', 'platform_lipr_wallet')->value('value');
+                $payerWallet = trim((string) ($wallet->lipr_wallet ?: Setting::where('key', 'platform_lipr_wallet')->value('value')));
                 if (! $payerWallet) {
                     return 'This program has no LIPR wallet linked, so nobody can be paid from it yet.';
                 }
@@ -68,7 +69,8 @@ class ReviewerPaymentService
                     'payment_status' => 'leg1_processing',
                 ]);
 
-                $held = ['order' => $order, 'amount' => $amount, 'wallet' => $reviewer->lipr_wallet, 'payer' => $payerWallet];
+                $held = ['order' => $order, 'amount' => $amount, 'wallet' => trim((string) $reviewer->lipr_wallet), 'payer' => $payerWallet,
+                    'payer_source' => $wallet->lipr_wallet ? 'the program wallet' : 'the platform wallet setting'];
 
                 return null;
             });
@@ -92,7 +94,15 @@ class ReviewerPaymentService
             if (! ($transfer['success'] ?? false)) {
                 $this->release($held['order']->id, $held['amount']);
 
-                return ['ok' => false, 'message' => 'The transfer could not be sent: ' . ($transfer['message'] ?? (implode(' ', $transfer['errors'] ?? []) ?: 'LIPR did not accept it')) . '. Nothing was taken from the wallet.'];
+                $reason = $transfer['message'] ?? (implode(' ', $transfer['errors'] ?? []) ?: 'LIPR did not accept it');
+                // Show which wallets were used (last 4 characters only), so a wrong wallet is easy to spot
+                $tail = fn ($w) => '…' . substr((string) $w, -4);
+                Log::warning('Reviewer LIPR payment was refused', [
+                    'order_id' => $held['order']->id, 'reason' => $reason,
+                    'from' => $tail($held['payer']), 'from_source' => $held['payer_source'], 'to' => $tail($held['wallet']),
+                ]);
+
+                return ['ok' => false, 'message' => "The transfer could not be sent: {$reason}. It was sent from {$held['payer_source']} ({$tail($held['payer'])}) to the reviewer's wallet ({$tail($held['wallet'])}). Nothing was taken from the program wallet."];
             }
 
             $held['order']->update(['leg2_reference' => $transfer['reference'] ?? null]);
