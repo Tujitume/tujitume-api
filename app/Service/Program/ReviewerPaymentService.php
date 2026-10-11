@@ -10,8 +10,8 @@ use App\Service\Misc\ErrorLogService;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Pays a reviewer from the program wallet, over LIPR: the same wallet-to-wallet transfer the supplier and applicant
- * payouts use (the platform wallet sends to the reviewer's own LIPR wallet). The money is held out of the program
+ * Pays a reviewer from the program wallet, over LIPR: a wallet-to-wallet transfer from the program's own LIPR wallet
+ * (where its deposits are held) to the reviewer's own LIPR wallet. The money is held out of the program
  * wallet when the transfer is sent, and either settled or given back when LIPR reports the result
  * (see MpesaCallbackController::callbackForReviewerPaymentLeg2).
  */
@@ -50,6 +50,13 @@ class ReviewerPaymentService
                     return 'The program wallet balance is too low to pay ' . $name . '. Top it up and try again.';
                 }
 
+                // Program deposits land in the program's own LIPR wallet, so that is where the money is sent from
+                // (the platform wallet only if this program has none of its own)
+                $payerWallet = $wallet->lipr_wallet ?: Setting::where('key', 'platform_lipr_wallet')->value('value');
+                if (! $payerWallet) {
+                    return 'This program has no LIPR wallet linked, so nobody can be paid from it yet.';
+                }
+
                 // Hold the money out of the wallet while the transfer is in flight
                 $wallet->balance = (float) $wallet->balance - $amount;
                 $wallet->total_reserved = (float) $wallet->total_reserved + $amount;
@@ -61,7 +68,7 @@ class ReviewerPaymentService
                     'payment_status' => 'leg1_processing',
                 ]);
 
-                $held = ['order' => $order, 'amount' => $amount, 'wallet' => $reviewer->lipr_wallet];
+                $held = ['order' => $order, 'amount' => $amount, 'wallet' => $reviewer->lipr_wallet, 'payer' => $payerWallet];
 
                 return null;
             });
@@ -70,11 +77,10 @@ class ReviewerPaymentService
                 return ['ok' => false, 'message' => $problem];
             }
 
-            $platformWallet = Setting::where('key', 'platform_lipr_wallet')->value('value');
             $transfer = (new LiprW2W())->send(
                 $held['amount'],
                 $held['wallet'],
-                (string) $platformWallet,
+                (string) $held['payer'],
                 null,
                 [
                     'result_url' => rtrim((string) config('app.api_url'), '/') . '/lipr-callback/reviewer-payment-leg2',

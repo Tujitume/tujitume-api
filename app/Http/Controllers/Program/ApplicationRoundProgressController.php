@@ -54,11 +54,18 @@ class ApplicationRoundProgressController extends Controller
                 'application' => [
                     'application_id' => $application->id,
                     'program_title' => $program->program_title,
+                    'grant_title' => $program->program_title,
+                    'total_rounds' => (int) ($program->total_rounds ?: $rounds->count()),
+                    'submitted_at' => $application->created_at,
                     'status' => $application->status,
                     'round_status' => $application->round_status,
                     'knockout_status' => $application->knockout_status,
+                    'average_score' => $application->average_score,
+                    'is_eligible_to_advance' => $application->is_eligible_to_advance,
                     'current_round_number' => $application->currentRound?->round_number,
                 ],
+                // Where the applicant is and what to do next, worked out here so every screen says the same thing
+                'journey' => $this->journey($application, $program, $rounds, $roundsData),
                 'rounds' => $roundsData
             ]);
 
@@ -66,6 +73,105 @@ class ApplicationRoundProgressController extends Controller
             ErrorLogService::report($e);
             return response()->json(['message' => 'Something went wrong'], 500);
         }
+    }
+
+    /**
+     * The applicant's position in plain words: which round they are in, whether it is open, what is left to do and
+     * what happens next. Nothing here is stored; it is read from the round and the application as they are now.
+     */
+    private function journey(ProgramApplication $application, $program, $rounds, $roundsData): ?array
+    {
+        $round = $rounds->firstWhere('id', $application->current_round_id);
+        if (! $round) {
+            return null;
+        }
+
+        $data = collect($roundsData)->firstWhere('round_id', $round->id) ?? [];
+        $total = (int) ($program->total_rounds ?: $rounds->count());
+        $date = fn ($d) => $d?->format('j M Y');
+        $roundLabel = 'Round ' . $round->round_number;
+        $roundRs = (string) $application->round_status;
+
+        // Round 1 is submitted by applying; from round 2 on, "draft" means nothing has been handed in yet
+        $submitted = (int) $round->round_number === 1
+            ? true
+            : in_array($roundRs, ['submitted', 'assigned', 'under_review', 'scored', 'advanced', 'not_selected'], true);
+
+        $notOpen = $round->status === 'draft' || ($round->open_date && $round->open_date->copy()->startOfDay()->isFuture());
+        $closed = in_array($round->status, ['closed', 'in_review', 'finalized'], true)
+            || ($round->close_date && $round->close_date->copy()->endOfDay()->isPast());
+
+        $knockout = $data['questions']['knockout'] ?? [];
+        $regular = $data['questions']['regular'] ?? [];
+        $completion = $data['completion'] ?? [];
+
+        // The steps of this round, each with whether it is done
+        $steps = [];
+        if (count($knockout) > 0) {
+            $answered = collect($knockout)->where('answered', true)->count();
+            $steps[] = ['key' => 'eligibility', 'label' => 'Answer the eligibility questions', 'done' => $answered === count($knockout), 'detail' => "{$answered} of " . count($knockout) . ' answered'];
+        }
+        if (($completion['questions']['required'] ?? 0) > 0) {
+            $steps[] = ['key' => 'questions', 'label' => 'Answer the round questions', 'done' => (bool) ($completion['questions']['all_required_answered'] ?? false),
+                'detail' => ($completion['questions']['answered_required'] ?? 0) . ' of ' . ($completion['questions']['required'] ?? 0) . ' required answered'];
+        }
+        if (($completion['documents']['required'] ?? 0) > 0) {
+            $steps[] = ['key' => 'documents', 'label' => 'Upload the required documents', 'done' => (bool) ($completion['documents']['all_uploaded'] ?? false),
+                'detail' => ($completion['documents']['uploaded'] ?? 0) . ' of ' . ($completion['documents']['required'] ?? 0) . ' uploaded'];
+        }
+        $steps[] = ['key' => 'submit', 'label' => 'Submit the round', 'done' => $submitted, 'detail' => $submitted ? 'Submitted' : 'When everything above is done'];
+
+        $firstOpenStep = collect($steps)->firstWhere('done', false);
+        $allReady = collect($steps)->where('key', '!=', 'submit')->every(fn ($step) => $step['done']);
+
+        // One state, one headline, one sentence
+        if ($application->status === 'awarded') {
+            $state = 'awarded';
+            $headline = 'Congratulations, you were awarded';
+            $message = 'Open your deal room to set up your funding plan.';
+        } elseif ($application->status === 'rejected' || $roundRs === 'not_selected') {
+            $state = 'not_selected';
+            $headline = 'You were not selected to continue';
+            $message = 'Thank you for taking part. You can look at other programs and apply again.';
+        } elseif ($application->knockout_status === 'failed') {
+            $state = 'knockout_failed';
+            $headline = 'An eligibility answer does not qualify';
+            $message = 'One of your eligibility answers does not meet the requirement for this round.';
+        } elseif ($submitted) {
+            $state = 'submitted';
+            $headline = "{$roundLabel} submitted";
+            $message = 'Your answers are with the review team. '
+                . ($round->announcement_date ? 'Results are expected on ' . $date($round->announcement_date) . '.' : 'You will be told the result by email and in the app.');
+        } elseif ($notOpen) {
+            $state = 'not_open';
+            $headline = "{$roundLabel} has not opened yet";
+            $message = ($round->open_date ? 'It opens on ' . $date($round->open_date) . '. ' : 'The organization has not set the date yet. ')
+                . 'You were accepted into this round. You can read what it asks for now, and submit once it opens.';
+        } elseif ($closed) {
+            $state = 'missed';
+            $headline = "{$roundLabel} is closed";
+            $message = 'The deadline has passed, so nothing more can be submitted for this round.';
+        } else {
+            $state = 'in_progress';
+            $headline = "Your turn: complete {$roundLabel}";
+            $message = ($round->close_date ? 'Submit before ' . $date($round->close_date) . '. ' : '')
+                . ($allReady ? 'Everything is filled in, so you can submit.' : 'Work through the steps below.');
+        }
+
+        return [
+            'state' => $state,
+            'round_number' => (int) $round->round_number,
+            'total_rounds' => $total,
+            'round_name' => $round->round_name,
+            'headline' => $headline,
+            'message' => $message,
+            'opens' => $date($round->open_date),
+            'closes' => $date($round->close_date),
+            'results' => $date($round->announcement_date),
+            'can_submit' => ! $submitted && ! $notOpen && ! $closed && $allReady,
+            'next_step' => in_array($state, ['in_progress', 'not_open'], true) ? ($firstOpenStep && $firstOpenStep['key'] !== 'submit' ? $firstOpenStep['label'] : ($state === 'in_progress' ? 'Submit the round' : null)) : null,
+            'steps' => in_array($state, ['in_progress', 'not_open', 'missed'], true) ? $steps : [],
+        ];
     }
 
     /**
