@@ -76,6 +76,9 @@ class ScheduleMeetingController extends Controller
                 ,$linkForOrg,'meeting');
             //Notifications
 
+            // The person invited is also told by email (best effort, never fails the booking)
+            $this->emailMeetingUpdate($meeting, User::find($request->client_id), $host, false);
+
             return response()->json([
                 'message' => 'Meeting created successfully.',
                 'data' => $meeting
@@ -131,6 +134,49 @@ class ScheduleMeetingController extends Controller
             return response()->json([
                 'message' => 'Something went wrong, please try again later.'
             ], 500);
+        }
+    }
+
+    /** "Monday, 12 October 2026 at 12:30" for a meeting, whatever format the date is stored or shown in */
+    private function meetingWhen(Meeting $meeting): string
+    {
+        try {
+            $date = $meeting->getRawOriginal('date') ?? $meeting->date;
+            $time = $meeting->getRawOriginal('time') ?? $meeting->time;
+
+            return Carbon::parse(substr((string) $date, 0, 10) . ' ' . substr((string) $time, 0, 5))->format('l, j F Y \a\t H:i');
+        } catch (\Throwable $e) {
+            return trim($meeting->date . ' ' . $meeting->time);
+        }
+    }
+
+    /** Emails the other person about a new or cancelled meeting. Best effort. */
+    private function emailMeetingUpdate(Meeting $meeting, ?User $recipient, User $actor, bool $cancelled): void
+    {
+        try {
+            if (! $recipient || ! $recipient->email) {
+                return;
+            }
+
+            $actorName = trim($actor->first_name . ' ' . $actor->last_name) ?: 'Someone';
+            $title = $cancelled ? "{$actorName} cancelled your meeting" : "{$actorName} scheduled a meeting with you";
+            $body = $cancelled
+                ? "{$actorName} has cancelled the meeting below."
+                : "{$actorName} scheduled a meeting with you. The details are below.";
+
+            (new \App\Service\Notification\EmailService())->send($title, 'meeting_update', [
+                'title' => $title,
+                'body' => $body,
+                'recipientName' => $recipient->first_name ?: ($recipient->display_name ?: 'there'),
+                'meeting_title' => $meeting->title,
+                'when' => $this->meetingWhen($meeting),
+                'otherName' => $actorName,
+                'description' => $meeting->description,
+                'cancelled' => $cancelled,
+                'joinUrl' => $meeting->link,
+            ], $recipient->email);
+        } catch (\Throwable $e) {
+            ErrorLogService::report($e, ['meeting_id' => $meeting->id]);
         }
     }
 
@@ -206,9 +252,35 @@ class ScheduleMeetingController extends Controller
     {
         try{
             $meeting = Meeting::findOrFail($request->id);
-                $meeting->status = 'cancelled';
-                $meeting->save();
-            return response()->json(['message' => 'Meeting cancelled.'], 200);
+            $me = Auth::user();
+
+            // Only the two people in the meeting can cancel it
+            if ((int) $meeting->host_id !== (int) $me->id && (int) $meeting->client_id !== (int) $me->id) {
+                return response()->json(['message' => 'Only the people in this meeting can cancel it.'], 403);
+            }
+
+            if ($meeting->status === 'cancelled') {
+                return response()->json(['message' => 'This meeting is already cancelled.'], 422);
+            }
+
+            $meeting->status = 'cancelled';
+            $meeting->save();
+
+            // Tell the other person: in the app and by email
+            $otherId = (int) $meeting->host_id === (int) $me->id ? $meeting->client_id : $meeting->host_id;
+            $other = User::find($otherId);
+            if ($other) {
+                $myName = trim($me->first_name . ' ' . $me->last_name);
+                $text = "Meeting cancelled\n{$myName} cancelled \"{$meeting->title}\" on " . $this->meetingWhen($meeting) . '.';
+                try {
+                    $this->notification->create($other->id, $me->id, $text, 'meeting', 'meeting');
+                } catch (\Throwable $e) {
+                    ErrorLogService::report($e, ['meeting_id' => $meeting->id]);
+                }
+                $this->emailMeetingUpdate($meeting, $other, $me, true);
+            }
+
+            return response()->json(['message' => 'Meeting cancelled. ' . ($other ? $other->first_name . ' has been notified by email and in the app.' : '')], 200);
         }
         catch (\Exception $e) {
             ErrorLogService::report($e, [
