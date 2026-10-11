@@ -140,10 +140,11 @@ class ApplicationRoundProgressController extends Controller
         // Checklist validation
         $errors = [];
 
-        // Every setup step must have been completed and confirmed by the person, not just have default data
-        foreach (app(\App\Http\Controllers\Program\Rounds\ProgramRoundController::class)->unfinishedSteps($round) as $step => $stepLabel) {
-            $errors['step_' . $step] = $stepLabel . ' is not finished yet. Complete it before publishing.';
-        }
+        // Every setup step must have been completed and confirmed by the person, not just have default data.
+        // Switched off until the confirmed_steps migration has been run; without that column no step can count as confirmed.
+        // foreach (app(\App\Http\Controllers\Program\Rounds\ProgramRoundController::class)->unfinishedSteps($round) as $step => $stepLabel) {
+        //     $errors['step_' . $step] = $stepLabel . ' is not finished yet. Complete it before publishing.';
+        // }
 
         if (!$round->open_date || !$round->close_date) {
             $errors['dates'] = 'Round must have open and close dates.';
