@@ -209,6 +209,21 @@ class ApplicationRoundProgressController extends Controller
             $round->status = 'published';
             $round->save();
 
+            // Publishing the first round is what opens the program to applicants: it must be listed for them, with its dates
+            // (a duplicated program starts hidden and without dates until this happens)
+            if ((int) $round->round_number === 1) {
+                $program = $round->program;
+                $program->visible = 1;
+                $program->status = 'published';
+                if (! $program->start_date && $round->open_date) {
+                    $program->start_date = $round->open_date->toDateString();
+                }
+                if (! $program->application_deadline && $round->close_date) {
+                    $program->application_deadline = $round->close_date->toDateString();
+                }
+                $program->save();
+            }
+
             return response()->json(['message' => 'Round published successfully.'], 200);
 
         } catch (\Exception $e) {
