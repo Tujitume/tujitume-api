@@ -166,21 +166,33 @@ class ProviderWorkController extends Controller
 
         try {
             $search = trim((string) $request->query('search', ''));
+            $perPage = min(max((int) $request->query('per_page', 10), 1), 50);
+            $page = max((int) $request->query('page', 1), 1);
 
-            $users = User::where('user_type_id', 3)
+            $query = User::where('user_type_id', 3)
                 ->when($search !== '', function ($query) use ($search) {
                     $like = '%' . $search . '%';
+                    // By email, by name or username (first, last, full name, display name) and by city
                     $query->where(function ($q) use ($like) {
-                        $q->where('first_name', 'like', $like)
-                            ->orWhere('last_name', 'like', $like)
+                        $q->where('email', 'like', $like)
                             ->orWhere('display_name', 'like', $like)
-                            ->orWhere('email', 'like', $like)
+                            ->orWhere('first_name', 'like', $like)
+                            ->orWhere('last_name', 'like', $like)
+                            ->orWhereRaw("CONCAT(first_name, ' ', last_name) LIKE ?", [$like])
                             ->orWhere('city', 'like', $like);
                     });
                 })
                 ->orderBy('first_name')
-                ->limit(30)
+                ->orderBy('id');
+
+            // One more than a page, to know whether there is a next page without counting everything
+            $users = (clone $query)
+                ->offset(($page - 1) * $perPage)
+                ->limit($perPage + 1)
                 ->get(['id', 'first_name', 'last_name', 'display_name', 'email', 'phone', 'image', 'city', 'country']);
+
+            $hasMore = $users->count() > $perPage;
+            $users = $users->take($perPage)->values();
 
             $servicesByUser = Services::whereIn('user_id', $users->pluck('id'))
                 ->get(['id', 'user_id', 'name', 'category'])
@@ -198,6 +210,7 @@ class ProviderWorkController extends Controller
                         ->map(fn ($service) => ['id' => $service->id, 'name' => $service->name, 'category' => $service->category])
                         ->values(),
                 ])->values(),
+                'meta' => ['page' => $page, 'per_page' => $perPage, 'has_more' => $hasMore],
             ], 200);
         } catch (\Throwable $e) {
             ErrorLogService::report($e, ['search' => $request->query('search')]);
