@@ -167,6 +167,7 @@ Route::prefix('/programs')->middleware(['program', 'program.response'])->group(f
     Route::post('rounds/{round}/reviewers/accept',   [RoundReviewerController::class, 'accept']);
     Route::post('rounds/{round}/reviewers/decline',  [RoundReviewerController::class, 'decline']);
     Route::post('rounds/{round}/reviewers/{reviewer}/assign-applications', [RoundReviewerController::class, 'assignApplications']);
+    Route::delete('rounds/{round}/applications/{application}/assignment', [RoundReviewerController::class, 'unassignApplication']);
     Route::post('rounds/{round}/applications/{application}/start-review',  [RoundReviewerController::class, 'startReview']);
     Route::get('rounds/{round}/my-applications',     [RoundReviewerController::class, 'myAssignedApplications']);
 

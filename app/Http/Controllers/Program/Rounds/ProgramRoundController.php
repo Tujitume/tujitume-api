@@ -313,9 +313,17 @@ class ProgramRoundController extends Controller
 
         (new ProgramAccess())->authorizeApplication(auth()->user(), $application);
 
+        // Is this application assigned to the signed-in person to review? (a team member or an external reviewer)
+        // The page uses this to show them the scoring, instead of the program owner's view.
+        $myReviewAssignment = \App\Models\Programs\Rounds\ReviewerApplicationAssignment::where('application_id', $application->id)
+            ->where('reviewer_id', auth()->id())
+            ->latest('id')
+            ->first();
+
         return response()->json([
             'application' => [
                 ...$application->toArray(),
+                'my_review_assignment' => $myReviewAssignment,
                 'status' => [
                     'value' => $application->status,
                     'color' => config('status.program_application.' . $application->status, 'gray'),

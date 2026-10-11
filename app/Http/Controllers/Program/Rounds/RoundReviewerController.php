@@ -631,6 +631,79 @@ class RoundReviewerController extends Controller
         }
     }
 
+    // ─── PO takes an application back from its reviewer ──────────
+    // DELETE /programs/rounds/{round}/applications/{application}/assignment
+    public function unassignApplication(ProgramRound $round, ProgramApplication $application)
+    {
+        if (!\App\Service\Program\ProgramAccess::owns($round->program)) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        if ($round->status === 'finalized') {
+            return response()->json(['message' => 'This round is finalized, so assignments can no longer be changed.'], 422);
+        }
+
+        if ((int) $application->current_round_id !== (int) $round->id) {
+            return response()->json(['message' => 'This application is not in this round.'], 422);
+        }
+
+        $assignments = ReviewerApplicationAssignment::where('round_id', $round->id)
+            ->where('application_id', $application->id)
+            ->get();
+
+        if ($assignments->isEmpty()) {
+            return response()->json(['message' => 'This application is not assigned to a reviewer.'], 404);
+        }
+
+        // Once a reviewer has scored it, their work is kept
+        $alreadyScored = \App\Models\Programs\Rounds\ApplicationScore::where('round_id', $round->id)
+            ->where('application_id', $application->id)
+            ->exists();
+
+        if ($alreadyScored || $assignments->contains(fn ($a) => in_array($a->status, ['completed', 'scored'], true))) {
+            return response()->json(['message' => 'A reviewer has already scored this application, so it can no longer be taken back.'], 422);
+        }
+
+        try {
+            $reviewerIds = $assignments->pluck('reviewer_id')->unique();
+
+            DB::transaction(function () use ($round, $application, $assignments) {
+                $assignments->each->delete();
+
+                // Back to waiting for an assignment (nobody else holds it any more)
+                if (in_array($application->round_status, ['assigned', 'under_review'], true)) {
+                    $application->round_status = 'submitted';
+                }
+                $application->assigned_reviewer_id = null;
+                $application->save();
+
+                // The reviewer's fee follows the applications they still hold
+                ReviewerOrder::where('round_id', $round->id)->where('order_type', 'round_review')
+                    ->get()->each->refreshRoundReviewFee();
+            });
+
+            $program = $round->program;
+            foreach (User::whereIn('id', $reviewerIds)->get() as $reviewer) {
+                try {
+                    (new \App\Service\Notification\NotificationService())->create(
+                        $reviewer->id,
+                        auth()->id() ?? $reviewer->id,
+                        "Application taken back\nAn application in {$round->round_name} of {$program->program_title} was taken off your list. Open Applications to see what is left.",
+                        '',
+                        'program'
+                    );
+                } catch (\Throwable $e) {
+                    ErrorLogService::report($e, ['reviewer_id' => $reviewer->id]);
+                }
+            }
+
+            return response()->json(['message' => 'The application is no longer assigned to a reviewer.'], 200);
+        } catch (\Exception $e) {
+            ErrorLogService::report($e, ['round_id' => $round->id, 'application_id' => $application->id]);
+            return response()->json(['message' => 'Something went wrong, please try again later.'], 500);
+        }
+    }
+
     // ─── Reviewer starts reviewing an application ─────────────────
     // POST /programs/rounds/{round}/applications/{application}/start-review
     public function startReview(ProgramRound $round, ProgramApplication $application)
