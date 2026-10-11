@@ -56,6 +56,8 @@ Route::prefix('/programs')->middleware(['program', 'program.response'])->group(f
 
     Route::post('create-program', [ProgramController::class, 'store']);
     Route::post('programs/{program}', [ProgramController::class, 'update']);
+    // The app calls POST /programs/{id}/duplicate. The older doubled path stays so nothing that used it breaks.
+    Route::post('{program}/duplicate', [ProgramController::class, 'duplicate'])->whereNumber('program');
     Route::post('/programs/{program}/duplicate', [ProgramController::class, 'duplicate']);
 
     // for SME

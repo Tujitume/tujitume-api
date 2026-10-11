@@ -331,11 +331,15 @@ class ProgramController extends Controller
             // 6. Duplicate rounds + questions
             foreach ($program->rounds as $round) {
 
-                $newRound = $round->replicate([
-                    'program_id', 'open_date', 'close_date', 'created_at', 'updated_at'
-                ]);
+                // A copy starts fresh: every round is a draft and none of its setup steps count as confirmed
+                $excluded = ['program_id', 'open_date', 'close_date', 'status', 'created_at', 'updated_at'];
+                if (\Illuminate\Support\Facades\Schema::hasColumn('program_rounds', 'confirmed_steps')) {
+                    $excluded[] = 'confirmed_steps';
+                }
+                $newRound = $round->replicate($excluded);
 
                 $newRound->program_id = $newProgram->id;
+                $newRound->status = 'draft';
                 $newRound->open_date = null;
                 $newRound->close_date = null;
                 $newRound->push();
