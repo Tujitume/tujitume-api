@@ -548,8 +548,8 @@ class ProgramController extends Controller
                 DB::rollBack();
                 return response()->json([
                     'message' => $applicationCount === 1
-                        ? 'This program cannot be deleted because 1 business has applied to it. Close the program instead to stop new applications.'
-                        : "This program cannot be deleted because {$applicationCount} businesses have applied to it. Close the program instead to stop new applications.",
+                        ? 'This program cannot be deleted because 1 applicant has applied to it. Close the program instead to stop new applications.'
+                        : "This program cannot be deleted because {$applicationCount} applicants have applied to it. Close the program instead to stop new applications.",
                 ], 422);
             }
 
