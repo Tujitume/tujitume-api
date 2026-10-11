@@ -1105,14 +1105,25 @@ class ProgramRoundController extends Controller
         }
 
         $apps = ProgramApplication::where('current_round_id', $round->id)->get();
-        $person = fn ($a) => ['id' => $a->id, 'name' => $a->startup_name, 'score' => $a->average_score !== null ? round((float) $a->average_score, 1) : null];
+        // The score shown is this round's: once someone moves on, their running average is cleared for the next round
+        $person = function ($a) {
+            $score = $a->round_score ?? $a->average_score;
+            return ['id' => $a->id, 'name' => $a->startup_name, 'score' => $score !== null ? round((float) $score, 1) : null];
+        };
 
         $advanced = []; $notSelected = []; $undecided = []; $tie = null;
 
         if ($manual) {
             $undecided = $apps->whereIn('round_status', ['submitted', 'assigned', 'under_review', 'scored', 'draft'])->values()->all();
-            $advanced = $apps->where('round_status', 'advanced')->values()->all();
-            $notSelected = $apps->where('round_status', 'not_selected')->values()->all();
+
+            // Accepting an applicant moves them to the next round straight away, so who was accepted or rejected is
+            // read from this round's own record, not from where the applicants are now
+            $history = ApplicationRoundHistory::where('round_id', $round->id)->get()->keyBy('application_id');
+            $decided = ProgramApplication::whereIn('id', $history->filter(fn ($h) => in_array($h->outcome, ['advanced', 'awarded', 'not_selected'], true))->keys())->get()
+                ->each(fn ($a) => $a->round_score = $history[$a->id]->average_score);
+
+            $advanced = $decided->filter(fn ($a) => in_array($history[$a->id]->outcome, ['advanced', 'awarded'], true))->values()->all();
+            $notSelected = $decided->filter(fn ($a) => $history[$a->id]->outcome === 'not_selected')->values()->all();
 
             if ($undecided) {
                 $count = count($undecided);
@@ -1141,8 +1152,54 @@ class ProgramRoundController extends Controller
             }
         }
 
+        $currency = $round->program->currency ?: config('app.currency', 'KES');
+        $orders = ReviewerOrder::with(['reviewer:id,first_name,last_name', 'roundReviewer'])
+            ->withCount('applicationAssignments')
+            ->where('round_id', $round->id)
+            ->where('order_type', 'round_review')
+            ->where('acceptance_status', 'accepted')
+            ->get();
+
+        $reviewerPay = $orders->map(function ($order) use ($round) {
+            $assignment = $order->roundReviewer;
+            $feeType = $assignment?->fee_type ?? $order->fee_type ?? 'per_application';
+            $assigned = (int) $order->application_assignments_count;
+            $scored = \App\Models\Programs\Rounds\ApplicationScore::where('round_id', $round->id)->where('reviewer_id', $order->reviewer_id)->count();
+            $amount = (float) $order->fee_usd;
+
+            if ($order->payment_status === 'completed') {
+                $state = 'paid';
+            } elseif ($amount <= 0) {
+                $state = 'no_fee';
+            } elseif (in_array($order->work_status, ['delivered', 'approved'], true)) {
+                $state = 'ready';
+            } else {
+                $state = 'waiting';
+            }
+
+            return [
+                'name' => trim(($order->reviewer?->first_name ?? '') . ' ' . ($order->reviewer?->last_name ?? '')),
+                'fee_type' => $feeType,
+                'rate' => (float) ($assignment?->reviewer_fee ?? 0),
+                'assigned' => $assigned,
+                'scored' => $scored,
+                'amount' => $amount,
+                'state' => $state,
+            ];
+        })->values();
+
+        $payNow = (float) $reviewerPay->where('state', 'ready')->sum('amount');
+        $walletBalance = (float) ($round->program->wallet?->balance ?? 0);
+
         return response()->json([
             'data' => [
+                'reviewer_pay' => [
+                    'currency' => $currency,
+                    'reviewers' => $reviewerPay,
+                    'pay_now' => $payNow,
+                    'wallet_balance' => $walletBalance,
+                    'shortfall' => max(0, $payNow - $walletBalance),
+                ],
                 'mode' => $round->advancement_mode ?? 'manual',
                 'rubric_mode' => $round->rubric_mode,
                 'rule' => $this->ruleText($round, $isFinal),
