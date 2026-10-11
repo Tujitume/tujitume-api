@@ -941,22 +941,50 @@ class ProgramRoundController extends Controller
         }
     }
 
+    /** Has this reviewer scored every application assigned to them in the round? */
+    private function reviewerFinishedScoring(ProgramRound $round, $reviewerId): bool
+    {
+        $assigned = \App\Models\Programs\Rounds\ReviewerApplicationAssignment::where('round_id', $round->id)
+            ->where('reviewer_id', $reviewerId)->count();
+
+        if ($assigned === 0) {
+            return false;
+        }
+
+        $scored = \App\Models\Programs\Rounds\ApplicationScore::where('round_id', $round->id)
+            ->where('reviewer_id', $reviewerId)->distinct('application_id')->count('application_id');
+
+        return $scored >= $assigned;
+    }
+
     /**
      * Finalizing a round is what starts reviewer payments: each reviewer who finished their work has their fee
      * marked pending (the owner is then prompted to pay it) and is told it is on the way.
+     * A reviewer who scored everything assigned to them counts as finished even if their order was never marked
+     * delivered. Safe to run again: only fees not yet started are touched.
+     * @return int how many payments were started
      */
-    private function startReviewerPayments(ProgramRound $round): void
+    private function startReviewerPayments(ProgramRound $round): int
     {
-        $reviewerOrders = ReviewerOrder::where('round_id', $round->id)
+        $started = 0;
+
+        $orders = ReviewerOrder::where('round_id', $round->id)
             ->where('order_type', 'round_review')
-            ->whereIn('work_status', ['delivered', 'approved'])
             ->where('payment_status', 'unpaid')
             ->where('fee_usd', '>', 0)
             ->get();
 
-        foreach ($reviewerOrders as $reviewerOrder) {
+        foreach ($orders as $reviewerOrder) {
+            if (! in_array($reviewerOrder->work_status, ['delivered', 'approved'], true)) {
+                if (! $this->reviewerFinishedScoring($round, $reviewerOrder->reviewer_id)) {
+                    continue;
+                }
+                $reviewerOrder->update(['work_status' => 'delivered', 'delivered_at' => now()]);
+            }
+
             // Mark as pending: the program owner is prompted to pay via the frontend
             $reviewerOrder->update(['payment_status' => 'pending']);
+            $started++;
 
             $this->programNotification->send('reviewer.payment_initiated', [
                 $reviewerOrder->reviewer,
@@ -967,6 +995,33 @@ class ProgramRoundController extends Controller
                 'order_id'      => $reviewerOrder->id,
             ]);
         }
+
+        return $started;
+    }
+
+    /**
+     * Start the reviewer payments of a round that is already finalized (for example one finalized before payments
+     * were started automatically). Only fees not yet started are touched.
+     * POST /api/v1/program/rounds/{round}/reviewer-payments
+     */
+    public function startPayments(ProgramRound $round)
+    {
+        if (!\App\Service\Program\ProgramAccess::owns($round->program)) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        if ($round->status !== 'finalized') {
+            return response()->json(['message' => 'Finalize the round first. Reviewer payments start when it is finalized.'], 422);
+        }
+
+        $started = $this->startReviewerPayments($round);
+
+        return response()->json([
+            'message' => $started === 0
+                ? 'Nothing to start: every reviewer who finished is already being paid, and the others have not finished scoring.'
+                : ($started === 1 ? '1 reviewer payment started. The reviewer has been told.' : "{$started} reviewer payments started. The reviewers have been told."),
+            'started' => $started,
+        ]);
     }
 
     // ─── Finalizing: the rule, ties and a preview ────────────────────────────────
@@ -1171,7 +1226,7 @@ class ProgramRoundController extends Controller
                 $state = 'paid';
             } elseif ($amount <= 0) {
                 $state = 'no_fee';
-            } elseif (in_array($order->work_status, ['delivered', 'approved'], true)) {
+            } elseif (in_array($order->work_status, ['delivered', 'approved'], true) || $this->reviewerFinishedScoring($round, $order->reviewer_id)) {
                 $state = 'ready';
             } else {
                 $state = 'waiting';
