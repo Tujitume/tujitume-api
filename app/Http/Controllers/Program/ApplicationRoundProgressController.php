@@ -131,12 +131,19 @@ class ApplicationRoundProgressController extends Controller
 
         if ($round->status !== 'draft') {
             return response()->json([
-                'message' => 'Only draft rounds can be published. Current status: ' . $round->status
+                'message' => $round->status === 'published'
+                    ? 'This round is already published.'
+                    : 'This round can no longer be published because it is ' . str_replace('_', ' ', $round->status) . '.'
             ], 422);
         }
 
         // Checklist validation
         $errors = [];
+
+        // Every setup step must have been completed and confirmed by the person, not just have default data
+        foreach (app(\App\Http\Controllers\Program\Rounds\ProgramRoundController::class)->unfinishedSteps($round) as $step => $stepLabel) {
+            $errors['step_' . $step] = $stepLabel . ' is not finished yet. Complete it before publishing.';
+        }
 
         if (!$round->open_date || !$round->close_date) {
             $errors['dates'] = 'Round must have open and close dates.';

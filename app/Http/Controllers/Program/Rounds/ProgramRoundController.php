@@ -116,6 +116,21 @@ class ProgramRoundController extends Controller
      * program, so its dates and questions exist before anyone has opened the wizard.
      * A round that is already live counts every step as done.
      */
+    /** Wizard steps (before publish) that are not done yet, as step => label, for the publish check. */
+    public function unfinishedSteps(ProgramRound $round): array
+    {
+        $labels = [
+            'setup' => 'Round setup (dates and scoring)',
+            'questions' => 'Application questions',
+            'reviewers' => 'Reviewers',
+            'notifications' => 'Notification emails',
+        ];
+
+        $steps = $this->configurationProgress($round)['steps'];
+
+        return collect($labels)->filter(fn ($label, $step) => empty($steps[$step]))->all();
+    }
+
     private function configurationProgress(ProgramRound $round, bool $requireConfirmation = true): array
     {
         $isLive = $round->status !== 'draft';
@@ -482,9 +497,9 @@ class ProgramRoundController extends Controller
                 'score_threshold' => 'nullable|numeric|min:0|max:100',
                 'max_advancing' => 'nullable|integer|min:1',
                 'tie_breaker_rule' => 'nullable|in:allow_over_cap,secondary_metric,manual',
-                'status' => 'sometimes|in:draft,published,closed,in_review,finalized',
             ]);
 
+            // The status is never set from here: publishing and finalizing have their own endpoints with their own checks
             $round->update($validated);
 
             // Q insert — clear existing first to prevent duplicates
@@ -608,6 +623,12 @@ class ProgramRoundController extends Controller
 
         if ($round->status === 'finalized') {
             return response()->json(['error' => 'Round already finalized'], 422);
+        }
+
+        // A round that was never published has nothing to finalize; publish it first
+        if ($round->status === 'draft') {
+            $message = 'This round is still a draft. Finish setting it up and publish it before it can be finalized.';
+            return response()->json(['message' => $message, 'error' => $message], 422);
         }
 
         $unscoredCount = ProgramApplication::where('current_round_id', $round->id)
