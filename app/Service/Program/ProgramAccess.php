@@ -8,6 +8,7 @@ use App\Models\Programs\Program;
 use App\Models\Programs\ProgramMilestone;
 use App\Models\Programs\ProgramApplication;
 use App\Models\Programs\Rounds\ProgramRound;
+use App\Models\Programs\Rounds\ReviewerApplicationAssignment;
 use App\Models\Programs\Rounds\RoundReviewer;
 use Illuminate\Auth\Access\AuthorizationException;
 
@@ -76,6 +77,10 @@ class ProgramAccess
     {
         if (!$user) return false;
         if ($application->assigned_reviewer_id && (int) $application->assigned_reviewer_id === (int) $user->id) return true;
+
+        if (ReviewerApplicationAssignment::where('application_id', $application->id)->where('reviewer_id', $user->id)->exists()) {
+            return true;
+        }
 
         return RoundReviewer::where('user_id', $user->id)
             ->whereIn('round_id', ProgramRound::where('program_id', $application->program_id)->select('id'))

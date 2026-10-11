@@ -11,6 +11,7 @@ use App\Models\Programs\ProgramMilestone;
 use App\Models\Programs\ProgramWatchlist;
 use App\Models\Programs\Rounds\ApplicationRoundResponse;
 use App\Models\Programs\Rounds\ProgramRound;
+use App\Models\Programs\Rounds\ReviewerApplicationAssignment;
 use App\Models\Programs\Rounds\RoundCustomQuestion;
 use App\Models\Programs\Rounds\RoundRequiredDocument;
 use App\Service\Program\ProgramAccess;
@@ -73,10 +74,15 @@ class ProgramApplicationController extends Controller
             if ($pitch->current_round_id) {
                 $roundData = $roundService->buildRoundData($pitch->currentRound, $pitch);
             }
+            $myReviewAssignment = ReviewerApplicationAssignment::where('application_id', $pitch->id)
+                ->where('reviewer_id', Auth::id())
+                ->latest('id')
+                ->first();
 
             return response()->json([
                 'pitch' => [
                     ...$pitch->toArray(),
+                    'my_review_assignment' => $myReviewAssignment,
                     'status' => [
                         'value' => $pitch->status,
                         'color' => config('status.program_application.' . $pitch->status, 'gray'),

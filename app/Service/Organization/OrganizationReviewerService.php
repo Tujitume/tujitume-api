@@ -60,7 +60,7 @@ class OrganizationReviewerService
             ->where('organization_id', $organization->id)
             // Deactivated reviewers stay in the list (marked inactive) so they can be activated again
             ->whereIn('status', ['active', 'revoked'])
-            ->whereHas('role', fn ($query) => $query->where('name', 'internal_reviewer'))
+            ->whereHas('role', fn ($query) => $query->whereIn('name', ['super_admin', 'super-admin', 'editor', 'viewer']))
             ->whereHas('user', fn ($query) => $query->where('user_type_id', 4))
             ->with([
                 'role:id,name,access_types',
