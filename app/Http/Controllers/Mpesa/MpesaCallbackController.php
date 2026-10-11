@@ -471,6 +471,13 @@ class MpesaCallbackController extends Controller
                         'work_status'    => 'approved',
                         'approved_at'    => now(),
                     ]);
+
+                    // The held money is spent; the reviewer's balance and both transaction histories follow
+                    (new \App\Service\Program\ReviewerPaymentService())->settle($order);
+                    $this->balance->updateBalance($order->reviewer_id, (float) $order->fee_usd, 'lipr');
+                    $ledger = new \App\Service\Misc\TransactionRecord();
+                    $ledger->create($order->program->user_id, 'reviewer_payment_sent', 'lipr', (float) $order->fee_usd, $referenceId, $order->reviewer_id);
+                    $ledger->create($order->reviewer_id, 'reviewer_payment_received', 'lipr', (float) $order->fee_usd, $referenceId, $order->program->user_id);
                 });
 
                 // Notify reviewer that payment landed
@@ -484,8 +491,8 @@ class MpesaCallbackController extends Controller
                 ]);
 
             } else {
-                // W2W failed — revert to failed
-                $order->update(['payment_status' => 'failed']);
+                // W2W failed: the money held for it goes back to the program wallet, and the payment can be retried
+                (new \App\Service\Program\ReviewerPaymentService())->release($order->id, null, 'failed');
 
                 $this->programNotification->send('reviewer.payment_failed', [
                     $order->program->owner

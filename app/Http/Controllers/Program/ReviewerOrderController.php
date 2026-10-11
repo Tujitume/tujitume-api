@@ -220,7 +220,10 @@ class ReviewerOrderController extends Controller
         }
 
         try {
-            $transfer = $this->initiateReviewerPayment($order);
+            $payment = (new \App\Service\Program\ReviewerPaymentService())->pay($order);
+            if (! $payment['ok']) {
+                return response()->json(['message' => $payment['message']], 422);
+            }
 
             if ($order->order_type === 'round_review') {
                 $order->applicationAssignments()
@@ -250,12 +253,7 @@ class ReviewerOrderController extends Controller
             //     'order_id' => $order->id,
             // ]);
 
-            $this->programNotification->send('reviewer.payment_completed', [$reviewer], [
-                'program_title' => $program->program_title,
-                'amount' => $order->fee_usd,
-                'currency' => $order->currency ?: config('app.currency', 'KES'),
-                'order_id' => $order->id,
-            ]);
+            // "Payment received" is sent when LIPR confirms the transfer landed (see the reviewer payment callback)
 
             $round = $order->round;
             if (
@@ -275,9 +273,8 @@ class ReviewerOrderController extends Controller
             }
 
             return response()->json([
-                'message' => 'Work approved and payment transferred to reviewer.',
+                'message' => 'Work approved and payment sent over LIPR. The reviewer is told when it lands.',
                 'data' => $order->fresh(),
-                'transfer_id' => $transfer->id,
             ], 200);
         } catch (ValidationException $e) {
             return response()->json(['message' => 'Already paid'], 422);

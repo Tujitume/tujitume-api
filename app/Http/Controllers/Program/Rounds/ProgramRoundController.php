@@ -264,7 +264,7 @@ class ProgramRoundController extends Controller
             'reviewer_payments_to_start' => $round->status === 'finalized'
                 ? ReviewerOrder::where('round_id', $round->id)
                     ->where('order_type', 'round_review')
-                    ->where('payment_status', 'unpaid')
+                    ->whereIn('payment_status', ['unpaid', 'pending', 'failed'])
                     ->where('fee_usd', '>', 0)
                     ->get()
                     ->filter(fn ($o) => in_array($o->work_status, ['delivered', 'approved'], true) || $this->reviewerFinishedScoring($round, $o->reviewer_id))
@@ -751,11 +751,11 @@ class ProgramRoundController extends Controller
             }
 
             // Applicants were told one by one when they were accepted or rejected, so only the reviewers are paid here
-            $this->startReviewerPayments($round);
+            $payments = $this->startReviewerPayments($round);
 
             return response()->json([
                 'message' => 'Round finalized successfully',
-                'data' => ['advanced' => $advancedCount, 'not_selected' => 0],
+                'data' => ['advanced' => $advancedCount, 'not_selected' => 0, 'payments' => $payments],
             ]);
         }
 
@@ -927,8 +927,8 @@ class ProgramRoundController extends Controller
 
             DB::commit();
 
-            // ─── Trigger payment to all reviewers ──────────────────────────────
-            $this->startReviewerPayments($round);
+            // ─── Pay the reviewers ─────────────────────────────────────────────
+            $payments = $this->startReviewerPayments($round);
 
             // notify
             $roundFinalize = new RoundFinalizationService();
@@ -941,6 +941,7 @@ class ProgramRoundController extends Controller
                 'data' => [
                     'advanced' => count($advanced),
                     'not_selected' => count($notSelected),
+                    'payments' => $payments,
                 ],
             ]);
 
@@ -968,19 +969,22 @@ class ProgramRoundController extends Controller
     }
 
     /**
-     * Finalizing a round is what starts reviewer payments: each reviewer who finished their work has their fee
-     * marked pending (the owner is then prompted to pay it) and is told it is on the way.
-     * A reviewer who scored everything assigned to them counts as finished even if their order was never marked
-     * delivered. Safe to run again: only fees not yet started are touched.
-     * @return int how many payments were started
+     * Finalizing a round pays its reviewers. Each reviewer who finished their work has their fee marked started (and is
+     * told), then it is sent from the program wallet over LIPR. A reviewer who scored everything assigned to them counts
+     * as finished even if their order was never marked delivered.
+     * Safe to run again: it only touches fees that are not paid or already on their way. A reviewer who cannot be paid
+     * yet (no LIPR wallet, wallet too low) stays "started" and is listed in the result so the owner knows why.
+     * @return array{started: int, sent: int, problems: array<int, string>}
      */
-    private function startReviewerPayments(ProgramRound $round): int
+    private function startReviewerPayments(ProgramRound $round): array
     {
-        $started = 0;
+        $result = ['started' => 0, 'sent' => 0, 'problems' => []];
+        $payer = new \App\Service\Program\ReviewerPaymentService();
 
-        $orders = ReviewerOrder::where('round_id', $round->id)
+        $orders = ReviewerOrder::with('reviewer')
+            ->where('round_id', $round->id)
             ->where('order_type', 'round_review')
-            ->where('payment_status', 'unpaid')
+            ->whereIn('payment_status', ['unpaid', 'pending', 'failed'])
             ->where('fee_usd', '>', 0)
             ->get();
 
@@ -992,21 +996,31 @@ class ProgramRoundController extends Controller
                 $reviewerOrder->update(['work_status' => 'delivered', 'delivered_at' => now()]);
             }
 
-            // Mark as pending: the program owner is prompted to pay via the frontend
-            $reviewerOrder->update(['payment_status' => 'pending']);
-            $started++;
+            // First time: mark it started and tell the reviewer
+            if ($reviewerOrder->payment_status === 'unpaid') {
+                $reviewerOrder->update(['payment_status' => 'pending']);
+                $result['started']++;
 
-            $this->programNotification->send('reviewer.payment_initiated', [
-                $reviewerOrder->reviewer,
-            ], [
-                'program_title' => $round->program->program_title,
-                'round_name'    => $round->round_name,
-                'fee'           => $reviewerOrder->fee_usd,
-                'order_id'      => $reviewerOrder->id,
-            ]);
+                $this->programNotification->send('reviewer.payment_initiated', [
+                    $reviewerOrder->reviewer,
+                ], [
+                    'program_title' => $round->program->program_title,
+                    'round_name'    => $round->round_name,
+                    'fee'           => $reviewerOrder->fee_usd,
+                    'order_id'      => $reviewerOrder->id,
+                ]);
+            }
+
+            // Then send the money
+            $payment = $payer->pay($reviewerOrder);
+            if ($payment['ok']) {
+                $result['sent']++;
+            } else {
+                $result['problems'][] = $payment['message'];
+            }
         }
 
-        return $started;
+        return $result;
     }
 
     /**
@@ -1024,14 +1038,18 @@ class ProgramRoundController extends Controller
             return response()->json(['message' => 'Finalize the round first. Reviewer payments start when it is finalized.'], 422);
         }
 
-        $started = $this->startReviewerPayments($round);
+        $result = $this->startReviewerPayments($round);
 
-        return response()->json([
-            'message' => $started === 0
-                ? 'Nothing to start: every reviewer who finished is already being paid, and the others have not finished scoring.'
-                : ($started === 1 ? '1 reviewer payment started. The reviewer has been told.' : "{$started} reviewer payments started. The reviewers have been told."),
-            'started' => $started,
-        ]);
+        if ($result['sent'] === 0 && empty($result['problems'])) {
+            $message = 'Nothing to pay: every reviewer who finished is already paid or being paid, and the others have not finished scoring.';
+        } else {
+            $message = ($result['sent'] > 0
+                ? ($result['sent'] === 1 ? '1 reviewer payment was sent over LIPR.' : "{$result['sent']} reviewer payments were sent over LIPR.")
+                : 'No payment could be sent.')
+                . (empty($result['problems']) ? '' : ' ' . implode(' ', $result['problems']));
+        }
+
+        return response()->json(['message' => $message, 'started' => $result['sent'], 'result' => $result]);
     }
 
     // ─── Finalizing: the rule, ties and a preview ────────────────────────────────
@@ -1218,7 +1236,7 @@ class ProgramRoundController extends Controller
         }
 
         $currency = $round->program->currency ?: config('app.currency', 'KES');
-        $orders = ReviewerOrder::with(['reviewer:id,first_name,last_name', 'roundReviewer'])
+        $orders = ReviewerOrder::with(['reviewer:id,first_name,last_name,lipr_wallet', 'roundReviewer'])
             ->withCount('applicationAssignments')
             ->where('round_id', $round->id)
             ->where('order_type', 'round_review')
@@ -1250,6 +1268,8 @@ class ProgramRoundController extends Controller
                 'scored' => $scored,
                 'amount' => $amount,
                 'state' => $state,
+                // Reviewers are paid into their own LIPR wallet, so one without it cannot be paid
+                'has_wallet' => filled($order->reviewer?->lipr_wallet),
             ];
         })->values();
 
@@ -1306,10 +1326,18 @@ class ProgramRoundController extends Controller
             ], 422);
         }
 
-        if (!in_array($application->round_status, ['draft','submitted', 'under_review', 'scored'])) {
-            return response()->json([
-                'error' => 'Application is not in a advanceable state. Current status: ' . $application->round_status
-            ], 422);
+        // From round 2 on, "draft" means the applicant has not submitted what the round asks for. In round 1 it is just
+        // the status an application starts with, so it is allowed there.
+        if ($application->round_status === 'draft' && (int) $round->round_number > 1) {
+            $message = 'This applicant has not submitted what ' . $round->round_name . ' requires yet, so they cannot be advanced. '
+                . 'Wait for their submission, or reject them if they will not submit.';
+            return response()->json(['message' => $message, 'error' => $message], 422);
+        }
+
+        $advanceable = ['draft', 'submitted', 'assigned', 'under_review', 'scored'];
+        if (!in_array($application->round_status, $advanceable, true)) {
+            $message = 'This application can no longer be advanced from this round. Its status is: ' . str_replace('_', ' ', (string) $application->round_status) . '.';
+            return response()->json(['message' => $message, 'error' => $message], 422);
         }
 
         DB::beginTransaction();
@@ -1445,10 +1473,9 @@ class ProgramRoundController extends Controller
             ], 422);
         }
 
-        if (!in_array($application->round_status, ['submitted', 'under_review', 'scored', 'draft'])) {
-            return response()->json([
-                'error' => 'Application is not in a rejectable state. Current status: ' . $application->round_status
-            ], 422);
+        if (!in_array($application->round_status, ['submitted', 'assigned', 'under_review', 'scored', 'draft'], true)) {
+            $message = 'This application can no longer be rejected in this round. Its status is: ' . str_replace('_', ' ', (string) $application->round_status) . '.';
+            return response()->json(['message' => $message, 'error' => $message], 422);
         }
 
         DB::beginTransaction();

@@ -5,7 +5,12 @@ use App\Models\Programs\Disbursement;
 
 class LiprW2W
 {
-    public function send($amount, string $receiver_wallet, string $payer_wallet, $milestone)
+    /**
+     * @param object|null $milestone the milestone this pays (supplier / applicant payouts); null for other payments
+     * @param array $options result_url, listing_id (what LIPR echoes back to the callback) and narration, for payments
+     *                       that are not milestone payouts, such as a reviewer's fee
+     */
+    public function send($amount, string $receiver_wallet, string $payer_wallet, $milestone = null, array $options = [])
     {
         if($amount <= 0) {
             return [
@@ -28,7 +33,8 @@ class LiprW2W
             ];
         }
 
-        $disbursement = Disbursement::create([
+        // A milestone payout is recorded as a disbursement; other payments (a reviewer's fee) are tracked on their own order
+        $disbursement = $milestone ? Disbursement::create([
             'amount' => $milestone->amount,
             'milestone_id' => $milestone->id,
             'recipient_type' => 'business_owner',
@@ -36,7 +42,7 @@ class LiprW2W
             'currency' => 'KES',
             'status' => 'pending',
             'authorized_by' => $milestone->application->program_owner_id,
-        ]);
+        ]) : null;
 
         $liprAuth = new LiprAuthService();
         $token = $liprAuth->authorize();
@@ -47,14 +53,14 @@ class LiprW2W
 
         $fields = [
             "requestId" => 'stk-' . now()->format('YmdHis') . '-' . uniqid(),
-            "resultUrl" => rtrim(config('app.api_url'), '/') . '/lipr-callback-program-supplier',
+            "resultUrl" => $options['result_url'] ?? (rtrim(config('app.api_url'), '/') . '/lipr-callback-program-supplier'),
             "timeoutUrl" => rtrim(config('app.api_url'), '/') . '/lipr-callback/timeout',
-            "metadata" => [ "listingId" => $milestone->id ],
+            "metadata" => [ "listingId" => $options['listing_id'] ?? $milestone?->id ],
 
             "fromWallet" => $payer_wallet,
             "toWallet" => $receiver_wallet,
             "amount" => $amount,
-            "narration" => 'Mobile Money Transfer',
+            "narration" => $options['narration'] ?? 'Mobile Money Transfer',
         ];
 
         $fields_string = json_encode($fields);
@@ -91,6 +97,7 @@ class LiprW2W
             'success' => true,
             'response' => $result,
             'disbursement' => $disbursement,
+            'reference' => $result['data']['referenceId'] ?? $result['referenceId'] ?? $fields['requestId'],
             'message' => $result['message'] ?? $result
         ];
 
