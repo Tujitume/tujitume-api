@@ -265,14 +265,33 @@ class ProgramRoundController extends Controller
             //'reviewed_by'         => $round->reviewers,
         ];
 
-        $mapped = $applications->map(function ($app) use ($round_id) {
+        $scoresByApplication = \App\Models\Programs\Rounds\ApplicationScore::where('round_id', $round_id)
+            ->whereIn('application_id', $applications->pluck('id'))
+            ->get()
+            ->groupBy('application_id');
+
+        $mapped = $applications->map(function ($app) use ($round_id, $round, $scoresByApplication) {
             // Get this app's outcome in this specific round from history
             $roundHistory = ApplicationRoundHistory::where('application_id', $app->id)
                 ->where('round_id', $round_id)
                 ->first();
 
+            $roundScores = $scoresByApplication->get($app->id, collect());
+            $criteriaCount = is_array($round->scoring_criteria) ? count($round->scoring_criteria) : 0;
+            $average = $roundScores->isNotEmpty() ? round((float) $roundScores->avg('total_score'), 1) : null;
+
             return [
                 ...$app->toArray(),
+                // What the reviewers said, ready to show in the table (sortable, and good for deciding a manual round)
+                'review_summary' => [
+                    'reviewers_scored' => $roundScores->count(),
+                    'average_score' => $average,
+                    'rubric_mode' => $round->rubric_mode,
+                    'criteria_count' => $criteriaCount,
+                    'passed' => ($round->rubric_mode === 'pass_fail' && $average !== null && $criteriaCount > 0)
+                        ? (int) round(($average / 100) * $criteriaCount)
+                        : null,
+                ],
                 'round_outcome' => $roundHistory?->outcome,      // ← what happened in THIS round
                 'round_score'   => $roundHistory?->average_score, // ← score in THIS round
                 'status' => [
@@ -667,6 +686,35 @@ class ProgramRoundController extends Controller
             return response()->json(['message' => $message, 'error' => $message], 422);
         }
 
+        // A manual round has no scores to total up: the owner accepts or rejects each application, and the round is
+        // finalized once every one has a decision.
+        if (($round->advancement_mode ?? 'manual') === 'manual') {
+            $undecided = ProgramApplication::where('current_round_id', $round->id)
+                ->whereIn('round_status', ['submitted', 'assigned', 'under_review', 'scored', 'draft'])
+                ->count();
+
+            if ($undecided > 0) {
+                $message = $undecided === 1
+                    ? '1 application still needs a decision. Accept or reject it before finalizing this round.'
+                    : "{$undecided} applications still need a decision. Accept or reject each one before finalizing this round.";
+
+                return response()->json(['message' => $message, 'error' => $message, 'undecided_applications' => $undecided], 422);
+            }
+
+            if (!$this->isFinalRound($round) && !$this->nextRoundExists($round)) {
+                $message = 'Create round ' . ($round->round_number + 1) . ' before finalizing this round, so the applicants who advance have somewhere to go.';
+                return response()->json(['message' => $message, 'error' => $message], 422);
+            }
+
+            $round->status = 'finalized';
+            $round->save();
+
+            return response()->json([
+                'message' => 'Round finalized successfully',
+                'data' => ['advanced' => 0, 'not_selected' => 0],
+            ]);
+        }
+
         $unscoredCount = ProgramApplication::where('current_round_id', $round->id)
             ->where(function ($query) {
                 $query->whereNull('round_status')->orWhere('round_status', '!=', 'scored');
@@ -714,33 +762,18 @@ class ProgramRoundController extends Controller
                 ], 422);
             }
 
-            if ($round->advancement_mode === 'score_threshold') {
-                // Score-based advancement
-                foreach ($applications as $app) {
-                    $eligible = $app->average_score >= $round->score_threshold && $app->is_eligible_to_advance;
+            // Apply the round's rule (score threshold or top N). A tie at the cut-off follows the round's tie-breaker;
+            // when the owner has not chosen one, finalizing stops so no applicant is dropped by chance.
+            $selection = $this->selectByRule($round, $applications);
 
-                    if ($eligible) {
-                        $advanced[] = $app;
-                    } else {
-                        $notSelected[] = $app;
-                    }
-                }
-
-                // Apply cap if exists
-                if ($round->max_advancing && count($advanced) > $round->max_advancing) {
-                    // Sort by score desc
-                    usort($advanced, fn($a, $b) => $b->average_score <=> $a->average_score);
-
-                    $capped = array_splice($advanced, $round->max_advancing);
-                    $notSelected = array_merge($notSelected, $capped);
-                }
-
-            } elseif ($round->advancement_mode === 'fixed_quota') {
-                // Top N advance
-                $sorted = $applications->sortByDesc('average_score');
-                $advanced = $sorted->take($round->max_advancing ?? 10)->values()->all();
-                $notSelected = $sorted->skip($round->max_advancing ?? 10)->values()->all();
+            if ($selection['tie'] && empty($selection['tie']['resolved'])) {
+                DB::rollBack();
+                $message = $this->tieMessage($selection['tie']);
+                return response()->json(['message' => $message, 'error' => $message, 'tie' => $selection['tie']], 422);
             }
+
+            $advanced = $selection['advanced'];
+            $notSelected = array_merge($notSelected, $selection['not_selected']);
 
             $program = $round->program;
             $maxAwardees = $program->max_awardees ?? floor($program->total_program_amount / $program->funding_per_business);
@@ -891,6 +924,195 @@ class ProgramRoundController extends Controller
             ErrorLogService::report($e, ['input' => request()->except(['password', 'token'])]);
             return response()->json(['message' => 'Something went wrong, please try again later.'], 500);
         }
+    }
+
+    // ─── Finalizing: the rule, ties and a preview ────────────────────────────────
+
+    /**
+     * Who the round's rule moves on. Pure: it saves nothing, so the preview and the real finalize agree.
+     * @return array{advanced: array, not_selected: array, tie: ?array}
+     */
+    private function selectByRule(ProgramRound $round, $applications): array
+    {
+        $apps = collect($applications)->values();
+
+        if ($round->advancement_mode === 'score_threshold') {
+            $passing = collect();
+            $failing = [];
+
+            foreach ($apps as $app) {
+                $eligible = (float) $app->average_score >= (float) $round->score_threshold && $app->is_eligible_to_advance;
+                if ($eligible) {
+                    $passing->push($app);
+                } else {
+                    $failing[] = $app;
+                }
+            }
+
+            $cap = (int) ($round->max_advancing ?? 0);
+            if ($cap > 0 && $passing->count() > $cap) {
+                $capped = $this->applyCap($round, $passing, $cap);
+                return [
+                    'advanced' => $capped['advanced'],
+                    'not_selected' => array_merge($failing, $capped['not_selected']),
+                    'tie' => $capped['tie'],
+                ];
+            }
+
+            return ['advanced' => $passing->all(), 'not_selected' => $failing, 'tie' => null];
+        }
+
+        if ($round->advancement_mode === 'fixed_quota') {
+            return $this->applyCap($round, $apps, (int) ($round->max_advancing ?: 10));
+        }
+
+        return ['advanced' => [], 'not_selected' => [], 'tie' => null];
+    }
+
+    /** Keep the best $cap applications. A tie that straddles the cut-off is resolved by the round's tie-breaker. */
+    private function applyCap(ProgramRound $round, $applications, int $cap): array
+    {
+        $rule = $round->tie_breaker_rule ?: 'manual';
+
+        $ranked = collect($applications)->sort(function ($a, $b) use ($rule) {
+            $byScore = (float) $b->average_score <=> (float) $a->average_score;
+            return ($byScore === 0 && $rule === 'secondary_metric')
+                ? ((float) $b->match_score <=> (float) $a->match_score)
+                : $byScore;
+        })->values();
+
+        if ($ranked->count() <= $cap) {
+            return ['advanced' => $ranked->all(), 'not_selected' => [], 'tie' => null];
+        }
+
+        $cut = (float) $ranked[$cap - 1]->average_score;
+        $above = $ranked->filter(fn ($a) => (float) $a->average_score > $cut)->count();
+        $tied = $ranked->filter(fn ($a) => (float) $a->average_score === $cut)->values();
+        $slots = $cap - $above;
+
+        if ($tied->count() <= $slots) {
+            return ['advanced' => $ranked->take($cap)->all(), 'not_selected' => $ranked->slice($cap)->values()->all(), 'tie' => null];
+        }
+
+        $tie = [
+            'score' => $cut,
+            'tied' => $tied->count(),
+            'slots' => $slots,
+            'names' => $tied->map(fn ($a) => $a->startup_name)->values()->all(),
+            'resolved' => null,
+        ];
+
+        if ($rule === 'allow_over_cap') {
+            $tie['resolved'] = 'Everyone tied at the cut-off moves on, so more than ' . $cap . ' advance.';
+            return [
+                'advanced' => $ranked->filter(fn ($a) => (float) $a->average_score >= $cut)->values()->all(),
+                'not_selected' => $ranked->filter(fn ($a) => (float) $a->average_score < $cut)->values()->all(),
+                'tie' => $tie,
+            ];
+        }
+
+        if ($rule === 'secondary_metric') {
+            $tie['resolved'] = 'Tied applicants are ranked by their AI match score.';
+        }
+
+        return ['advanced' => $ranked->take($cap)->all(), 'not_selected' => $ranked->slice($cap)->values()->all(), 'tie' => $tie];
+    }
+
+    private function tieMessage(array $tie): string
+    {
+        return "{$tie['tied']} applicants tie at {$tie['score']} and only {$tie['slots']} place(s) are left, so the round cannot choose between them. "
+            . 'Open the round setup and pick a tie-breaker (let all tied applicants through, or rank them by match score), or decide them yourself.';
+    }
+
+    /** The round's rule in plain words, for the owner to read before finalizing. */
+    private function ruleText(ProgramRound $round, bool $isFinal): string
+    {
+        $where = $isFinal ? 'are awarded' : 'move to the next round';
+
+        return match ($round->advancement_mode) {
+            'score_threshold' => 'Applicants with an average of ' . ($round->score_threshold ?? 0) . ' or more ' . $where
+                . ($round->max_advancing ? ", up to {$round->max_advancing}, highest scores first" : '') . '. Everyone else is not selected.',
+            'fixed_quota' => 'The top ' . ($round->max_advancing ?: 10) . ' applicants by average score ' . $where . '. Everyone else is not selected.',
+            default => 'You decide each application yourself. Finalizing closes the round once every application has been accepted or rejected.',
+        };
+    }
+
+    /**
+     * What finalizing would do, without doing it.
+     * GET /api/v1/program/rounds/{round}/finalize-preview
+     */
+    public function finalizePreview(ProgramRound $round)
+    {
+        if (!\App\Service\Program\ProgramAccess::owns($round->program)) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+
+        $isFinal = $this->isFinalRound($round);
+        $manual = ($round->advancement_mode ?? 'manual') === 'manual';
+        $blockers = [];
+
+        if ($round->status === 'finalized') {
+            $blockers[] = 'This round is already finalized.';
+        } elseif ($round->status === 'draft') {
+            $blockers[] = 'This round is still a draft. Publish it before it can be finalized.';
+        }
+
+        if (!$isFinal && !$this->nextRoundExists($round)) {
+            $blockers[] = 'Create round ' . ($round->round_number + 1) . ' first, so the applicants who advance have somewhere to go.';
+        }
+
+        $apps = ProgramApplication::where('current_round_id', $round->id)->get();
+        $person = fn ($a) => ['id' => $a->id, 'name' => $a->startup_name, 'score' => $a->average_score !== null ? round((float) $a->average_score, 1) : null];
+
+        $advanced = []; $notSelected = []; $undecided = []; $tie = null;
+
+        if ($manual) {
+            $undecided = $apps->whereIn('round_status', ['submitted', 'assigned', 'under_review', 'scored', 'draft'])->values()->all();
+            $advanced = $apps->where('round_status', 'advanced')->values()->all();
+            $notSelected = $apps->where('round_status', 'not_selected')->values()->all();
+
+            if ($undecided) {
+                $count = count($undecided);
+                $blockers[] = $count === 1
+                    ? '1 application still needs a decision. Accept or reject it first.'
+                    : "{$count} applications still need a decision. Accept or reject each one first.";
+            }
+        } else {
+            $unscored = $apps->filter(fn ($a) => $a->round_status !== 'scored' && $a->knockout_status !== 'failed')->values();
+            $failedKnockout = $apps->where('knockout_status', 'failed')->values();
+
+            if ($unscored->isNotEmpty()) {
+                $count = $unscored->count();
+                $blockers[] = ($count === 1 ? '1 application has' : "{$count} applications have") . ' not been scored yet. Every application must be scored before the round can be finalized.';
+                $undecided = $unscored->all();
+            }
+
+            $scored = $apps->where('round_status', 'scored')->where('knockout_status', '!=', 'failed')->values();
+            $selection = $this->selectByRule($round, $scored);
+            $advanced = $selection['advanced'];
+            $notSelected = array_merge($failedKnockout->all(), $selection['not_selected']);
+            $tie = $selection['tie'];
+
+            if ($tie && empty($tie['resolved'])) {
+                $blockers[] = $this->tieMessage($tie);
+            }
+        }
+
+        return response()->json([
+            'data' => [
+                'mode' => $round->advancement_mode ?? 'manual',
+                'rubric_mode' => $round->rubric_mode,
+                'rule' => $this->ruleText($round, $isFinal),
+                'is_final_round' => $isFinal,
+                'destination' => $isFinal ? 'awarded' : 'round ' . ($round->round_number + 1),
+                'blockers' => $blockers,
+                'can_finalize' => empty($blockers),
+                'advanced' => array_map($person, $advanced),
+                'not_selected' => array_map($person, $notSelected),
+                'undecided' => array_map($person, $undecided),
+                'tie' => $tie,
+            ],
+        ]);
     }
 
     /**

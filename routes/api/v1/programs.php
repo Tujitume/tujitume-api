@@ -134,6 +134,7 @@ Route::prefix('/programs')->middleware(['program', 'program.response'])->group(f
     Route::post('rounds/{round}/publish', [ApplicationRoundProgressController::class, 'publish']);
 
     Route::get('/rounds/{round}/applications', [ProgramRoundController::class, 'applications']);
+    Route::get('/rounds/{round}/finalize-preview', [ProgramRoundController::class, 'finalizePreview']);
     Route::get('/rounds/{round}/applications/active', [ApplicationRoundProgressController::class, 'activeApplications']);
     Route::get('/rounds/{round}/applications/advanced', [ApplicationRoundProgressController::class, 'advancedApplications']);
     Route::get('/rounds/{round}/applications/not_selected', [ApplicationRoundProgressController::class, 'notSelectedApplications']);
