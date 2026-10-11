@@ -270,7 +270,14 @@ class ProgramRoundController extends Controller
             ->get()
             ->groupBy('application_id');
 
-        $mapped = $applications->map(function ($app) use ($round_id, $round, $scoresByApplication) {
+        // Who is reviewing each application in this round (shown in the "Reviewed By" column)
+        $assignmentsByApplication = \App\Models\Programs\Rounds\ReviewerApplicationAssignment::with('reviewer:id,first_name,last_name,image')
+            ->where('round_id', $round_id)
+            ->whereIn('application_id', $applications->pluck('id'))
+            ->get()
+            ->groupBy('application_id');
+
+        $mapped = $applications->map(function ($app) use ($round_id, $round, $scoresByApplication, $assignmentsByApplication) {
             // Get this app's outcome in this specific round from history
             $roundHistory = ApplicationRoundHistory::where('application_id', $app->id)
                 ->where('round_id', $round_id)
@@ -280,8 +287,18 @@ class ProgramRoundController extends Controller
             $criteriaCount = is_array($round->scoring_criteria) ? count($round->scoring_criteria) : 0;
             $average = $roundScores->isNotEmpty() ? round((float) $roundScores->avg('total_score'), 1) : null;
 
+            $assignments = $assignmentsByApplication->get($app->id, collect());
+
             return [
                 ...$app->toArray(),
+                'reviewers' => $assignments->map(fn ($assignment) => [
+                    'user_id' => $assignment->reviewer_id,
+                    'name' => trim(($assignment->reviewer?->first_name ?? '') . ' ' . ($assignment->reviewer?->last_name ?? '')),
+                    'image' => $assignment->reviewer?->image,
+                    'status' => $assignment->status,
+                ])->values(),
+                'assigned_reviewers_count' => $assignments->count(),
+                'completed_reviews_count' => $roundScores->pluck('reviewer_id')->unique()->count(),
                 // What the reviewers said, ready to show in the table (sortable, and good for deciding a manual round)
                 'review_summary' => [
                     'reviewers_scored' => $roundScores->count(),
