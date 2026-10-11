@@ -285,7 +285,8 @@ class RoundReviewerController extends Controller
 
         $assignments = RoundReviewer::where('user_id', $userId)
             ->with([
-                'programRound',
+                // the program comes with the round so the request can show its name, not "Program #3"
+                'programRound.program:id,program_title,currency',
                 'reviewerOrder'
             ])
             ->get();
