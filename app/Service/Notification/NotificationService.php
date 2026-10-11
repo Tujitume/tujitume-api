@@ -25,6 +25,11 @@ class NotificationService
     {
         $now=date("Y-m-d H:i"); $date=date('d M, h:i a',strtotime($now));
 
+        // The columns are 1000 (text) and 200 (link) characters: a longer value would make the insert fail
+        // and the person would never see the notification at all.
+        $text = mb_substr((string) $text, 0, 1000);
+        $link = mb_substr((string) $link, 0, 200);
+
         $attributes = [
             'date' => $date,
             'receiver_id' => $receiver_id,

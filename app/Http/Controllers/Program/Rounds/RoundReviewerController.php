@@ -158,6 +158,13 @@ class RoundReviewerController extends Controller
 
                 $user->load('organizationRole');
 
+                // A deactivated reviewer cannot be given new work until they are activated again
+                if ($user->organizationRole?->status === 'revoked') {
+                    throw ValidationException::withMessages([
+                        'user_id' => ['This reviewer is deactivated. Activate them from Reviewer Management first.'],
+                    ]);
+                }
+
                 // Check if already assigned
                 $exists = $round->reviewers()->where('user_id', $userId)->exists();
 
@@ -569,6 +576,7 @@ class RoundReviewerController extends Controller
                 'program_title' => $round->program->program_title,
                 'round_name'    => $round->round_name,
                 'max_apps'      => $assigned,
+                'assignment'    => 'applications',
             ]);
 
             return response()->json([

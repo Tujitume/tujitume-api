@@ -81,7 +81,8 @@ class TeamMemberNotifier
             );
 
             if ($notify && $member->exists) {
-                (new NotificationService())->create($member->id, $actor?->id ?? $member->id, $inAppText, '', 'program');
+                // headline, then the sentence (the bell splits them at the line break)
+                (new NotificationService())->create($member->id, $actor?->id ?? $member->id, $title . "\n" . $inAppText, '', 'program');
             }
         } catch (\Throwable $e) {
             ErrorLogService::report($e, ['team_member_id' => $member->id, 'action' => $action]);

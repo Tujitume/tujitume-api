@@ -411,7 +411,11 @@ class SupplierDirectoryController extends Controller
 
         DB::beginTransaction();
         try {
+            // Only the owner's own suppliers (same scope as the directory list)
             $supplier = SupplierDirectory::where('id', $supplierId)
+                ->where(function ($q) use ($userId) {
+                    $q->where('user_id', $userId)->orWhere('added_by', $userId);
+                })
                 ->findOrFail($supplierId);
 
             $supplier->update(['is_active' => false]);
@@ -445,7 +449,11 @@ class SupplierDirectoryController extends Controller
 
         DB::beginTransaction();
         try {
+            // Only the owner's own suppliers (same scope as the directory list)
             $supplier = SupplierDirectory::where('id', $supplierId)
+                ->where(function ($q) use ($userId) {
+                    $q->where('user_id', $userId)->orWhere('added_by', $userId);
+                })
                 ->findOrFail($supplierId);
 
             $supplier->update(['is_active' => true]);
@@ -688,6 +696,15 @@ class SupplierDirectoryController extends Controller
 
                 'assignment_type' => ['nullable', Rule::in(['primary', 'approved', 'preferred']) ],
             ]);
+
+            // A deactivated supplier is hidden from the deal room; their account is untouched
+            $directoryEntry = SupplierDirectory::find($validated['supplier_id']);
+            if ($directoryEntry && ! (bool) ($directoryEntry->is_active ?? true)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'This supplier is deactivated. Activate them in the supplier directory before assigning them to a milestone.'
+                ], 422);
+            }
 
             $exists = MilestoneSupplier::where('milestone_id', $milestone->id)
                 ->where('supplier_id', $validated['supplier_id'])->exists();

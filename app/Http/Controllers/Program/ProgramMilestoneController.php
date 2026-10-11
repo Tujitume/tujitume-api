@@ -291,6 +291,13 @@ class ProgramMilestoneController extends Controller
                     ->where('user_id', $userId)
                     ->firstOrFail();
 
+                // A deactivated supplier is hidden from the deal room; their account is untouched
+                if (! (bool) ($supplier->is_active ?? true)) {
+                    throw ValidationException::withMessages([
+                        'supplier_id' => ['This supplier is deactivated. Activate them in the supplier directory first.'],
+                    ]);
+                }
+
                 MilestoneSupplier::create([
                     'milestone_id' => $milestone->id,
                     'supplier_id' => $supplier->id,

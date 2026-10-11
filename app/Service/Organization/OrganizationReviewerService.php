@@ -49,7 +49,8 @@ class OrganizationReviewerService
         return OrganizationUserRole::query()
             ->select(['id', 'organization_id', 'user_id', 'role_id', 'status', 'accepted_at', 'created_at'])
             ->where('organization_id', $organization->id)
-            ->where('status', 'active')
+            // Deactivated reviewers stay in the list (marked inactive) so they can be activated again
+            ->whereIn('status', ['active', 'revoked'])
             ->whereHas('role', fn ($query) => $query->where('name', 'internal_reviewer'))
             ->whereHas('user', fn ($query) => $query->where('user_type_id', 4))
             ->with([
