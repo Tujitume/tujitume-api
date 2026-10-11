@@ -42,7 +42,8 @@ class ProviderWorkController extends Controller
             if (in_array($type, ['all', 'inspection'], true)) {
                 $rows = $rows->concat($this->inspections($me));
             }
-            if (in_array($type, ['all', 'audit'], true)) {
+            // MPRV audits are field checks too, so they sit with the inspection requests
+            if (in_array($type, ['all', 'audit', 'inspection'], true)) {
                 $rows = $rows->concat($this->audits($me));
             }
             if (in_array($type, ['all', 'supplier'], true)) {

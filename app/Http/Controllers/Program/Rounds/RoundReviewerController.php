@@ -503,9 +503,14 @@ class RoundReviewerController extends Controller
         }
 
         if ($round->status !== 'published') {
-            return response()->json([
-                'error' => 'Round is not published. Current status: ' . $round->status
-            ], 422);
+            // Say what it means for the person, not just the status word
+            $message = match ($round->status) {
+                'finalized' => 'This round is finalized, so applications can no longer be assigned to reviewers. Assigning is only possible while the round is open.',
+                'draft' => 'This round is not published yet. Publish it first, then you can assign applications to reviewers.',
+                default => 'Applications can only be assigned to reviewers while the round is open. This round is ' . $round->status . '.',
+            };
+
+            return response()->json(['message' => $message, 'error' => $message], 422);
         }
 
         try {
