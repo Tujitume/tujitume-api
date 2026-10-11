@@ -42,7 +42,8 @@ class RoundReviewerController extends Controller
                     'name' => $user->first_name.' '.$user->last_name,
                     'email' => $user->email,
                     'image' => $user->image,
-                    'reviewer_type' => $user->pivot->reviewer_type,
+                    // A service provider is stored as an external reviewer but shown as what they are
+                    'reviewer_type' => (int) $user->user_type_id === 3 ? 'third_party' : $user->pivot->reviewer_type,
                     'max_apps_assigned' => $user->pivot->max_apps_assigned,
                     // How this reviewer is paid, as the round setup form names it
                     'reviewer_fee' => $user->pivot->reviewer_fee,
@@ -111,7 +112,7 @@ class RoundReviewerController extends Controller
         DB::beginTransaction();
         try {
             $validated = $request->validate([
-                'reviewer_type'       => 'required|in:internal,external',
+                'reviewer_type'       => 'required|in:internal,external,third_party',
                 'user_id'             => 'required|exists:users,id',
                 'max_apps_assigned'   => 'nullable|integer|min:1',
                 'assigned_percentage' => 'nullable|integer|min:1|max:100',
@@ -154,6 +155,28 @@ class RoundReviewerController extends Controller
 
             $user = User::find($validated['user_id']);
 
+            // A Tujitume service provider (third party) is paid for the work, so the fee is required, and they must
+            // be one the organization added in Reviewer Management.
+            if ($request->reviewer_type === 'third_party') {
+                if ((float) ($validated['reviewer_fee'] ?? 0) <= 0) {
+                    throw ValidationException::withMessages([
+                        'reviewer_fee' => ['A third-party provider is paid for their work. Set a fee greater than zero.'],
+                    ]);
+                }
+
+                if ((int) $user->user_type_id !== 3 || ! \App\Models\Organizations\OrganizationProvider::has((int) $round->program->organization_id, (int) $user->id)) {
+                    throw ValidationException::withMessages([
+                        'user_id' => ['Add this service provider to your list in Reviewer Management first.'],
+                    ]);
+                }
+
+                if ($round->reviewers()->where('user_id', $userId)->exists()) {
+                    throw ValidationException::withMessages([
+                        'user_id' => ['This provider is already assigned to this round'],
+                    ]);
+                }
+            }
+
             if ($request->reviewer_type == 'internal') {
 
                 $user->load('organizationRole');
@@ -185,7 +208,7 @@ class RoundReviewerController extends Controller
                     'acceptance_status'   => 'pending',
                 ]);
 
-            } elseif ($request->reviewer_type == 'external') {
+            } elseif (in_array($request->reviewer_type, ['external', 'third_party'], true)) {
 
                 $user->load('organization');
                 $round->reviewers()->attach($user->id, [

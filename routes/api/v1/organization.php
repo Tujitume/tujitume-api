@@ -12,4 +12,9 @@ Route::group(['prefix' => 'organizations'], function () {
     Route::post('/', [OrganizationController::class, 'createOrganization']);
     Route::patch('{organization}', [OrganizationController::class, 'updateOrganization']);
     Route::get('external-reviewers', [ExternalReviewerController::class, 'index']);
+
+    // Tujitume service providers the organization has added as third-party reviewers/auditors
+    Route::get('providers', [\App\Http\Controllers\Organizations\OrganizationProviderController::class, 'index']);
+    Route::post('providers', [\App\Http\Controllers\Organizations\OrganizationProviderController::class, 'store']);
+    Route::delete('providers/{provider}', [\App\Http\Controllers\Organizations\OrganizationProviderController::class, 'destroy']);
 });

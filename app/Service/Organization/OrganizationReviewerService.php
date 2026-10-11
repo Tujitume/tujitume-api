@@ -5,6 +5,7 @@ namespace App\Service\Organization;
 use App\Models\Auth\OrganizationUserRole;
 use App\Models\Auth\User;
 use App\Models\Organizations\Organization;
+use App\Models\Organizations\OrganizationProvider;
 use App\Models\Programs\Monitoring\MESiteVisit;
 use App\Models\Programs\Rounds\RoundReviewer;
 use Illuminate\Support\Collection;
@@ -18,10 +19,12 @@ class OrganizationReviewerService
     {
         $internalReviewerMemberships = $this->internalReviewerMemberships($organization);
         $externalReviewers = $this->externalReviewers($organization);
+        $thirdPartyProviders = $this->thirdPartyProviders($organization);
 
         $reviewerIds = $internalReviewerMemberships
             ->pluck('user_id')
             ->merge($externalReviewers->pluck('id'))
+            ->merge($thirdPartyProviders->pluck('id'))
             ->unique()
             ->values();
 
@@ -38,6 +41,12 @@ class OrganizationReviewerService
             ->concat($externalReviewers->map(fn (User $reviewer) => $this->reviewerPayload(
                 $reviewer,
                 'external',
+                $roundIdsByReviewer,
+                $siteVisitIdsByReviewer,
+            )))
+            ->concat($thirdPartyProviders->map(fn (User $provider) => $this->reviewerPayload(
+                $provider,
+                'third_party',
                 $roundIdsByReviewer,
                 $siteVisitIdsByReviewer,
             )))
@@ -61,6 +70,20 @@ class OrganizationReviewerService
             ])
             ->orderBy('created_at')
             ->get();
+    }
+
+    /** Tujitume service providers the organization added as third-party reviewers/auditors. */
+    private function thirdPartyProviders(Organization $organization): Collection
+    {
+        if (! OrganizationProvider::available()) {
+            return collect();
+        }
+
+        return User::query()
+            ->whereIn('id', OrganizationProvider::where('organization_id', $organization->id)->select('user_id'))
+            ->where('user_type_id', 3)
+            ->orderBy('first_name')
+            ->get(['id', 'user_type_id', 'first_name', 'last_name', 'display_name', 'email', 'phone', 'image', 'organization_id', 'password']);
     }
 
     private function externalReviewers(Organization $organization): Collection

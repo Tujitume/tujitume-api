@@ -154,7 +154,7 @@ class ProgramNotificationService
             'round.not_selected' => "Your application was not selected to continue after {$round} of {$program}. Thank you for taking part.",
             'round.scoring_assigned' => ($d['assignment'] ?? 'request') === 'applications'
                 ? ($d['max_apps'] ?? null ? "{$d['max_apps']} application(s)" : 'Applications') . " from {$round} of {$program} were assigned to you. Open Applications to start reviewing."
-                : "{$actor} asked you to review {$round} of {$program}. Open Pending requests to accept or decline.",
+                : "{$actor} asked you to review {$round} of {$program}. Open your requests to accept or decline.",
             'round.reviewer_invited_internal', 'round.reviewer_invited_external' => "You were invited to review applications for {$program}. Accept the invitation to get started.",
             'round.score_received' => "Your application to {$program} was reviewed. Open it to see the update.",
             'application.awarded' => "Congratulations! {$program} awarded you " . ($this->money($d) ?: 'funding') . ". Open your funding plan to set up your milestones.",
@@ -490,7 +490,11 @@ class ProgramNotificationService
                 'email_view'    => $this->view_base . 'reviewer_assigned_email',
                 // TODO: deep link to round review page when built
                 'link'          => $this->reviewerProgramLink($data),
-                'links'         => [4 => $this->link('dashboard.programOrg.applications')],
+                'links'         => [
+                    4 => $this->link('dashboard.programOrg.applications'),
+                    // A Tujitume service provider answers the request from Assigned Programs
+                    3 => $this->link('dashboard.serviceProvider.grantsDiscover'),
+                ],
             ],
 
             'round.score_received' => [

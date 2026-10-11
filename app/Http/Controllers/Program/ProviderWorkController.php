@@ -4,9 +4,11 @@ namespace App\Http\Controllers\Program;
 
 use App\Http\Controllers\Controller;
 use App\Models\Auth\User;
+use App\Models\Organizations\OrganizationProvider;
 use App\Models\Programs\MilestoneSupplier;
 use App\Models\Programs\MilestoneVerification;
 use App\Models\Programs\Monitoring\MESiteVisit;
+use App\Models\Programs\Rounds\RoundReviewer;
 use App\Models\Programs\SupplierDirectory;
 use App\Models\Services\Services;
 use App\Service\Misc\ErrorLogService;
@@ -34,6 +36,9 @@ class ProviderWorkController extends Controller
             $type = $request->query('type', 'all');
             $rows = collect();
 
+            if (in_array($type, ['all', 'review'], true)) {
+                $rows = $rows->concat($this->reviewRequests($me));
+            }
             if (in_array($type, ['all', 'inspection'], true)) {
                 $rows = $rows->concat($this->inspections($me));
             }
@@ -51,6 +56,37 @@ class ProviderWorkController extends Controller
             ErrorLogService::report($e, ['user_id' => $me->id]);
             return response()->json(['message' => 'Something went wrong, please try again later.'], 500);
         }
+    }
+
+    /** Rounds an organization asked this provider to review (they accept or decline each one). */
+    private function reviewRequests(User $me)
+    {
+        return RoundReviewer::where('user_id', $me->id)
+            ->with(['programRound.program'])
+            ->get()
+            ->map(function (RoundReviewer $assignment) {
+                $round = $assignment->programRound;
+
+                return [
+                    'kind' => 'review_request',
+                    'id' => $assignment->id,
+                    'round_id' => $assignment->round_id,
+                    'reference' => 'RR-' . $assignment->id,
+                    'program_id' => $round?->program_id,
+                    'program' => $round?->program?->program_title ?? 'Program',
+                    'business' => null,
+                    'milestone' => $round?->round_name,
+                    'detail' => 'Review the applications in ' . ($round?->round_name ?? 'this round') . '.',
+                    'location' => null,
+                    'support_type' => 'Round review',
+                    'inspector' => null,
+                    'amount' => $assignment->reviewer_fee !== null ? (float) $assignment->reviewer_fee : null,
+                    'fee_type' => $assignment->fee_type,
+                    'status' => (string) ($assignment->acceptance_status ?? 'pending'),
+                    'due' => $round?->close_date?->toDateString(),
+                    'sort' => $assignment->created_at?->timestamp ?? 0,
+                ];
+            });
     }
 
     /** Site visits an organization assigned to this provider (including third-party audit visits). */
@@ -194,6 +230,11 @@ class ProviderWorkController extends Controller
             $hasMore = $users->count() > $perPage;
             $users = $users->take($perPage)->values();
 
+            // Which of them this organization has already added (so the list can say so instead of offering them again)
+            $addedIds = OrganizationProvider::available() && $me->organization_id
+                ? OrganizationProvider::where('organization_id', $me->organization_id)->pluck('user_id')->all()
+                : [];
+
             $servicesByUser = Services::whereIn('user_id', $users->pluck('id'))
                 ->get(['id', 'user_id', 'name', 'category'])
                 ->groupBy('user_id');
@@ -206,6 +247,7 @@ class ProviderWorkController extends Controller
                     'phone' => $user->phone,
                     'image' => $user->image,
                     'location' => collect([$user->city, $user->country])->filter()->implode(', '),
+                    'added' => in_array($user->id, $addedIds),
                     'services' => ($servicesByUser->get($user->id) ?? collect())
                         ->map(fn ($service) => ['id' => $service->id, 'name' => $service->name, 'category' => $service->category])
                         ->values(),
