@@ -172,6 +172,10 @@ Route::prefix('/programs')->middleware(['program', 'program.response'])->group(f
     Route::get('reviewer/assigned-requests', [RoundReviewerController::class, 'myAssignedRequests']);
     Route::get('reviewer/assignment-counts', [RoundReviewerController::class, 'assignmentCounts']);
 
+    // Service providers: the work organizations assigned to them, and the list organizations search
+    Route::get('provider/work', [\App\Http\Controllers\Program\ProviderWorkController::class, 'index']);
+    Route::get('third-party-providers', [\App\Http\Controllers\Program\ProviderWorkController::class, 'providers']);
+
     Route::get('rounds/{round}/reviewer-orders', [ReviewerOrderController::class, 'roundOrders']);
     Route::post('reviewer-orders/{order}/deliver', [ReviewerOrderController::class, 'deliver']);
     Route::post('reviewer-orders/{order}/request-modification', [ReviewerOrderController::class, 'requestModification']);
