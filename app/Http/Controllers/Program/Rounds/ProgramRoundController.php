@@ -260,6 +260,16 @@ class ProgramRoundController extends Controller
             'awarded_count'      => $history->where('outcome', 'awarded')->count(),
             'in_progress_count'  => $history->where('outcome', 'in_progress')->count(),
             //'reviewed_by'         => $round->reviewers,
+            // Reviewer fees of a finalized round that have not been started yet (drives the fallback "Start reviewer payments" button)
+            'reviewer_payments_to_start' => $round->status === 'finalized'
+                ? ReviewerOrder::where('round_id', $round->id)
+                    ->where('order_type', 'round_review')
+                    ->where('payment_status', 'unpaid')
+                    ->where('fee_usd', '>', 0)
+                    ->get()
+                    ->filter(fn ($o) => in_array($o->work_status, ['delivered', 'approved'], true) || $this->reviewerFinishedScoring($round, $o->reviewer_id))
+                    ->count()
+                : 0,
         ];
 
         $scoresByApplication = \App\Models\Programs\Rounds\ApplicationScore::where('round_id', $round_id)
