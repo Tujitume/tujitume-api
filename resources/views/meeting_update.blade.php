@@ -9,7 +9,7 @@
         <div style="background-color:#f3f4f6;padding:1rem;border-radius:0.5rem;margin:1.5rem 0;">
             <p style="margin:0.5rem 0;"><strong>Meeting:</strong> {{ $meeting_title }}</p>
             <p style="margin:0.5rem 0;"><strong>{{ $cancelled ? 'Was scheduled for' : 'When' }}:</strong> {{ $when }}</p>
-            <p style="margin:0.5rem 0;"><strong>With:</strong> {{ $otherName }}</p>
+            <p style="margin:0.5rem 0;"><strong>{{ in_array($kind ?? 'invited', ['accepted', 'declined']) ? 'Answered by' : 'With' }}:</strong> {{ $otherName }}</p>
             @if (!empty($description))
                 <p style="margin:0.5rem 0;"><strong>Details:</strong> {{ $description }}</p>
             @endif
@@ -17,9 +17,13 @@
 
         @if ($cancelled)
             <p>No action is needed. If you still want to meet, you can schedule a new time from Meetings.</p>
+        @elseif (($kind ?? 'invited') === 'declined')
+            <p>Open Meetings to see who has answered. You can message {{ $otherName }} to agree a new time.</p>
+        @elseif (($kind ?? 'invited') === 'accepted')
+            <p>Open Meetings to see who has answered so far.</p>
         @else
             @include('programs.partials.brand_button', ['label' => 'Join Meeting', 'url' => $joinUrl])
-            <p style="margin-top:1.5rem;font-size:13px;color:#6b7280;">You can also find this meeting on your Meetings calendar. If the time does not suit you, message {{ $otherName }} to agree a new one.</p>
+            <p style="margin-top:1.5rem;font-size:13px;color:#6b7280;">Please accept or decline this invitation in Meetings so {{ $otherName }} knows whether to expect you.</p>
         @endif
 
         @include('programs.partials.brand_footer')

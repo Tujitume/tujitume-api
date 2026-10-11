@@ -26,63 +26,90 @@ class ScheduleMeetingController extends Controller
         parent::__construct();
     }
 
+    /**
+     * Schedule a meeting with one or many people.
+     * POST /create-meeting  { client_ids: [..] (or client_id), date, time, title, description, link }
+     * Each invited person gets their own row, so each one answers (pending, accepted, declined) on their own.
+     */
     public function create_meeting(Request $request)
     {
         try{
             $host = Auth::user();
-            $client = User::select('first_name','last_name','email')->where('id',$request->client_id)->first();
+
             $request->validate([
-                'client_id'   => 'required|integer|exists:users,id', // or clients table if applicable
-                //'client_name' => 'required|string|max:255',
+                'client_id'    => 'required_without:client_ids|integer|exists:users,id',
+                'client_ids'   => 'required_without:client_id|array|min:1|max:50',
+                'client_ids.*' => 'integer|distinct|exists:users,id',
                 'date'        => 'required|date', // format: Y-m-d
                 'time'        => 'required|date_format:H:i', // 24-hour format like 14:30
                 'title'       => 'required|string|max:255',
                 'description' => 'nullable|string|max:1000',
-                'link'        => 'required|url|max:100',
+                'link'        => 'required|url|max:200',
             ]);
 
-            $meeting = Meeting::create([
-                'host_id'      => Auth::id(),
-                'client_id'    => $request->client_id,
-                'host_name'    => $host->first_name.' '.$host->last_name,
-                'client_name'  => $client->first_name.' '.$client->last_name,
-                'date'         => $request->date,
-                'time'         => $request->time,
-                'title'        => $request->title,
-                'description'  => $request->description,
-                'link'         => $request->link,
-                'status'       => 'active',
-            ]);
+            $ids = collect($request->input('client_ids', [$request->client_id]))
+                ->map(fn ($id) => (int) $id)
+                ->filter(fn ($id) => $id !== (int) $host->id)
+                ->unique()->values();
 
-            //Notifications
-            $dateTime = Carbon::createFromFormat('Y-m-d H:i', $request->date.' '. $request->time);
-            $formatted = $dateTime->format('F j, g:i A'); // â†’ July 1, 2:00 PM
-
-            if($host->user_type_id == 4 || $host->user_type_id == 3){
-                $linkForSme = 'meeting';
-                $linkForOrg = 'overview/settings/security';
-            }
-            else{
-                $linkForOrg = 'meeting';
-                $linkForSme = 'overview/settings/security';
+            if ($ids->isEmpty()) {
+                return response()->json(['message' => 'Choose at least one person other than yourself to invite.'], 422);
             }
 
-            $text = 'You have a new meeting from '.$host->first_name.' '.$host->last_name. ' at '.$formatted ;
-            $this->notification->create($request->client_id, $host->id, $text
-                ,$linkForSme,'meeting');
+            // Every row of one meeting is created together, so they share the same created_at (that is how they are grouped)
+            $createdAt = now();
+            $hostName = trim($host->first_name.' '.$host->last_name);
+            $meetings = collect();
 
-            $text2 = 'You have a new meeting with '.$client->first_name.' '.$client->last_name. ' at '.$formatted ;
-            $this->notification->create($host->id ,$request->client_id , $text2
-                ,$linkForOrg,'meeting');
-            //Notifications
+            foreach (User::whereIn('id', $ids)->get() as $client) {
+                $meeting = new Meeting([
+                    'host_id'      => $host->id,
+                    'client_id'    => $client->id,
+                    'host_name'    => $hostName,
+                    'client_name'  => trim($client->first_name.' '.$client->last_name),
+                    'date'         => $request->date,
+                    'time'         => $request->time,
+                    'title'        => $request->title,
+                    'description'  => $request->description,
+                    'link'         => $request->link,
+                    'status'       => 'pending',
+                ]);
+                $meeting->created_at = $createdAt;
+                $meeting->updated_at = $createdAt;
+                $meeting->save();
+                $meetings->push($meeting);
 
-            // The person invited is also told by email (best effort, never fails the booking)
-            $this->emailMeetingUpdate($meeting, User::find($request->client_id), $host, false);
+                // Tell each person in the app and by email (best effort)
+                $when = $this->meetingWhen($meeting);
+                try {
+                    $this->notification->create($client->id, $host->id,
+                        "New meeting invitation\n{$hostName} invited you to \"{$meeting->title}\" on {$when}. Accept or decline it in Meetings.",
+                        'meeting', 'meeting');
+                } catch (\Throwable $e) {
+                    ErrorLogService::report($e, ['meeting_id' => $meeting->id]);
+                }
+                $this->emailMeetingUpdate($meeting, $client, $host, 'invited');
+            }
+
+            // And a note for the host that the invitations went out
+            try {
+                $count = $meetings->count();
+                $this->notification->create($host->id, $host->id,
+                    "Meeting scheduled\n\"{$request->title}\" was sent to {$count} " . ($count === 1 ? 'person' : 'people') . '. You will be told when they respond.',
+                    'meeting', 'meeting');
+            } catch (\Throwable $e) {
+                ErrorLogService::report($e, ['host_id' => $host->id]);
+            }
 
             return response()->json([
-                'message' => 'Meeting created successfully.',
-                'data' => $meeting
-                ], 201);
+                'message' => $meetings->count() === 1
+                    ? 'Meeting scheduled. ' . $meetings->first()->client_name . ' has been invited by email and in the app.'
+                    : 'Meeting scheduled. ' . $meetings->count() . ' people have been invited by email and in the app.',
+                'data' => $meetings->first(),
+            ], 201);
+        }
+        catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json(['message' => $e->validator->errors()->first(), 'errors' => $e->errors()], 422);
         }
         catch (\Exception $e) {
             ErrorLogService::report($e, [
@@ -93,6 +120,24 @@ class ScheduleMeetingController extends Controller
                 'message' => 'Something went wrong, please try again later.'
             ], 500);
         }
+    }
+
+    /** Old rows were saved as "active"; that means the invitation has not been answered yet */
+    private function responseOf(Meeting $meeting): string
+    {
+        return in_array($meeting->status, ['accepted', 'declined', 'cancelled'], true) ? $meeting->status : 'pending';
+    }
+
+    /** All the rows of one meeting (one per invited person) */
+    private function groupOf(Meeting $meeting)
+    {
+        return Meeting::where('host_id', $meeting->host_id)
+            ->where('title', $meeting->title)
+            ->where('link', $meeting->link)
+            ->where('date', $meeting->getRawOriginal('date'))
+            ->where('time', $meeting->getRawOriginal('time'))
+            ->where('created_at', $meeting->getRawOriginal('created_at'))
+            ->get();
     }
 
     public function meetings()
@@ -109,22 +154,56 @@ class ScheduleMeetingController extends Controller
                 }
             }
 
-            $today = Carbon::now();
-            $meetings = Meeting::where('host_id',$user_id)->orWhere('client_id',$user_id)->latest()->get();
-            foreach($meetings as $meeting){
-                $meetingDateTime = Carbon::parse("{$meeting->date} {$meeting->time}");
+            $rows = Meeting::where('host_id',$user_id)->orWhere('client_id',$user_id)->latest()->get();
 
-                // check if meeting is in the past
-       
+            // The host sees one meeting with everyone invited; an invitee sees their own invitation and who else is in it
+            $seen = [];
+            $meetings = collect();
 
-                if ($meeting->host_id == $user_id) {
-                    $meeting->is_host = true;
-                } 
-                else $meeting->is_host = false;
+            foreach ($rows as $meeting) {
+                $isHost = (int) $meeting->host_id === (int) $user_id;
+                $group = $this->groupOf($meeting);
+
+                $key = $meeting->host_id . '|' . $meeting->getRawOriginal('created_at') . '|' . $meeting->title;
+                if ($isHost) {
+                    if (isset($seen[$key])) {
+                        continue;
+                    }
+                    $seen[$key] = true;
+                }
+
+                $attendees = $group->map(fn (Meeting $row) => [
+                    'user_id' => $row->client_id,
+                    'name' => $row->client_name,
+                    'response' => $this->responseOf($row),
+                    'is_me' => (int) $row->client_id === (int) $user_id,
+                ])->values();
+
+                if (! $isHost) {
+                    // The host first, then everyone else invited
+                    $attendees->prepend(['user_id' => $meeting->host_id, 'name' => $meeting->host_name, 'response' => 'host', 'is_me' => false]);
+                }
+
+                $entry = $meeting->toArray();
+                $entry['is_host'] = $isHost;
+                $entry['attendees'] = $attendees->all();
+                $entry['my_response'] = $isHost ? null : $this->responseOf($meeting);
+
+                if ($isHost) {
+                    $responses = $group->map(fn (Meeting $row) => $this->responseOf($row));
+                    $entry['client_name'] = $group->pluck('client_name')->filter()->implode(', ');
+                    $entry['status'] = $responses->every(fn ($r) => $r === 'cancelled') ? 'cancelled' : 'active';
+                    $entry['summary'] = collect(['accepted', 'pending', 'declined'])
+                        ->map(fn ($r) => $responses->filter(fn ($x) => $x === $r)->count() ? $responses->filter(fn ($x) => $x === $r)->count() . ' ' . $r : null)
+                        ->filter()->implode(', ');
+                } else {
+                    $entry['status'] = $this->responseOf($meeting);
+                }
+
+                $meetings->push($entry);
             }
 
-
-            return response()->json(['meetings' => $meetings], 200, [], JSON_UNESCAPED_SLASHES);
+            return response()->json(['meetings' => $meetings->values()], 200, [], JSON_UNESCAPED_SLASHES);
         }
         catch (\Exception $e) {
             ErrorLogService::report($e, [
@@ -150,8 +229,11 @@ class ScheduleMeetingController extends Controller
         }
     }
 
-    /** Emails the other person about a new or cancelled meeting. Best effort. */
-    private function emailMeetingUpdate(Meeting $meeting, ?User $recipient, User $actor, bool $cancelled): void
+    /**
+     * Emails a person about a meeting. Best effort, it never fails the action.
+     * @param string $kind invited | cancelled | accepted | declined
+     */
+    private function emailMeetingUpdate(Meeting $meeting, ?User $recipient, User $actor, string $kind): void
     {
         try {
             if (! $recipient || ! $recipient->email) {
@@ -159,10 +241,12 @@ class ScheduleMeetingController extends Controller
             }
 
             $actorName = trim($actor->first_name . ' ' . $actor->last_name) ?: 'Someone';
-            $title = $cancelled ? "{$actorName} cancelled your meeting" : "{$actorName} scheduled a meeting with you";
-            $body = $cancelled
-                ? "{$actorName} has cancelled the meeting below."
-                : "{$actorName} scheduled a meeting with you. The details are below.";
+            [$title, $body] = match ($kind) {
+                'cancelled' => ["{$actorName} cancelled your meeting", "{$actorName} has cancelled the meeting below."],
+                'accepted' => ["{$actorName} accepted your meeting", "{$actorName} accepted your invitation to the meeting below."],
+                'declined' => ["{$actorName} declined your meeting", "{$actorName} cannot join the meeting below. You can message them to agree a new time."],
+                default => ["{$actorName} scheduled a meeting with you", "{$actorName} invited you to the meeting below. Please accept or decline it in Meetings."],
+            };
 
             (new \App\Service\Notification\EmailService())->send($title, 'meeting_update', [
                 'title' => $title,
@@ -172,7 +256,8 @@ class ScheduleMeetingController extends Controller
                 'when' => $this->meetingWhen($meeting),
                 'otherName' => $actorName,
                 'description' => $meeting->description,
-                'cancelled' => $cancelled,
+                'kind' => $kind,
+                'cancelled' => $kind === 'cancelled',
                 'joinUrl' => $meeting->link,
             ], $recipient->email);
         } catch (\Throwable $e) {
@@ -248,39 +333,55 @@ class ScheduleMeetingController extends Controller
         }
     }
 
+    /**
+     * Cancel a meeting. The host cancels it for everyone; an invited person cancelling is the same as declining.
+     * POST /cancel-meeting  { id }
+     */
     public function cancel_meeting(Request $request)
     {
         try{
             $meeting = Meeting::findOrFail($request->id);
             $me = Auth::user();
 
-            // Only the two people in the meeting can cancel it
             if ((int) $meeting->host_id !== (int) $me->id && (int) $meeting->client_id !== (int) $me->id) {
                 return response()->json(['message' => 'Only the people in this meeting can cancel it.'], 403);
             }
 
-            if ($meeting->status === 'cancelled') {
+            if ((int) $meeting->client_id === (int) $me->id && (int) $meeting->host_id !== (int) $me->id) {
+                return $this->answer($meeting, $me, 'declined');
+            }
+
+            $rows = $this->groupOf($meeting)->filter(fn (Meeting $row) => $row->status !== 'cancelled');
+            if ($rows->isEmpty()) {
                 return response()->json(['message' => 'This meeting is already cancelled.'], 422);
             }
 
-            $meeting->status = 'cancelled';
-            $meeting->save();
+            foreach ($rows as $row) {
+                $declined = $row->status === 'declined';
+                $row->status = 'cancelled';
+                $row->save();
 
-            // Tell the other person: in the app and by email
-            $otherId = (int) $meeting->host_id === (int) $me->id ? $meeting->client_id : $meeting->host_id;
-            $other = User::find($otherId);
-            if ($other) {
-                $myName = trim($me->first_name . ' ' . $me->last_name);
-                $text = "Meeting cancelled\n{$myName} cancelled \"{$meeting->title}\" on " . $this->meetingWhen($meeting) . '.';
-                try {
-                    $this->notification->create($other->id, $me->id, $text, 'meeting', 'meeting');
-                } catch (\Throwable $e) {
-                    ErrorLogService::report($e, ['meeting_id' => $meeting->id]);
+                // Someone who already declined does not need to hear about it again
+                if ($declined) {
+                    continue;
                 }
-                $this->emailMeetingUpdate($meeting, $other, $me, true);
+                $other = User::find($row->client_id);
+                if ($other) {
+                    $myName = trim($me->first_name . ' ' . $me->last_name);
+                    try {
+                        $this->notification->create($other->id, $me->id,
+                            "Meeting cancelled\n{$myName} cancelled \"{$row->title}\" on " . $this->meetingWhen($row) . '.',
+                            'meeting', 'meeting');
+                    } catch (\Throwable $e) {
+                        ErrorLogService::report($e, ['meeting_id' => $row->id]);
+                    }
+                    $this->emailMeetingUpdate($row, $other, $me, 'cancelled');
+                }
             }
 
-            return response()->json(['message' => 'Meeting cancelled. ' . ($other ? $other->first_name . ' has been notified by email and in the app.' : '')], 200);
+            $count = $rows->count();
+
+            return response()->json(['message' => 'Meeting cancelled. ' . ($count === 1 ? $rows->first()->client_name . ' has' : $count . ' people have') . ' been notified by email and in the app.'], 200);
         }
         catch (\Exception $e) {
             ErrorLogService::report($e, [
@@ -293,6 +394,69 @@ class ScheduleMeetingController extends Controller
         }
     }
 
+    /**
+     * An invited person accepts or declines.
+     * POST /respond-meeting  { id, response: accepted|declined }
+     */
+    public function respond_meeting(Request $request)
+    {
+        try {
+            $request->validate([
+                'id' => 'required|integer',
+                'response' => 'required|in:accepted,declined',
+            ]);
+
+            $meeting = Meeting::findOrFail($request->id);
+            $me = Auth::user();
+
+            if ((int) $meeting->client_id !== (int) $me->id) {
+                return response()->json(['message' => 'Only the person invited can answer this meeting.'], 403);
+            }
+
+            return $this->answer($meeting, $me, $request->response);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json(['message' => $e->validator->errors()->first(), 'errors' => $e->errors()], 422);
+        } catch (\Exception $e) {
+            ErrorLogService::report($e, ['input' => request()->except(['password', 'token'])]);
+
+            return response()->json(['message' => 'Something went wrong, please try again later.'], 500);
+        }
+    }
+
+    /** Saves an invited person's answer and tells the host (in the app and by email) */
+    private function answer(Meeting $meeting, User $me, string $response)
+    {
+        if ($meeting->status === 'cancelled') {
+            return response()->json(['message' => 'This meeting was cancelled by the host.'], 422);
+        }
+
+        if ($meeting->status === $response) {
+            return response()->json(['message' => 'You already ' . ($response === 'accepted' ? 'accepted' : 'declined') . ' this meeting.'], 422);
+        }
+
+        $meeting->status = $response;
+        $meeting->save();
+
+        $host = User::find($meeting->host_id);
+        if ($host) {
+            $myName = trim($me->first_name . ' ' . $me->last_name);
+            $verb = $response === 'accepted' ? 'accepted' : 'declined';
+            try {
+                $this->notification->create($host->id, $me->id,
+                    "Meeting {$verb}\n{$myName} {$verb} \"{$meeting->title}\" on " . $this->meetingWhen($meeting) . '.',
+                    'meeting', 'meeting');
+            } catch (\Throwable $e) {
+                ErrorLogService::report($e, ['meeting_id' => $meeting->id]);
+            }
+            $this->emailMeetingUpdate($meeting, $host, $me, $response);
+        }
+
+        return response()->json([
+            'message' => $response === 'accepted'
+                ? 'You accepted the meeting. ' . ($host?->first_name ?? 'The host') . ' has been told.'
+                : 'You declined the meeting. ' . ($host?->first_name ?? 'The host') . ' has been told.',
+        ], 200);
+    }
 
     public function clients_list()
     {
