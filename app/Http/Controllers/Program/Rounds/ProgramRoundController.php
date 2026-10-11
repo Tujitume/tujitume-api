@@ -336,6 +336,29 @@ class ProgramRoundController extends Controller
         ], 200);
     }
 
+    /**
+     * A later round opens after the round before it closes. Rounds can be created at any time;
+     * this only constrains the dates they are given.
+     */
+    private function assertOpensAfterPreviousRound(int $programId, int $roundNumber, $openDate): void
+    {
+        if ($roundNumber < 2 || ! $openDate) {
+            return;
+        }
+
+        $previous = ProgramRound::where('program_id', $programId)->where('round_number', $roundNumber - 1)->first();
+        if (! $previous || ! $previous->close_date) {
+            return;
+        }
+
+        $previousClose = $previous->close_date->copy()->startOfDay();
+        if (\Carbon\Carbon::parse($openDate)->startOfDay()->lessThanOrEqualTo($previousClose)) {
+            throw ValidationException::withMessages([
+                'open_date' => ['Round ' . $roundNumber . ' must open after Round ' . ($roundNumber - 1) . ' closes on ' . $previousClose->format('j M Y') . '.'],
+            ]);
+        }
+    }
+
     public function store(Request $request, Program $program)
     {
         $userId = auth()->id();
@@ -392,6 +415,7 @@ class ProgramRoundController extends Controller
 
             $validated['program_id'] = $program->id;
             $validated['round_number'] = $rounds ? $rounds + 1 : 1;
+            $this->assertOpensAfterPreviousRound($program->id, $validated['round_number'], $validated['open_date']);
             $validated['rubric_mode'] = $validated['rubric_mode'] ?? 'weighted';
             $validated['assignment_type'] = $validated['assignment_type'] ?? 'owner_only';
             $validated['assignment_method'] = $validated['assignment_method'] ?? 'manual';
@@ -500,6 +524,10 @@ class ProgramRoundController extends Controller
             ]);
 
             // The status is never set from here: publishing and finalizing have their own endpoints with their own checks
+            if (array_key_exists('open_date', $validated)) {
+                $this->assertOpensAfterPreviousRound($round->program_id, (int) $round->round_number, $validated['open_date']);
+            }
+
             $round->update($validated);
 
             // Q insert — clear existing first to prevent duplicates
