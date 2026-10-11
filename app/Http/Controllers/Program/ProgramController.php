@@ -542,10 +542,14 @@ class ProgramController extends Controller
                 return response()->json(['error' => 'Unauthorized'], 403);
             }
 
-            // Check for active applications
-            if ($program->activeApplications()->count() > 0) {
+            // Any application, whatever its status (draft, submitted, approved...), belongs to a business that applied
+            $applicationCount = $program->applications()->count();
+            if ($applicationCount > 0) {
+                DB::rollBack();
                 return response()->json([
-                    'message' => 'Program cannot be deleted due to associated applications.'
+                    'message' => $applicationCount === 1
+                        ? 'This program cannot be deleted because 1 business has applied to it. Close the program instead to stop new applications.'
+                        : "This program cannot be deleted because {$applicationCount} businesses have applied to it. Close the program instead to stop new applications.",
                 ], 422);
             }
 
@@ -578,14 +582,25 @@ class ProgramController extends Controller
             return response()->json(['message' => 'Program deleted successfully'], 200);
 
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            DB::rollBack();
             return response()->json(['message' => 'Program not found'], 404);
+
+        } catch (\Illuminate\Database\QueryException $e) {
+            DB::rollBack();
+            // Something else still points at this program (a deal room, payment, reviewer...), so it is kept
+            if (in_array((int) ($e->errorInfo[1] ?? 0), [1451, 1217], true)) {
+                return response()->json([
+                    'message' => 'This program cannot be deleted because it already has activity linked to it. Close the program instead.',
+                ], 422);
+            }
+            ErrorLogService::report($e, ['input' => request()->except(['password', 'token'])]);
+            return response()->json(['message' => 'Something went wrong, please try again later.'], 500);
 
         } catch (\Exception $e) {
             DB::rollBack();
             ErrorLogService::report($e, ['input' => request()->except(['password', 'token'])]);
             return response()->json([
                 'message' => 'Something went wrong, please try again later.',
-                'error' => $e->getMessage() // Remove in production
             ], 500);
         }
     }
