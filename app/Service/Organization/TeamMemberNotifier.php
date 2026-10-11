@@ -46,6 +46,11 @@ class TeamMemberNotifier
                     "Your access to {$orgName} has been deactivated. You can no longer use its workspace until it is restored.",
                     "Your access to {$orgName} was deactivated.",
                 ],
+                'activated' => [
+                    "Your access to {$orgName} was restored",
+                    "Your access to {$orgName} has been restored. You can sign in and use its workspace again.",
+                    "Your access to {$orgName} was restored.",
+                ],
                 'role_changed' => [
                     "Your role in {$orgName} changed",
                     "Your role in {$orgName} is now {$roleLabel}.",

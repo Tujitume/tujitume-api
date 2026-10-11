@@ -24,6 +24,7 @@ class ProgramRound extends Model
         'scoring_criteria' => 'array',
         'knockout_questions' => 'array',
         'required_documents' => 'array',
+        'confirmed_steps' => 'array',
         'open_date' => 'date',
         'close_date' => 'date',
         'review_period_end' => 'date',

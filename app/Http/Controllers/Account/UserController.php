@@ -470,7 +470,7 @@ class UserController extends Controller
     public function updateOrgTeamMemberStatus(Request $request, User $teamMember)
     {
         $data = $request->validate([
-            'status' => ['required', 'in:pending,revoked'],
+            'status' => ['required', 'in:pending,revoked,active'],
         ]);
 
         $user = $request->user();
@@ -494,10 +494,30 @@ class UserController extends Controller
             return response()->json(['message' => 'The organization owner cannot have their membership status changed.'], 422);
         }
 
+        // Activate restores someone who accepted before and was deactivated: no new invitation is needed.
+        // A person who never accepted has to be re-invited instead.
+        if ($data['status'] === 'active') {
+            if ($membership->status !== 'revoked') {
+                return response()->json(['message' => 'Only a deactivated team member can be activated.'], 422);
+            }
+            if (! $membership->accepted_at) {
+                return response()->json(['message' => 'This person never accepted their invitation. Resend the invitation instead.'], 422);
+            }
+        }
+
         try {
             $invitationToken = null;
 
             DB::transaction(function () use ($data, $membership, $user, &$invitationToken): void {
+                if ($data['status'] === 'active') {
+                    $membership->update([
+                        'status' => 'active',
+                        'revoked_at' => null,
+                    ]);
+
+                    return;
+                }
+
                 if ($data['status'] === 'pending') {
                     $invitationToken = \Illuminate\Support\Str::random(64);
                     $membership->update([
@@ -523,18 +543,25 @@ class UserController extends Controller
 
             $membership->refresh()->load('role');
 
+            // A deactivated member must not stay signed in on a device they already used
+            if ($membership->status === 'revoked') {
+                $teamMember->tokens()->delete();
+            }
+
             TeamMemberNotifier::notify(
                 $teamMember,
                 $user,
-                $membership->status === 'pending' ? 'reinvited' : 'revoked',
+                match ($membership->status) { 'pending' => 'reinvited', 'active' => 'activated', default => 'revoked' },
                 $membership->role?->name ?? 'Team member',
                 $invitationToken ? rtrim(config('app.app_url'), '/') . '/organization-invitations/accept?token=' . $invitationToken : null,
             );
 
             return response()->json([
-                'message' => $membership->status === 'pending'
-                    ? 'Team-member invitation reopened.'
-                    : 'Team-member access revoked.',
+                'message' => match ($membership->status) {
+                    'pending' => 'Team-member invitation reopened.',
+                    'active' => 'Team-member access restored.',
+                    default => 'Team-member access deactivated.',
+                },
                 'membership' => $this->organizationMembershipPayload($membership),
                 // Send this only to the intended recipient through the invitation email.
                 'invitation_token' => $invitationToken,

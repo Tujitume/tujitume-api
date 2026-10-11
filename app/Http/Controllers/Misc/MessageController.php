@@ -16,6 +16,7 @@ use Exception;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
 use Throwable;
 
@@ -56,8 +57,22 @@ class MessageController extends Controller
 
         $hasMore = $rows->count() > $limit;
 
-        $messages = $rows->take($limit)->map(function ($msg) use ($authId) {
+        // Who really wrote each message (it is stored under the organization owner when a team member sends it)
+        $authors = User::whereIn('id', $rows->take($limit)->pluck('sent_by_id')->filter()->unique())
+            ->get(['id', 'first_name', 'last_name', 'display_name', 'image'])
+            ->keyBy('id');
+
+        $messages = $rows->take($limit)->map(function ($msg) use ($authId, $authors) {
             $msg->sender = $msg->from_id === $authId ? 'me' : '';
+
+            $author = $authors->get($msg->sent_by_id);
+            $msg->author = $author ? [
+                'id'    => $author->id,
+                'name'  => $author->display_name ?: trim($author->first_name . ' ' . $author->last_name),
+                'image' => $author->image,
+                'is_me' => (int) $author->id === $authId,
+            ] : null;
+
             return $msg;
         })->values();
 
@@ -211,7 +226,11 @@ class MessageController extends Controller
                 'msg' => $validated['msg'],
                 'to_id' => $to_id,
                 'from_id' => $from_id,
-            ]);
+            ] + (
+                // from_id can be the organization owner, so keep who really wrote it
+                // (skipped only until the sent_by_id migration has run, so sending never breaks)
+                Schema::hasColumn('messages', 'sent_by_id') ? ['sent_by_id' => $user->id] : []
+            ));
 
             // NotificationService
             $this->broadcastChat(['message' => 'Encrypted!'], $to_id);

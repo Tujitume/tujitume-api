@@ -406,7 +406,7 @@ class RegisterService
             'user_type_id' => ['required', 'integer', 'in:4,6'],
             'organization_id' => ['required', 'integer', 'exists:organizations,id'],
             'role_id' => ['required', 'integer', 'exists:roles,id'],
-            'email' => ['required', 'email', 'unique:users,email'],
+            'email' => ['required', 'email', 'max:255'],
             'first_name' => ['required', 'string', 'max:255'],
             'last_name' => ['required', 'string', 'max:255'],
             'image' => ['nullable', 'image', 'mimes:jpeg,png,jpg,gif,svg', 'max:2048'],
@@ -423,6 +423,10 @@ class RegisterService
 
         if (! $isOrganizationOwner && ! $isOrganizationAdmin) {
             return response()->json(['message' => 'Only an organization super admin can invite team members.'], 403);
+        }
+        // One account belongs to one organization: say clearly when the email is already used
+        if ($conflict = \App\Service\Organization\InviteEmailCheck::conflict($data['email'], (int) $organization->id)) {
+            return response()->json(['message' => $conflict, 'errors' => ['email' => [$conflict]]], 422);
         }
 
         $uploadedImage = null;
@@ -512,7 +516,7 @@ class RegisterService
         $data = $request->validate([
             'user_type_id' => ['required', 'integer', 'in:6'],
             'organization_id' => ['required', 'integer', 'exists:organizations,id'],
-            'email' => ['required', 'email', 'unique:users,email'],
+            'email' => ['required', 'email', 'max:255'],
             'first_name' => ['required', 'string', 'max:255'],
             'last_name' => ['required', 'string', 'max:255'],
             'image' => ['nullable', 'image', 'mimes:jpeg,png,jpg,gif,svg', 'max:2048'],
@@ -529,6 +533,10 @@ class RegisterService
 
         if (! $isOrganizationOwner && ! $isOrganizationAdmin) {
             return response()->json(['message' => 'Only an organization super admin can invite reviewers.'], 403);
+        }
+        // One account belongs to one organization: say clearly when the email is already used
+        if ($conflict = \App\Service\Organization\InviteEmailCheck::conflict($data['email'], (int) $organization->id)) {
+            return response()->json(['message' => $conflict, 'errors' => ['email' => [$conflict]]], 422);
         }
 
         $uploadedImage = null;

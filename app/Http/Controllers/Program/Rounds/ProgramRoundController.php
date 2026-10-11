@@ -22,7 +22,6 @@ use App\Service\Misc\ErrorLogService;
 use App\Service\Notification\ProgramNotificationService;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -102,15 +101,10 @@ class ProgramRoundController extends Controller
             ->exists();
     }
 
-    // The confirmed wizard steps live in the application cache, not in a column: no schema change is needed.
-    private function confirmedStepsKey(ProgramRound $round): string
-    {
-        return 'program_round:' . $round->id . ':confirmed_steps';
-    }
-
+    // The wizard steps the person has confirmed, stored on the round (program_rounds.confirmed_steps)
     private function confirmedSteps(ProgramRound $round): array
     {
-        return (array) Cache::get($this->confirmedStepsKey($round), []);
+        return (array) ($round->confirmed_steps ?? []);
     }
 
     /** The wizard steps a person confirms themselves; publishing is decided by the round's status. */
@@ -187,7 +181,7 @@ class ProgramRoundController extends Controller
         }
 
         $confirmed = collect($this->confirmedSteps($round))->push($step)->unique()->values()->all();
-        Cache::forever($this->confirmedStepsKey($round), $confirmed);
+        $round->update(['confirmed_steps' => $confirmed]);
 
         return response()->json([
             'message' => 'Step confirmed.',
