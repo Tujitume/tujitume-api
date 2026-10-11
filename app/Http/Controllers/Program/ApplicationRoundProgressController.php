@@ -150,8 +150,9 @@ class ApplicationRoundProgressController extends Controller
             $errors['dates'] = 'Round must have open and close dates.';
         }
 
-        if ($round->open_date && $round->open_date < now()) {
-            $errors['open_date'] = 'Open date must be in the future.';
+        // Today is fine: only a day that has already passed is refused
+        if ($round->open_date && $round->open_date->copy()->startOfDay() < now()->startOfDay()) {
+            $errors['open_date'] = 'Open date cannot be in the past. Choose today or a later date.';
         }
 
         if ($round->open_date && $round->close_date && $round->close_date <= $round->open_date) {
