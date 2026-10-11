@@ -425,6 +425,24 @@ class ProgramApplicationController extends Controller
                     'action_url' => \App\Service\Notification\EmailLink::url($pitchLink), 'action_label' => 'Review Pitch' ];
             $this->emailService->send('New Program Pitch', 'opportunities.program_pitch', $info, $go_email);
 
+            // And a thank-you to the applicant, from the organization (best effort: never fails the submission)
+            try {
+                $round = $program->applicationRound();
+                $this->programNotification->send('application.received', [$sme], [
+                    'program_id' => $program->id,
+                    'program_title' => $program->program_title,
+                    'application_id' => $application->id,
+                    'business_name' => $application->startup_name,
+                    'round_name' => $round?->round_name,
+                    'organization_name' => $program->owner?->display_name ?: $program->funder_name,
+                    'announcement_date' => $round?->announcement_date?->format('j F Y'),
+                    'submitted_at' => now()->format('j M Y, H:i'),
+                    'recipientName' => $sme->first_name ?: $sme->display_name,
+                ]);
+            } catch (\Throwable $e) {
+                ErrorLogService::report($e, ['application_id' => $application->id]);
+            }
+
             return response()->json([
                 'message' => 'Application submitted successfully.',
                 'data' => $application->fresh(),

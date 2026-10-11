@@ -253,7 +253,7 @@ class ReviewerOrderController extends Controller
             $this->programNotification->send('reviewer.payment_completed', [$reviewer], [
                 'program_title' => $program->program_title,
                 'amount' => $order->fee_usd,
-                'currency' => $order->currency ?: 'USD',
+                'currency' => $order->currency ?: config('app.currency', 'KES'),
                 'order_id' => $order->id,
             ]);
 

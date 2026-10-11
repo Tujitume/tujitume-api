@@ -259,7 +259,7 @@ class ProgramController extends Controller
             $wallet['total_deposited'] = 0.00; $wallet['total_disbursed'] = 0.00;
             $wallet['total_reserved'] = 0.00;  $wallet['balance'] = 0.00;
             $wallet['status'] = 'inactive';  // not active until funded
-            $wallet['currency'] = $validated['currency'] ?? 'USD'; //KES
+            $wallet['currency'] = $validated['currency'] ?? config('app.currency', 'KES');
             $wallet['program_id'] = $program->id;
 
             ProgramWallet::create($wallet);
@@ -692,16 +692,27 @@ class ProgramController extends Controller
     public function update_user(Request $request)
     {
         try{
+            // A role change sends only the role; the name is optional and only changed when sent
             $request->validate([
-                'id'    => 'required',
-                'first_name'  => 'required|string|max:255',
-                //'email' => 'required|string|max:255',
-                'role_id'  => 'required|numeric',
+                'id'          => 'required',
+                'first_name'  => 'sometimes|required|string|max:255',
+                'last_name'   => 'sometimes|nullable|string|max:255',
+                'role_id'     => 'required|numeric|exists:roles,id',
             ]);
 
-            $data = $request->except(['_token', 'id', 'role_id']);
             $user = User::findOrFail($request->id);
-            $user->update($data); // performs mass update
+
+            // Only people in your own organization can be changed here
+            $me = Auth::user();
+            if (! $me || ! $me->organization_id || (int) $me->organization_id !== (int) $user->organization_id) {
+                return response()->json(['message' => 'You can only update members of your own organization.'], 403);
+            }
+
+            // Only the name can be edited here (never type, email, organization or other account fields)
+            $data = $request->only(['first_name', 'last_name']);
+            if (! empty($data)) {
+                $user->update($data);
+            }
             $previousRoleId = $user->organizationRole?->role_id;
             $user->organizationRole()->update(['role_id' => $request->role_id]);
 
@@ -711,6 +722,9 @@ class ProgramController extends Controller
             }
 
             return response()->json(['message' => 'User updated.'], 200);
+        }
+        catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json(['message' => $e->validator->errors()->first(), 'errors' => $e->errors()], 422);
         }
         catch (\Exception $e) {
             ErrorLogService::report($e, [

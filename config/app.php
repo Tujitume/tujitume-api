@@ -80,6 +80,9 @@ return [
     |
     */
 
+    // The currency money is shown in (emails, notifications) when a program does not name its own
+    'currency' => env('APP_CURRENCY', 'KES'),
+
     'timezone' => 'UTC',
 
     /*

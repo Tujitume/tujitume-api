@@ -7,7 +7,7 @@
 
         <p>Your payment for work completed on <strong>{{ $round_name }}</strong> in {{ $program_title }} has been initiated.</p>
 
-        <p><strong>Payment Amount:</strong> USD {{ $fee }}</p>
+        <p><strong>Payment Amount:</strong> {{ $currency ?? config('app.currency', 'KES') }} {{ number_format((float) $fee, 2) }}</p>
 
         <p>The program owner is processing your payment. You can track the payment status from your dashboard.</p>
 

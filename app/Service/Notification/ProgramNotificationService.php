@@ -16,7 +16,7 @@ class ProgramNotificationService
      * name, logo and accent colour instead of Tujitume's (see EmailBrand).
      */
     private const BRANDED_EVENTS = [
-        'application.accepted', 'application.rejected', 'application.awarded',
+        'application.received', 'application.accepted', 'application.rejected', 'application.awarded',
         'round.opened', 'round.closing_soon', 'round.closed', 'round.advanced', 'round.not_selected',
         'round.score_received', 'milestones.created', 'budget.completed',
         'mprv.approved', 'mprv.rejected', 'completion.approved', 'completion.rejected',
@@ -39,6 +39,9 @@ class ProgramNotificationService
         if (empty($data['actor_name']) && auth()->check()) {
             $data['actor_name'] = trim((auth()->user()->first_name ?? '') . ' ' . (auth()->user()->last_name ?? ''));
         }
+
+        // Money is always shown in the program's own currency (KES by default), whatever the caller passed
+        $data = $this->withCurrency($data);
 
         $config = $this->getEventConfig($event, $data);
         // The bell shows a short headline and then the sentence, split by a line break (see normalizeNotification)
@@ -114,6 +117,33 @@ class ProgramNotificationService
         return is_scalar($value) ? (string) $value : '';
     }
 
+    /**
+     * Sets `currency` (and `fee_currency`) to the program's currency, or the app currency when the program is
+     * not known. A missing value or a stray "USD" is replaced; any other explicit currency is kept.
+     */
+    private function withCurrency(array $data): array
+    {
+        $fallback = null;
+        $resolve = function () use (&$fallback, $data) {
+            if ($fallback !== null) return $fallback;
+            $programId = $data['program_id'] ?? null;
+            $fromProgram = $programId ? \App\Models\Programs\Program::whereKey($programId)->value('currency') : null;
+            return $fallback = strtoupper((string) ($fromProgram ?: config('app.currency', 'KES')));
+        };
+
+        foreach (['currency', 'fee_currency'] as $key) {
+            $given = strtoupper((string) ($data[$key] ?? ''));
+            if ($given === '' || $given === 'USD') {
+                // fee_currency is only filled in when the event is about a fee
+                if ($key === 'currency' || array_key_exists($key, $data)) {
+                    $data[$key] = $resolve();
+                }
+            }
+        }
+
+        return $data;
+    }
+
     /** "KES 5,000.00" from an amount field and the currency (the program's, else none). */
     private function money(array $data, string $key = 'amount'): string
     {
@@ -145,6 +175,7 @@ class ProgramNotificationService
 
         return match ($event) {
             'application.submitted' => "{$v('business_name')} applied to {$program}. Open the application to review it.",
+            'application.received' => "Thank you for applying. {$program} received your application and will tell you the result once the round is reviewed.",
             'application.accepted' => "Good news: {$program} accepted your application. Open your deal room to set up your funding plan.",
             'application.rejected' => "{$program} did not select your application this time. You can look at other programs and apply again.",
             'round.opened' => "{$round} of {$program} is now open. Apply before it closes.",
@@ -424,6 +455,15 @@ class ProgramNotificationService
                 'link'          => $this->orgApplicantLink($data),
             ],
 
+            // Applicant: a thank-you from the organization, sent the moment they submit
+            'application.received' => [
+                'title'         => 'Application received',
+                'message'       => "{$this->v($data, 'program_title')} received your application",
+                'email_subject' => 'Thank you for applying to ' . $this->v($data, 'program_title'),
+                'email_view'    => $this->view_base . 'application_received',
+                'link'          => $this->applicantProgramLink($data),
+            ],
+
             'application.accepted' => [
                 'title'         => 'Application Accepted',
                 'message'       => "Your application to {$this->v($data, 'program_title')} has been accepted!",
@@ -604,7 +644,7 @@ class ProgramNotificationService
             // ── DISBURSEMENT ─────────────────────────────────────────────────
             'disbursement.created' => [
                 'title'         => 'Payment Initiated',
-                'message'       => "Program payment of {$this->v($data, 'amount')} USD initiated to {$this->v($data, 'supplier_name')}",
+                'message'       => "Program payment of {$this->v($data, 'currency')} {$this->v($data, 'amount')} initiated to {$this->v($data, 'supplier_name')}",
                 'email_subject' => 'Payment Processing',
                 'email_view'    => $this->view_base . 'disbursement_created',
                 'link'          => $this->link('dashboard.programOrg.programDealroomDetail', $data, 'funding-setup', [], [], $this->milestoneHash($data)),

@@ -1191,6 +1191,26 @@ class ProgramRoundController extends Controller
 
             DB::commit();
 
+            // Thank the applicant, from the organization (best effort: never fails the submission)
+            try {
+                $program = $application->program;
+                $round = $application->currentRound;
+                $this->programNotification->send('application.received', [auth()->user()], [
+                    'program_id' => $application->program_id,
+                    'program_title' => $program?->program_title,
+                    'application_id' => $application->id,
+                    'business_name' => $application->startup_name,
+                    'round_name' => $round?->round_name,
+                    'round_submission' => true,
+                    'organization_name' => $program?->owner?->display_name ?: $program?->funder_name,
+                    'announcement_date' => $round?->announcement_date?->format('j F Y'),
+                    'submitted_at' => now()->format('j M Y, H:i'),
+                    'recipientName' => auth()->user()->first_name ?: auth()->user()->display_name,
+                ]);
+            } catch (\Throwable $e) {
+                ErrorLogService::report($e, ['application_id' => $application->id]);
+            }
+
             return response()->json([
                 'message' => 'Application submitted successfully',
                 'data' => [

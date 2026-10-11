@@ -204,7 +204,7 @@ class RoundReviewerController extends Controller
                     'expertise_tags'      => isset($validated['expertise_tags']) ? json_encode($validated['expertise_tags']) : null,
                     'reviewer_fee'        => $validated['reviewer_fee'] ?? null,
                     'fee_type'            => $feeType,
-                    'fee_currency'        => $validated['fee_currency'] ?? 'USD',
+                    'fee_currency'        => $validated['fee_currency'] ?? ($round->program->currency ?: config('app.currency', 'KES')),
                     'acceptance_status'   => 'pending',
                 ]);
 
@@ -219,7 +219,7 @@ class RoundReviewerController extends Controller
                         ? json_encode($validated['expertise_tags']) : null,
                     'reviewer_fee'        => $validated['reviewer_fee'] ?? null,
                     'fee_type'            => $feeType,
-                    'fee_currency'        => $validated['fee_currency'] ?? 'USD',
+                    'fee_currency'        => $validated['fee_currency'] ?? ($round->program->currency ?: config('app.currency', 'KES')),
                     'acceptance_status'   => 'pending',
                 ]);
 
@@ -416,7 +416,7 @@ class RoundReviewerController extends Controller
                     'required'      => $required,
                     'available'     => $available,
                     'shortfall'     => $required - $available,
-                    'currency'      => 'USD', //KES
+                    'currency'      => $round->program->currency ?: config('app.currency', 'KES'),
                 ]);
             }
 
@@ -662,7 +662,7 @@ class RoundReviewerController extends Controller
                 'required'      => $walletCheck['required'],
                 'available'     => $walletCheck['available'],
                 'shortfall'     => $walletCheck['shortfall'],
-                'currency'      => 'USD',
+                'currency'      => $round->program->currency ?: config('app.currency', 'KES'),
             ]);
 
             return response()->json([
