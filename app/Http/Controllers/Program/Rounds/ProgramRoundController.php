@@ -241,17 +241,14 @@ class ProgramRoundController extends Controller
         $round = ProgramRound::findOrFail($round_id);
         (new ProgramAccess())->authorizeRound(auth()->user(), $round);
 
-        if ($round->status === 'finalized') {
-            // Round is done - get all apps from history
-            $appIds = ApplicationRoundHistory::where('round_id', $round_id)
-                ->pluck('application_id');
+        // Everyone who took part in this round: those still in it, and those already moved on or out. Accepting an
+        // applicant in a manual round moves them to the next round straight away, so the round's own record is needed.
+        $appIds = ApplicationRoundHistory::where('round_id', $round_id)->pluck('application_id')
+            ->merge(ProgramApplication::where('current_round_id', $round_id)->pluck('id'))
+            ->unique()
+            ->values();
 
-            $applications = ProgramApplication::with('reviewer')->whereIn('id', $appIds)->get();
-
-        } else {
-            // Round still active - get current apps
-            $applications = ProgramApplication::with('reviewer')->where('current_round_id', $round_id)->get();
-        }
+        $applications = ProgramApplication::with('reviewer')->whereIn('id', $appIds)->get();
 
         // Stats always from history (accurate regardless of round state)
         $history = ApplicationRoundHistory::where('round_id', $round_id)->get();
