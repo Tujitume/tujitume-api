@@ -720,12 +720,32 @@ class ProgramRoundController extends Controller
                 return response()->json(['message' => $message, 'error' => $message], 422);
             }
 
+            $isFinal = $this->isFinalRound($round);
+            $advancedCount = ApplicationRoundHistory::where('round_id', $round->id)->whereIn('outcome', ['advanced', 'awarded'])->count();
+
             $round->status = 'finalized';
             $round->save();
 
+            if ($isFinal) {
+                $program = $round->program;
+                $program->status = 'awarded';
+                $program->save();
+
+                $awarded = ProgramApplication::where('program_id', $round->program_id)->where('status', 'awarded')->count();
+                $this->programNotification->send('program.awarded', [$program->owner], [
+                    'program_title' => $program->program_title,
+                    'awarded_count' => $awarded,
+                    'total_amount'  => $awarded * $program->funding_per_business,
+                    'program_id'    => $program->id,
+                ]);
+            }
+
+            // Applicants were told one by one when they were accepted or rejected, so only the reviewers are paid here
+            $this->startReviewerPayments($round);
+
             return response()->json([
                 'message' => 'Round finalized successfully',
-                'data' => ['advanced' => 0, 'not_selected' => 0],
+                'data' => ['advanced' => $advancedCount, 'not_selected' => 0],
             ]);
         }
 
@@ -898,26 +918,7 @@ class ProgramRoundController extends Controller
             DB::commit();
 
             // ─── Trigger payment to all reviewers ──────────────────────────────
-            $reviewerOrders = ReviewerOrder::where('round_id', $round->id)
-                ->where('order_type', 'round_review')
-                ->whereIn('work_status', ['delivered', 'approved'])
-                ->where('payment_status', 'unpaid')
-                ->where('fee_usd', '>', 0)
-                ->get();
-
-            foreach ($reviewerOrders as $reviewerOrder) {
-                // Mark as pending — PO will be prompted to pay via frontend
-                $reviewerOrder->update(['payment_status' => 'pending']);
-
-                $this->programNotification->send('reviewer.payment_initiated', [
-                    $reviewerOrder->reviewer
-                ], [
-                    'program_title' => $round->program->program_title,
-                    'round_name'    => $round->round_name,
-                    'fee'           => $reviewerOrder->fee_usd,
-                    'order_id'      => $reviewerOrder->id,
-                ]);
-            }
+            $this->startReviewerPayments($round);
 
             // notify
             $roundFinalize = new RoundFinalizationService();
@@ -937,6 +938,34 @@ class ProgramRoundController extends Controller
             DB::rollBack();
             ErrorLogService::report($e, ['input' => request()->except(['password', 'token'])]);
             return response()->json(['message' => 'Something went wrong, please try again later.'], 500);
+        }
+    }
+
+    /**
+     * Finalizing a round is what starts reviewer payments: each reviewer who finished their work has their fee
+     * marked pending (the owner is then prompted to pay it) and is told it is on the way.
+     */
+    private function startReviewerPayments(ProgramRound $round): void
+    {
+        $reviewerOrders = ReviewerOrder::where('round_id', $round->id)
+            ->where('order_type', 'round_review')
+            ->whereIn('work_status', ['delivered', 'approved'])
+            ->where('payment_status', 'unpaid')
+            ->where('fee_usd', '>', 0)
+            ->get();
+
+        foreach ($reviewerOrders as $reviewerOrder) {
+            // Mark as pending: the program owner is prompted to pay via the frontend
+            $reviewerOrder->update(['payment_status' => 'pending']);
+
+            $this->programNotification->send('reviewer.payment_initiated', [
+                $reviewerOrder->reviewer,
+            ], [
+                'program_title' => $round->program->program_title,
+                'round_name'    => $round->round_name,
+                'fee'           => $reviewerOrder->fee_usd,
+                'order_id'      => $reviewerOrder->id,
+            ]);
         }
     }
 
@@ -1196,23 +1225,8 @@ class ProgramRoundController extends Controller
 
 
 
-                // finalize check
+                // The round stays open: the owner closes it with Finalize, which also starts reviewer payments
                 $awardedCount++;
-
-                $remainingCount = ProgramApplication::where('current_round_id', $round->id)
-                    ->whereIn('round_status', ['submitted', 'under_review', 'scored', 'draft'])
-                    ->count();
-
-                $maxAwardeesReached = $awardedCount >= $maxAwardees;
-                $noMoreAppsToReview = $remainingCount === 0;
-
-                if ($maxAwardeesReached || $noMoreAppsToReview) {
-                    $round->status = 'finalized';
-                    $round->save();
-
-                    $program->status = 'awarded';
-                    $program->save();
-                }
 
                 // Round history for final round
                 $totalApplicants = $round->applications()->count();
@@ -1241,15 +1255,7 @@ class ProgramRoundController extends Controller
                 $application->is_eligible_to_advance = false;
                 $application->knockout_status        = 'pending';
 
-                //finalizing round
-                $remainingCount = ProgramApplication::where('current_round_id', $round->id)
-                    ->whereIn('round_status', ['submitted', 'under_review', 'scored', 'draft'])
-                    ->count();
-
-                if($remainingCount === 0) {
-                    $round->status = 'finalized';
-                    $round->save();
-                }
+                // The round stays open: the owner closes it with Finalize, which also starts reviewer payments
             }
 
             $application->save();
@@ -1334,19 +1340,7 @@ class ProgramRoundController extends Controller
                 $application, 'not_selected', $validated['notes'] ?? 'Manually rejected'
             );
 
-            // finalize check
-
-            $remainingCount = ProgramApplication::where('current_round_id', $round->id)
-                ->whereIn('round_status', ['submitted', 'under_review', 'scored', 'draft'])
-                ->count();
-
-            $noMoreAppsToReview = $remainingCount === 0;
-
-            if ($noMoreAppsToReview) {
-                $round->status = 'finalized';
-                $round->save();
-            }
-
+            // The round stays open: the owner closes it with Finalize, which also starts reviewer payments
 
             $application->save();
 
