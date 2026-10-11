@@ -126,18 +126,17 @@ class ApplicationScoreController extends Controller
                 ->where('work_status', 'assigned')
                 ->update(['work_status' => 'in_progress']);
 
-            // Check if reviewer has scored all their assigned apps for this round
-            // Get all applications in this round that are being reviewed
-            $allAppsInRound = ProgramApplication::where('current_round_id', $round->id)
-                ->where('round_status', '!=', 'not_selected')
-                ->count();
-
-            $scoredByReviewer = ApplicationScore::where('round_id', $round->id)
+            $assignedToReviewer = ReviewerApplicationAssignment::where('round_id', $round->id)
                 ->where('reviewer_id', Auth::id())
                 ->count();
 
-            // If reviewer has scored all apps assigned to them, mark as delivered
-            if ($scoredByReviewer >= $allAppsInRound) {
+            $completedByReviewer = ReviewerApplicationAssignment::where('round_id', $round->id)
+                ->where('reviewer_id', Auth::id())
+                ->where('status', 'completed')
+                ->count();
+
+            // If reviewer has scored all applications assigned to them, mark as delivered.
+            if ($assignedToReviewer > 0 && $completedByReviewer >= $assignedToReviewer) {
                 $order = ReviewerOrder::where('round_id', $round->id)
                     ->where('reviewer_id', Auth::id())
                     ->first();

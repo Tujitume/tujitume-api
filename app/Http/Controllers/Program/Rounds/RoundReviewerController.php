@@ -178,6 +178,7 @@ class RoundReviewerController extends Controller
             }
 
             if ($request->reviewer_type == 'internal') {
+                $feeType = 'flat';
 
                 $user->load('organizationRole');
 
@@ -202,7 +203,7 @@ class RoundReviewerController extends Controller
                     'max_apps_assigned'   => $validated['max_apps_assigned'] ?? null,
                     'assigned_percentage' => $validated['assigned_percentage'] ?? null,
                     'expertise_tags'      => isset($validated['expertise_tags']) ? json_encode($validated['expertise_tags']) : null,
-                    'reviewer_fee'        => $validated['reviewer_fee'] ?? null,
+                    'reviewer_fee'        => 0,
                     'fee_type'            => $feeType,
                     'fee_currency'        => $validated['fee_currency'] ?? ($round->program->currency ?: config('app.currency', 'KES')),
                     'acceptance_status'   => 'pending',
@@ -226,6 +227,9 @@ class RoundReviewerController extends Controller
             }
 
             $roundReviewer = RoundReviewer::where('round_id', $round->id)->where('user_id', $userId)->firstOrFail();
+            $orderFee = $roundReviewer->reviewer_type === 'internal'
+                ? 0
+                : ($roundReviewer->fee_type === 'per_application' ? 0 : ($roundReviewer->reviewer_fee ?? 0));
             // One round order represents this reviewer's complete round workload.
             ReviewerOrder::create([
                 'organization_id' => $round->program->organization_id,
@@ -234,8 +238,7 @@ class RoundReviewerController extends Controller
                 'order_type'      => 'round_review',
                 'round_id'        => $round->id,
                 'round_reviewer_id' => $roundReviewer->id,
-                'fee_usd'         => $roundReviewer->fee_type === 'per_application'
-                    ? 0 : ($roundReviewer->reviewer_fee ?? 0),
+                'fee_usd'         => $orderFee,
 
                 'fee_type'        => $roundReviewer->fee_type,
                 'work_status'     => 'assigned',
@@ -253,7 +256,7 @@ class RoundReviewerController extends Controller
                 'max_apps' => $validated['max_apps_assigned'] ?? null,
                 'expertise_tags' => $validated['expertise_tags'] ?? [],
                 'program_id' => $round->program_id,
-                'proposed_fee' => $validated['reviewer_fee'] ?? null,
+                'proposed_fee' => $roundReviewer->reviewer_type === 'internal' ? 0 : ($validated['reviewer_fee'] ?? null),
                 'fee_type' => $feeType,
                 'fee_currency' => $validated['fee_currency'] ?? null,
                 'recipientName' => $user->first_name ?? $user->display_name,
@@ -547,8 +550,12 @@ class RoundReviewerController extends Controller
                     ->lockForUpdate()->first();
 
                 if (!$order || $order->work_status === 'approved') {
-                    $feeType = $roundReviewer->fee_type ?? 'per_application';
-                    $reviewerFee = (float) ($roundReviewer->reviewer_fee ?? 0);
+                    $feeType = $roundReviewer->reviewer_type === 'internal'
+                        ? 'flat'
+                        : ($roundReviewer->fee_type ?? 'per_application');
+                    $reviewerFee = $roundReviewer->reviewer_type === 'internal'
+                        ? 0
+                        : (float) ($roundReviewer->reviewer_fee ?? 0);
 
                     $order = ReviewerOrder::create([
                         'organization_id' => $round->program->organization_id,
@@ -568,14 +575,18 @@ class RoundReviewerController extends Controller
                 }
 
                 foreach ($applicationIds as $appId) {
-                    // One reviewer owns an application's assignment for a round.
-                    ReviewerApplicationAssignment::where('round_id', $round->id)
+                    $existingAssignment = ReviewerApplicationAssignment::where('round_id', $round->id)
                         ->where('application_id', $appId)
-                        ->delete();
+                        ->where('reviewer_id', $reviewer->id)
+                        ->first();
+
+                    if ($existingAssignment) {
+                        continue;
+                    }
 
                     $application = ProgramApplication::find($appId);
 
-                    if($application->round_status == 'assigned' || $application->round_status == 'scored' || $application->round_status == 'advanced' || $application->round_status == 'not_selected') {
+                    if (in_array($application->round_status, ['scored', 'advanced', 'not_selected'], true)) {
                         throw new \RuntimeException("Application ID {$appId} has already been {$application->round_status} and cannot be reassigned.");
                     }
 
@@ -589,7 +600,7 @@ class RoundReviewerController extends Controller
                     ]);
 
                     $assignment->application->round_status = 'assigned';
-                    $assignment->application->assigned_reviewer_id = $reviewer->id;
+                    $assignment->application->assigned_reviewer_id = $assignment->application->assigned_reviewer_id ?: $reviewer->id;
                     $assignment->application->save();
                 }
 
@@ -628,10 +639,6 @@ class RoundReviewerController extends Controller
 
         $userId = $user->id;
 
-        if (!$user->stripe_connect_id && !$user->lipr_wallet) {
-            throw new \RuntimeException('You must onboard to Stripe or Mpesa before starting a review.', 422);
-        }
-
         $assignment = ReviewerApplicationAssignment::where('round_id', $round->id)
             ->where('application_id', $application->id)
             ->where('reviewer_id', $userId)
@@ -646,12 +653,20 @@ class RoundReviewerController extends Controller
             return response()->json(['error' => 'Accept the round assignment before starting review.'], 422);
         }
 
+        $isInternalReviewer = $roundReviewer->reviewer_type === 'internal';
+
+        if (!$isInternalReviewer && !$user->stripe_connect_id && !$user->lipr_wallet) {
+            return response()->json(['error' => 'You must onboard to Stripe or Mpesa before starting a review.'], 422);
+        }
+
         if ($assignment->status === 'completed') {
             return response()->json(['error' => 'Already reviewed'], 422);
         }
 
         // ─── WALLET FUNDS CHECK ───────────────────────────────────
-        $walletCheck = $this->checkWalletFundsForReviewers($round);
+        $walletCheck = $isInternalReviewer
+            ? ['sufficient' => true, 'required' => 0, 'available' => 0, 'shortfall' => 0]
+            : $this->checkWalletFundsForReviewers($round);
         if (!$walletCheck['sufficient']) {
             $this->programNotification->send('reviewer.accepted_insufficient_funds', [
                 $round->program->owner,
@@ -721,12 +736,16 @@ class RoundReviewerController extends Controller
 
     // ─── Get applications assigned to reviewer for a round ────────
     // GET /programs/rounds/{round}/my-applications
-    public function myAssignedApplications()
+    public function myAssignedApplications(ProgramRound $round)
     {
         $userId = auth()->id();
 
         $assignments = ReviewerApplicationAssignment::where('reviewer_id', $userId)
+            ->where('round_id', $round->id)
             ->with([
+                'round.program',
+                'application.program',
+                'application.currentRound',
                 'application.roundAnswers',
                 'application.roundDocuments',
                 'application.scores' => function ($query) use ($userId) {
