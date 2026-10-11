@@ -134,6 +134,74 @@ class ScheduleMeetingController extends Controller
         }
     }
 
+    /**
+     * People you can schedule a meeting with.
+     * GET /meeting-people?search=&page=&per_page=
+     * No search: the people you have already met with come first (suggestions). With a search: anyone on the
+     * platform whose name, username or email matches, so you can find someone you have not worked with yet.
+     */
+    public function people(Request $request)
+    {
+        try {
+            $me = Auth::user();
+            $search = trim((string) $request->query('search', ''));
+            $perPage = min(max((int) $request->query('per_page', 10), 1), 50);
+            $page = max((int) $request->query('page', 1), 1);
+
+            $query = User::where('id', '!=', $me->id)->whereBetween('user_type_id', [1, 6]);
+
+            if ($search !== '') {
+                $like = '%' . $search . '%';
+                $startsWith = $search . '%';
+                $query->where(function ($q) use ($like) {
+                    $q->where('first_name', 'like', $like)
+                        ->orWhere('last_name', 'like', $like)
+                        ->orWhere('display_name', 'like', $like)
+                        ->orWhere('email', 'like', $like)
+                        ->orWhereRaw("CONCAT(first_name, ' ', last_name) LIKE ?", [$like]);
+                })
+                // People whose name starts with what was typed come first, like a typeahead
+                ->orderByRaw("CASE WHEN first_name LIKE ? OR last_name LIKE ? OR CONCAT(first_name, ' ', last_name) LIKE ? THEN 0 ELSE 1 END", [$startsWith, $startsWith, $startsWith]);
+            } else {
+                $met = Meeting::where('host_id', $me->id)->pluck('client_id')
+                    ->merge(Meeting::where('client_id', $me->id)->pluck('host_id'))
+                    ->unique()->values();
+
+                if ($met->isNotEmpty()) {
+                    $query->orderByRaw('CASE WHEN id IN (' . $met->map(fn ($id) => (int) $id)->implode(',') . ') THEN 0 ELSE 1 END');
+                }
+            }
+
+            $users = $query->orderBy('first_name')->orderBy('id')
+                ->offset(($page - 1) * $perPage)
+                ->limit($perPage + 1)
+                ->get(['id', 'first_name', 'last_name', 'display_name', 'email', 'image', 'city', 'country', 'user_type_id']);
+
+            $hasMore = $users->count() > $perPage;
+
+            $roles = [
+                1 => 'Entrepreneur', 2 => 'Investor', 3 => 'Service Provider',
+                4 => 'Program Organization', 5 => 'Capital Organization', 6 => 'Reviewer',
+            ];
+
+            return response()->json([
+                'data' => $users->take($perPage)->values()->map(fn (User $user) => [
+                    'id' => $user->id,
+                    'name' => trim($user->first_name . ' ' . $user->last_name) ?: ($user->display_name ?: $user->email),
+                    'email' => $user->email,
+                    'image' => $user->image,
+                    'role' => $roles[$user->user_type_id] ?? 'Member',
+                    'location' => collect([$user->city, $user->country])->filter()->implode(', '),
+                ]),
+                'meta' => ['page' => $page, 'per_page' => $perPage, 'has_more' => $hasMore],
+            ], 200);
+        } catch (\Exception $e) {
+            ErrorLogService::report($e, ['search' => $request->query('search')]);
+
+            return response()->json(['message' => 'Something went wrong, please try again later.'], 500);
+        }
+    }
+
     public function cancel_meeting(Request $request)
     {
         try{

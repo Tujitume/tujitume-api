@@ -66,6 +66,7 @@ Route::get('withdraw_investment/{id}', [BidsController::class, 'withdraw_investm
 Route::get('meetings', [ScheduleMeetingController::class, 'meetings']);
 Route::post('create-meeting', [ScheduleMeetingController::class, 'create_meeting']);
 Route::post('cancel-meeting', [ScheduleMeetingController::class, 'cancel_meeting']);
+Route::get('meeting-people', [ScheduleMeetingController::class, 'people']);
 Route::get('clients-list', [ScheduleMeetingController::class, 'clients_list']);
 Route::get('schedules', [ScheduleMeetingController::class, 'schedules']);
 Route::get('client-schedules/{client_id}', [ScheduleMeetingController::class, 'client_schedules']);
