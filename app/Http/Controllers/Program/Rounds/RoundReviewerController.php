@@ -819,10 +819,11 @@ class RoundReviewerController extends Controller
                 'round.program',
                 'application.program',
                 'application.currentRound',
-                'application.roundAnswers',
-                'application.roundDocuments',
-                'application.scores' => function ($query) use ($userId) {
-                    $query->where('reviewer_id', $userId);
+                // only this round's answers, documents and the reviewer's own score for this round
+                'application.roundAnswers' => fn ($query) => $query->where('round_id', $round->id),
+                'application.roundDocuments' => fn ($query) => $query->where('round_id', $round->id),
+                'application.scores' => function ($query) use ($userId, $round) {
+                    $query->where('reviewer_id', $userId)->where('round_id', $round->id);
                 },
             ])
             ->get();

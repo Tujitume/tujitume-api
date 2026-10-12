@@ -348,11 +348,17 @@ class ProgramRoundController extends Controller
         $application = ProgramApplication::with([
             'currentRound.questions',
             'currentRound.knockoutQuestions',
-            'roundAnswers',
-            'scores',
-            'scores.reviewer',
-            'roundDocuments',
         ])->findOrFail($application_id);  // ← also fixed: use findOrFail not where()->get()
+
+        // Only what belongs to the round the applicant is in now. An applicant who moved on starts the new round clean:
+        // the earlier round's reviews, answers and documents stay with that round.
+        $roundId = $application->current_round_id;
+        $application->load([
+            'roundAnswers' => fn ($q) => $q->where('round_id', $roundId),
+            'scores' => fn ($q) => $q->where('round_id', $roundId),
+            'scores.reviewer',
+            'roundDocuments' => fn ($q) => $q->where('round_id', $roundId),
+        ]);
 
         (new ProgramAccess())->authorizeApplication(auth()->user(), $application);
 
@@ -1409,6 +1415,8 @@ class ProgramRoundController extends Controller
                 $application->average_score          = null;
                 $application->is_eligible_to_advance = false;
                 $application->knockout_status        = 'pending';
+                // The new round starts with nobody assigned: last round's reviewer does not carry over
+                $application->assigned_reviewer_id   = null;
 
                 // The round stays open: the owner closes it with Finalize, which also starts reviewer payments
             }
