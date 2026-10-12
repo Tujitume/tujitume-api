@@ -220,9 +220,16 @@ class ReviewerOrderController extends Controller
         }
 
         try {
-            $payment = (new \App\Service\Program\ReviewerPaymentService())->pay($order);
-            if (! $payment['ok']) {
-                return response()->json(['message' => $payment['message']], 422);
+            // Team members (internal reviewers) and any order without a fee are simply marked complete, with nothing to pay.
+            // Everyone else is approved and paid from the program wallet.
+            $needsPayment = (float) $order->fee_usd > 0;
+            if ($needsPayment) {
+                $payment = (new \App\Service\Program\ReviewerPaymentService())->pay($order);
+                if (! $payment['ok']) {
+                    return response()->json(['message' => $payment['message']], 422);
+                }
+            } else {
+                $order->update(['work_status' => 'approved', 'approved_at' => now()]);
             }
 
             if ($order->order_type === 'round_review') {
@@ -273,7 +280,9 @@ class ReviewerOrderController extends Controller
             }
 
             return response()->json([
-                'message' => 'Work approved and payment sent over LIPR. The reviewer is told when it lands.',
+                'message' => $needsPayment
+                    ? 'Work approved and payment sent. The reviewer is told when it lands.'
+                    : 'Work approved and the order is complete.',
                 'data' => $order->fresh(),
             ], 200);
         } catch (ValidationException $e) {
