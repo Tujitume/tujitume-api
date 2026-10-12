@@ -142,6 +142,15 @@ class UserResource extends JsonResource
             'is_team_member' => $this->isOrganizationTeamMember(),
         ];
 
+        // Only on your own account: when you joined, and when your email was verified. Email verification is recorded
+        // when the code is entered at sign-up (not always on the user itself), so that record counts too.
+        if ((int) $request->user()?->id === (int) $this->id) {
+            $user['created_at'] = $this->created_at;
+            $user['updated_at'] = $this->updated_at;
+            $user['email_verified_at'] = $this->email_verified_at
+                ?? \App\Models\EmailVerificationCode::where('email', $this->email)->whereNotNull('verified_at')->latest('verified_at')->value('verified_at');
+        }
+
         if (! $isOrganization) {
             $user['gender'] = $this->gender;
             $user['dob'] = $this->dob;

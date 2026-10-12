@@ -160,8 +160,13 @@ class UserController extends Controller
                     return response()->json($funds->calculateCapitalFunds($user), 200);
 
                 case 4: // Org / Internal Reviewer (with role_id = 10004)
+                    // The same reply as before, plus the organization's program funds for the Wallet & Funds section
+                    $programFunds = $funds->calculateProgramFunds($user);
+
                     return response()->json([
                         'data' => new UserResource($user),
+                        'total_funds' => $programFunds['total_funds'],
+                        'available_funds' => $programFunds['available_funds'],
                     ], 200);
 
                 case 5: // Service Provider
