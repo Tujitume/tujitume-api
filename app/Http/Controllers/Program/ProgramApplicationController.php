@@ -336,6 +336,25 @@ class ProgramApplicationController extends Controller
                 return response()->json(['message' => 'Business does not belong to the authenticated user.'], 403);
             }
 
+            // Work the match score out again here instead of trusting the number the browser sent
+            try {
+                $scoringRequest = $request->duplicate();
+                $scoringRequest->merge(['bonus_points' => array_values(array_filter(array_map('trim', explode(',', (string) $request->input('bonus_points')))))]);
+                $computed = (new \App\Service\AiScore\MatchScore())->program($scoringRequest, $program->id)->getData(true);
+
+                if (isset($computed['score'])) {
+                    $validated['match_score'] = $computed['score'];
+                    $validated['score_breakdown'] = collect($computed['score_breakdown'] ?? [])
+                        ->map(fn ($value, $label) => ['label' => trim($label), 'value' => $value])->values()->all();
+                }
+            } catch (\Throwable $e) {
+                ErrorLogService::report($e, ['program_id' => $program->id]);
+            }
+
+            if (($validated['match_score'] ?? 0) < 50) {
+                return response()->json(['message' => 'Your match score is ' . round($validated['match_score'] ?? 0) . '%, below the 50% needed to apply.'], 422);
+            }
+
             // Auto-set fields
             $validated['program_id'] = $program->id;  $validated['program_owner_id'] = $program->user_id;
             $validated['user_id'] = auth()->id(); $validated['status'] = 'pending';

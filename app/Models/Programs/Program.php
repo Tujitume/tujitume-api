@@ -29,6 +29,13 @@ class Program extends Model
 
     protected $guarded = [];
 
+    /** Has the programs table got the match_score_limit column yet? */
+    public static function supportsMatchScoreLimit(): bool
+    {
+        static $supported = null;
+        return $supported ??= \Illuminate\Support\Facades\Schema::hasColumn('programs', 'match_score_limit');
+    }
+
     protected $casts = [
         'startup_stage_focus' => 'array',
         'program_focus' => 'array',

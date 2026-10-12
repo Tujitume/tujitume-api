@@ -176,6 +176,8 @@ class ProgramController extends Controller
                 "startup_stage_focus" => "required|array",
                 'regions' => 'nullable|array',
                 'bonus_points' => 'nullable|array',
+                // Bonus points only count for applicants whose match score reaches this (1 to 100)
+                'match_score_limit' => 'nullable|integer|min:1|max:100',
 
                 "impact_objectives" => "nullable|string",
                 "social_impact_areas" => "nullable|array",
@@ -235,6 +237,11 @@ class ProgramController extends Controller
             $validated['max_awardees'] = $maxAwardees;
             $validated['program_type'] = $validated['program_type'] ?? 'single_round';
             $validated['total_rounds'] = $validated['total_rounds'] ?? 1;
+
+            // Without the column yet, the limit is simply not stored
+            if (! Program::supportsMatchScoreLimit()) {
+                unset($validated['match_score_limit']);
+            }
 
             $program = Program::create(
                 Arr::except($validated, ['application_round', 'round_questions'])
@@ -460,6 +467,11 @@ class ProgramController extends Controller
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
+        // The edit form sends an empty list as the text "[]"
+        if (is_string($request->input('bonus_points'))) {
+            $request->merge(['bonus_points' => json_decode($request->input('bonus_points'), true) ?: []]);
+        }
+
         DB::beginTransaction();
         try {
             $validated = $request->validate([
@@ -484,7 +496,14 @@ class ProgramController extends Controller
                 'total_rounds' => 'sometimes|required|numeric|min:1',
 
                 'disbursement_type' => 'nullable|in:supplier,hybrid,beneficiary',
+
+                'bonus_points' => 'sometimes|nullable|array',
+                'match_score_limit' => 'sometimes|nullable|integer|min:1|max:100',
             ]);
+
+            if (! Program::supportsMatchScoreLimit()) {
+                unset($validated['match_score_limit']);
+            }
 
             if($program->program_type == 'single_round' && $validated['total_rounds'] > 1) {
                 throw new ValidationException([
