@@ -77,21 +77,24 @@ class RetrieveBalanceService
             return [
                 'success' => false,
                 'message' => $err,
-                'balance' => null,
+                'balance' => 'N/A',
             ];
 
-        if (!isset($response['success']) || !$response['success']) {
+            //echo "<pre>"; print_r($response); echo "</pre>"; // Debugging line
+            //exit;
+
+        if ( ($response['status'] !== 200) && !$response['success'] ) {
             return [
                 'success' => false,
-                'message' => $response['error'] ?? 'Lipr API error',
-                'balance' => null,
+                'message' => $response['message'] ?? 'Lipr API error',
+                'balance' => 'N/A',
             ];
         }
 
         return [
             'success' => true,
-            'message' => null,
-            'balance' => (float) $response['data']['wallet']['balance'],
+            'message' => $response['message'],
+            'data' => $response['data'],
         ];
 
     }

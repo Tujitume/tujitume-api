@@ -284,20 +284,20 @@ class WalletController extends Controller
             }
             //
 
-            $stripeBalance = $this->retriveBalance->stripe($user_id);
+            //$stripeBalance = $this->retriveBalance->stripe($user_id);
 
-            $lipr = $this->retriveBalance->lipr($user_id);
+            $getWallet = $this->retriveBalance->lipr($user_id);
 
-            if (!$lipr['success']) {
-                $liprBalance = 0; // or handle properly
-            } else {
-                $liprBalance = $lipr['balance'];
-            }
+            if (!$getWallet['success']) {
+                return response()->json([
+                    'wallet'   => 'N/A',
+                    'error'  => $getWallet['message'], //(!$getWallet['success']) ? $getWallet['message'] : null
+                ], 200);
+            } 
 
             return response()->json([
-                'stripe' => $stripeBalance !== false ? $stripeBalance : 'wallet not found',
-                'lipr'   => $liprBalance,
-                'error'  => (!$lipr['success']) ? $lipr['message'] : null
+                'success'  => true,
+                'wallet'   => $getWallet['data']
             ], 200);
         }
         catch (\Exception $e) {
