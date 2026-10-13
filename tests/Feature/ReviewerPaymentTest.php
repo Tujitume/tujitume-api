@@ -79,7 +79,7 @@ class ReviewerPaymentTest extends TestCase
             ->for($this->round)
             ->create([
                 'order_type' => 'round_review',
-                'fee_usd' => 150.00,
+            'fee_amount' => 150.00,
                 'work_status' => 'assigned',
                 'payment_status' => 'unpaid',
             ]);
@@ -90,7 +90,7 @@ class ReviewerPaymentTest extends TestCase
         $response->assertOk();
         $response->assertJsonCount(1, 'data');
         $response->assertJsonPath('data.0.id', $order->id);
-        $response->assertJsonPath('data.0.fee_usd', 150.00);
+        $response->assertJsonPath('data.0.fee_amount', 150.00);
         $response->assertJsonPath('data.0.order_type', 'round_review');
     }
 
@@ -120,7 +120,7 @@ class ReviewerPaymentTest extends TestCase
             ->for($this->round)
             ->create([
                 'order_type' => 'round_review',
-                'fee_usd' => 150.00,
+                'fee_amount' => 150.00,
                 'work_status' => 'assigned',
             ]);
 
@@ -505,14 +505,14 @@ class ReviewerPaymentTest extends TestCase
             ->for($reviewer1, 'reviewer')
             ->for($this->program)
             ->for($this->round)
-            ->create(['fee_usd' => 150.00]);
+            ->create(['fee_amount' => 150.00]);
 
         $order2 = ReviewerOrder::factory()
             ->for($this->organization)
             ->for($reviewer2, 'reviewer')
             ->for($this->program)
             ->for($this->round)
-            ->create(['fee_usd' => 200.00]);
+            ->create(['fee_amount' => 200.00]);
 
         $response = $this->actingAs($this->programOwner)
             ->getJson("/api/v1/programs/rounds/{$this->round->id}/reviewer-orders");
@@ -521,12 +521,12 @@ class ReviewerPaymentTest extends TestCase
         $response->assertJsonCount(2, 'data');
         $this->assertTrue(
             collect($response->json('data'))
-                ->pluck('fee_usd')
+                ->pluck('fee_amount')
                 ->contains(150.00)
         );
         $this->assertTrue(
             collect($response->json('data'))
-                ->pluck('fee_usd')
+                ->pluck('fee_amount')
                 ->contains(200.00)
         );
     }
@@ -542,7 +542,7 @@ class ReviewerPaymentTest extends TestCase
             ->for($this->program)
             ->for($this->round)
             ->create([
-                'fee_usd' => 150.00,
+            'fee_amount' => 150.00,
                 'fee_kes' => 19500,
                 'currency' => 'USD',
             ]);
@@ -557,7 +557,7 @@ class ReviewerPaymentTest extends TestCase
         $this->assertIsNotNull($data['id']);
         $this->assertIsNotNull($data['program_id']);
         $this->assertIsNotNull($data['order_type']);
-        $this->assertIsNotNull($data['fee_usd']);
+        $this->assertIsNotNull($data['fee_amount']);
         $this->assertIsNotNull($data['work_status']);
         $this->assertIsNotNull($data['payment_status']);
         $this->assertEquals('USD', $data['currency']);

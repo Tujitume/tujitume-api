@@ -715,7 +715,7 @@ class ProgramRoundController extends Controller
                 ->where('order_type', 'round_review')
                 ->whereIn('work_status', ['delivered', 'approved'])
                 ->where('payment_status', 'unpaid')
-                ->where('fee_usd', '>', 0)
+                ->where('fee_amount', '>', 0)
                 ->get();
 
             foreach ($reviewerOrders as $reviewerOrder) {
@@ -727,7 +727,7 @@ class ProgramRoundController extends Controller
                 ], [
                     'program_title' => $round->program->program_title,
                     'round_name'    => $round->round_name,
-                    'fee'           => $reviewerOrder->fee_usd,
+                    'fee'           => $reviewerOrder->fee_amount,
                     'order_id'      => $reviewerOrder->id,
                 ]);
             }

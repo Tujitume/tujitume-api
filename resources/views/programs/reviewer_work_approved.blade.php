@@ -11,7 +11,7 @@
 
         <p>Your {{ $order_type }} work for <strong>{{ $program_title }}</strong> has been approved by the program owner.</p>
 
-        <p>Payment of <strong>USD {{ $fee }}</strong> is now being processed and will be transferred to your wallet shortly.</p>
+        <p>Payment of <strong>KES {{ $fee }}</strong> is now being processed and will be transferred to your wallet shortly.</p>
 
         <p>You can track the payment status from your dashboard.</p>
 

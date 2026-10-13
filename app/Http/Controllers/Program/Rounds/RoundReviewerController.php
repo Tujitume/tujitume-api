@@ -189,7 +189,7 @@ class RoundReviewerController extends Controller
                 'order_type'      => 'round_review',
                 'round_id'        => $round->id,
                 'round_reviewer_id' => $roundReviewer->id,
-                'fee_usd'         => $roundReviewer->fee_type === 'per_application'
+                'fee_amount'         => $roundReviewer->fee_type === 'per_application'
                     ? 0 : ($roundReviewer->reviewer_fee ?? 0),
 
                 'fee_type'        => $roundReviewer->fee_type,
@@ -197,6 +197,7 @@ class RoundReviewerController extends Controller
                 'acceptance_status' => 'pending',
                 'payment_status'  => 'unpaid',
                 'deadline'        => $round->close_date ?? null,
+                'currency'        => 'KES',
             ]);
 
             DB::commit();
@@ -324,7 +325,7 @@ class RoundReviewerController extends Controller
             // Calaculate total reviewer fees and check wallet balance
             $totalReviewerFees = ReviewerOrder::where('round_id', $round->id)
                 ->where('order_type', 'round_review')->where('acceptance_status', 'accepted')
-                ->where('payment_status', '!=', 'completed')->sum('fee_usd');
+                ->where('payment_status', '!=', 'completed')->sum('fee_amount');
 
             $wallet    = $round->program->wallet;
             $available = $wallet?->balance ?? 0;
@@ -478,13 +479,14 @@ class RoundReviewerController extends Controller
                         'order_type' => 'round_review',
                         'round_id' => $round->id,
                         'round_reviewer_id' => $roundReviewer->id,
-                        'fee_usd' => $feeType === 'per_application' ? 0 : $reviewerFee,
+                        'fee_amount' => $feeType === 'per_application' ? 0 : $reviewerFee,
                         'fee_type' => $feeType,
                         'work_status' => 'assigned',
                         'acceptance_status' => 'accepted',
                         'accepted_at' => $roundReviewer->accepted_at ?? now(),
                         'payment_status' => 'unpaid',
                         'deadline' => $round->close_date,
+                        'currency' => 'KES',
                     ]);
                 }
 
@@ -548,8 +550,8 @@ class RoundReviewerController extends Controller
 
         $userId = $user->id;
 
-        if (!$user->stripe_connect_id && !$user->lipr_wallet) {
-            throw new \RuntimeException('You must onboard to Stripe or Mpesa before starting a review.', 422);
+        if (!$user->lipr_wallet) {
+            throw new \RuntimeException('You must onboard to Mpesa Lipr before starting a review.', 422);
         }
 
         $assignment = ReviewerApplicationAssignment::where('round_id', $round->id)
@@ -766,7 +768,7 @@ class RoundReviewerController extends Controller
             ->where('acceptance_status', 'accepted')
             ->where('payment_status', '!=', 'completed')
             ->where('work_status', '!=', 'rejected')
-            ->sum('fee_usd');
+            ->sum('fee_amount');
 
         $wallet    = $round->program->wallet;
         $available = $wallet?->balance ?? 0;

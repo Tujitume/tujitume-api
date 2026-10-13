@@ -19,7 +19,7 @@ return new class extends Migration
         $table->enum('order_type', ['round_review', 'site_visit']);
         $table->foreignId('round_id')->nullable()->constrained('program_rounds')->onDelete('set null');
         $table->foreignId('site_visit_id')->nullable()->constrained('m_e_site_visits')->onDelete('set null');
-        $table->decimal('fee_usd', 10, 2)->default(0);
+        $table->decimal('fee_amount', 10, 2)->default(0);
         $table->decimal('fee_kes', 10, 2)->nullable();
         $table->enum('currency', ['KES', 'USD'])->default('KES');
         $table->enum('work_status', [

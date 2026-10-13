@@ -47,7 +47,7 @@ class LiprW2W
 
         $fields = [
             "requestId" => 'stk-' . now()->format('YmdHis') . '-' . uniqid(),
-            "resultUrl" => rtrim(config('app.api_url'), '/') . '/lipr-callback-program-supplier',
+            "resultUrl" => rtrim(config('app.api_url'), '/') . '/lipr-callback/transfer-to-supplier',
             "timeoutUrl" => rtrim(config('app.api_url'), '/') . '/lipr-callback/timeout',
             "metadata" => [ "listingId" => $milestone->id ],
 
@@ -94,6 +94,85 @@ class LiprW2W
             'message' => $result['message'] ?? $result
         ];
 
+    }
+
+
+    public function sendReviewerPayment($amount, string $receiver_wallet, string $payer_wallet, $order)
+    {
+        if ($amount <= 0) {
+            return [
+                'success' => false,
+                'errors' => ['Amount must be greater than zero.'],
+            ];
+        }
+
+        if (!$receiver_wallet) {
+            return [
+                'success' => false,
+                'errors' => ['Receiver wallet not found.'],
+            ];
+        }
+
+        if (!$payer_wallet) {
+            return [
+                'success' => false,
+                'errors' => ['Payer wallet not found.'],
+            ];
+        }
+
+        $liprAuth = new LiprAuthService();
+        $token = $liprAuth->authorize();
+
+        $base_path = config('services.lipr.base_path');
+        $url = $base_path . "/partners/v1/wallets/transfer";
+
+
+        $fields = [
+            "requestId" => 'stk-' . now()->format('YmdHis') . '-' . uniqid(),
+            "resultUrl" => rtrim(config('app.api_url'), '/') . '/lipr-callback/reviewer-payment',
+            "timeoutUrl" => rtrim(config('app.api_url'), '/') . '/lipr-callback/timeout',
+            "metadata" => ["listingId" => $order->id],
+
+            "fromWallet" => $payer_wallet,
+            "toWallet" => $receiver_wallet,
+            "amount" => $amount,
+            "narration" => 'Mobile Money Transfer',
+        ];
+
+        $fields_string = json_encode($fields);
+        //open connection
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, $url);
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, $fields_string);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, array(
+            "Authorization: Bearer " . $token,
+            "Cache-Control: no-cache",
+            'Content-Type: application/json'
+        ));
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        $result = curl_exec($ch);
+        $result = json_decode($result, true);
+
+        $err = curl_error($ch);
+        curl_close($ch);
+
+        if ($err) {
+            return ['success' => false, 'message' => $err];
+        }
+
+        if (!isset($result['status']) || $result['status'] !== 200) {
+            return [
+                'success' => false,
+                'message' => $result['error'] ?? $result['message'] ?? json_encode($result),
+            ];
+        }
+
+        return   [
+            'success' => true,
+            'response' => $result,
+            'message' => $result['message'] ?? $result
+        ];
     }
 
 }

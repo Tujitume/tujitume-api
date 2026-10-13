@@ -17,14 +17,14 @@ class ReviewerOrder extends Model
     protected $fillable = [
         'organization_id', 'reviewer_id', 'program_id',
         'order_type', 'round_id', 'round_reviewer_id', 'site_visit_id',
-        'fee_usd', 'fee_type', 'fee_kes', 'currency',
+        'fee_amount', 'fee_type', 'fee_kes', 'currency',
         'work_status', 'acceptance_status', 'accepted_at', 'delivery_note', 'modification_note', 'rejection_reason',
         'deadline', 'delivered_at', 'approved_at',
         'payment_status', 'leg1_reference', 'leg2_reference', 'paid_at',
     ];
 
     protected $casts = [
-        'fee_usd'      => 'float',
+        'fee_amount'   => 'float',
         'fee_kes'      => 'float',
         'deadline'     => 'datetime',
         'accepted_at'  => 'datetime',
@@ -79,7 +79,7 @@ class ReviewerOrder extends Model
         $feeType = $roundReviewer->fee_type ?? 'per_application';
         $this->update([
             'fee_type' => $feeType,
-            'fee_usd' => $feeType === 'per_application'
+            'fee_amount' => $feeType === 'per_application'
                 ? $rate * $this->applicationAssignments()->count()
                 : $rate,
         ]);

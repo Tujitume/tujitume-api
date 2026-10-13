@@ -16,7 +16,7 @@ class ReviewerOrderFactory extends Factory
     {
         return [
             'order_type'     => $this->faker->randomElement(['round_review', 'site_visit']),
-            'fee_usd'        => $this->faker->randomFloat(2, 50, 500),
+            'fee_amount'        => $this->faker->randomFloat(2, 50, 500),
             'fee_kes'        => null,
             'currency'       => 'USD',
             'work_status'    => 'assigned',

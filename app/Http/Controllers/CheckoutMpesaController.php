@@ -291,7 +291,7 @@ class CheckoutMpesaController extends Controller
                 throw new \Exception('Reviewer does not have a LIPR wallet configured', 422);
             }
 
-            $amount = $order->fee_usd;
+            $amount = $order->fee_amount;
             $callbackUrl = rtrim(config('app.api_url'), '/') . '/lipr-callback/reviewer-payment';
         }
 

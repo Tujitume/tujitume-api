@@ -13,7 +13,7 @@ return new class extends Migration
         });
 
         Schema::table('reviewer_orders', function (Blueprint $table) {
-            $table->enum('fee_type', ['flat', 'per_application'])->default('flat')->after('fee_usd');
+            $table->enum('fee_type', ['flat', 'per_application'])->default('flat')->after('fee_amount');
         });
     }
 

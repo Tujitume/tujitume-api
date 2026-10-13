@@ -412,7 +412,7 @@ class MEController extends Controller
                     'program_id'      => $checkpoint->application->program_id,
                     'order_type'      => 'site_visit',
                     'site_visit_id'   => $siteVisit->id,
-                    'fee_usd'         => $validated['reviewer_fee'] ?? 0,
+                    'fee_amount'      => $validated['reviewer_fee'] ?? 0,
                     'currency'        => 'USD',
                     'work_status'     => 'assigned',
                     'payment_status'  => 'unpaid',
