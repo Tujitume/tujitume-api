@@ -2,9 +2,11 @@
 
 namespace App\Exceptions;
 
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Exceptions\Handler as ExceptionHandler;
+use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Throwable;
 
@@ -42,12 +44,25 @@ class Handler extends ExceptionHandler
             ], method_exists($e, 'getStatusCode') ? $e->getStatusCode() : 500);
         }
 
+        // One shape for "you may not open this": the app shows its "no access" screen for code=forbidden
+        if (($e instanceof AuthorizationException || $e instanceof AccessDeniedHttpException)
+            && ($request->expectsJson() || $request->is('api/*'))) {
+            $message = $e->getMessage();
+            if ($message === '' || str_starts_with($message, 'This action is unauthorized')) {
+                $message = "You don't have access to this.";
+            }
+
+            return response()->json(['success' => false, 'code' => 'forbidden', 'message' => $message, 'error' => $message], 403);
+        }
+
         // Handle model not found exceptions
         if ($e instanceof ModelNotFoundException ||
             $e instanceof NotFoundHttpException) {
 
             return response()->json([
-                'message' => 'Resource not found.'
+                'success' => false,
+                'code'    => 'not_found',
+                'message' => 'Resource not found.',
             ], 404);
         }
 

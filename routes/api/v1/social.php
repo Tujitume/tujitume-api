@@ -6,6 +6,7 @@ use App\Http\Controllers\Misc\MessageController;
 use App\Http\Controllers\Misc\WatchlistController;
 
 Route::apiResource('watchlists',WatchlistController::class);
+Route::get('messages/thread/{partnerId}', [MessageController::class, 'thread'])->whereNumber('partnerId');
 Route::apiResource('messages',MessageController::class);
 Route::post('messages/mark-read', [MessageController::class, 'markAsRead']);
 

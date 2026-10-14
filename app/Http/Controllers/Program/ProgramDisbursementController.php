@@ -41,6 +41,7 @@ class ProgramDisbursementController extends Controller
      */
     public function disbursementData(ProgramMilestone $milestone)
     {
+        (new \App\Service\Program\ProgramAccess())->authorizeMilestone(auth()->user(), $milestone);
         $milestone->load([
             'application:id,program_id,user_id,program_owner_id,startup_name,contact_person_name,contact_person_email,status,funding_setup_status,awarded_amount,total_amount_requested,planning_mode',
             'application.program:id,program_title,program_type,funding_per_business,mid_milestone_required',
@@ -92,6 +93,8 @@ class ProgramDisbursementController extends Controller
         ], [
             'amount'        => $disbursement->amount,
             'supplier_name' => $disbursement->supplier->supplierDirectory->legal_name,
+            'application_id'    => $disbursement->milestone->app_id,
+            'milestone_number' => $disbursement->milestone->sequence_order,
         ]);
 
         return response()->json(['message' => 'Receipt confirmed successfully. Thank you!'], 200);
@@ -205,6 +208,7 @@ class ProgramDisbursementController extends Controller
             $this->programNotification->send('disbursement.completed', [$disbursement->milestone->application->user, $disbursement->milestone->application->program->owner], [
                 'amount' => $disbursement->amount, 'supplier_name' => $disbursement->supplier->legal_name,
                 'payment_reference' => $disbursement->payment_reference, 'application_id' => $disbursement->milestone->app_id,
+                'milestone_number' => $disbursement->milestone->sequence_order,
             ]);
 
             // If all disbursements complete
@@ -283,6 +287,7 @@ class ProgramDisbursementController extends Controller
             $this->programNotification->send('disbursement.failed', [$disbursement->milestone->application->program->owner], [
                 'supplier_name' => $disbursement->supplier->legal_name, 'reason' => $validated['failure_reason'],
                 'application_id' => $disbursement->milestone->app_id,
+                'milestone_number' => $disbursement->milestone->sequence_order,
             ]);
 
             return response()->json([
@@ -357,6 +362,7 @@ class ProgramDisbursementController extends Controller
             $this->programNotification->send('disbursement.reversed', [$disbursement->milestone->application->user, $disbursement->milestone->application->program->owner], [
                 'amount' => $disbursement->amount, 'supplier_name' => $disbursement->supplier->legal_name,
                 'application_id' => $disbursement->milestone->app_id,
+                'milestone_number' => $disbursement->milestone->sequence_order,
             ]);
 
             return response()->json([
@@ -503,6 +509,7 @@ class ProgramDisbursementController extends Controller
                 'amount'         => $milestone->amount,
                 'supplier_name'  => $supplier->supplierDirectory->legal_name,
                 'application_id' => $milestone->app_id,
+                'milestone_number' => $milestone->sequence_order,
             ]);
 
             return response()->json([

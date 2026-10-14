@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Service;
 
 use App\Http\Controllers\Controller;
+use App\Service\Notification\EmailLink;
 use Illuminate\Http\Request;
 
 class ServiceOfferController extends Controller
@@ -126,7 +127,7 @@ class ServiceOfferController extends Controller
                 $offer->booker_id,
                 Auth::id(),
                 "Your offer of \${$agreedPrice} on {$service->name} was accepted! Please proceed to payment.",
-                'dashboard.entrepreneur.mybookings::' . $booking->id,
+                EmailLink::bookingsFor($offer->booker_id),
                 'service'
             );
 
@@ -178,7 +179,7 @@ class ServiceOfferController extends Controller
                 $offer->booker_id,
                 Auth::id(),
                 "Your offer on {$offer->service->name} was rejected.",
-                'dashboard.entrepreneur.mybookings',
+                EmailLink::bookingsFor($offer->booker_id),
                 'service'
             );
 
@@ -223,7 +224,7 @@ class ServiceOfferController extends Controller
                 $offer->booker_id,
                 Auth::id(),
                 "Counter offer of \${$validated['counter_price']} received for {$offer->service->name}",
-                'dashboard.entrepreneur.mybookings',
+                EmailLink::bookingsFor($offer->booker_id),
                 'service'
             );
 
@@ -302,7 +303,7 @@ class ServiceOfferController extends Controller
                 $booking->booker_id,
                 Auth::id(),
                 "Your service {$booking->service->name} has been delivered. Please review and accept.",
-                'dashboard.entrepreneur.mybookings::' . $booking->id,
+                EmailLink::bookingsFor($booking->booker_id),
                 'service'
             );
 

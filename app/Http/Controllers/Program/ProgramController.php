@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Program;
 
+use App\Support\ApiContract;
 use App\Http\Controllers\Controller;
 use App\Models\Auth\User;
 use App\Models\Capital\CapitalProfile;
@@ -23,6 +24,7 @@ use App\Service\File\ImageCompressor;
 use App\Service\File\ImageUploadService;
 use App\Service\Misc\ErrorLogService;
 use App\Service\Notification\NotificationService;
+use App\Service\Organization\TeamMemberNotifier;
 use Hash;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
@@ -54,7 +56,8 @@ class ProgramController extends Controller
     {
         $user = Auth::user()->load('organizationRole.role');
         $user->role = $user->organizationRole?->role?->name ?? 'super-admin';
-        $user->program_owner_id = null;
+        // The organization owner's id (the user's own id when they are the owner), whose data a team member works on
+        $user->program_owner_id = $user->organizationOwnerId();
         return $user;
     }
     // C O R E  Methods
@@ -67,18 +70,19 @@ class ProgramController extends Controller
                 if($user->user_type_id == 4){  //Program
                     $user = $this->get_role();
 
-                    if (in_array($user->role, ['editor', 'viewer', 'admin'])) {
-                        $programs = Program::withCount(['liked', 'applications'])->where('user_id',$user->program_owner_id)
-                            ->latest()->get();
+                    if (in_array($user->role, ['editor', 'viewer', 'admin', 'super_admin'])) {
+                        $query = Program::withCount(['liked', 'applications'])->where('user_id',$user->program_owner_id)
+                            ->latest();
                         $watchlistProgramIds = Watchlist::where('user_id', $user->program_owner_id)->pluck('org_id')->toArray();
                     }
                     else{
-                        $programs = Program::with('wallet')->withCount(['liked', 'applications'])
+                        $query = Program::with('wallet')->withCount(['liked', 'applications'])
                             ->where('user_id',$user->id)
-                            ->latest()->get();
+                            ->latest();
                         $watchlistProgramIds = Watchlist::where('user_id', $user->id)->pluck('org_id')->toArray();
                     }
 
+                    [$programs, $page] = ApiContract::fetch($query, request());
 
                     foreach ($programs as $program){
                         $program->pitch_count = $program->applications_count ?? 0;
@@ -86,15 +90,10 @@ class ProgramController extends Controller
                         $program->liked = $program->liked()->where('user_id', $user_id)->exists();
                         $program->owner_website = $program->owner->website ?? null;
 
-                        $status = $program->status; // âœ… store original value first
-
-                        $program->status = [
-                            'value' => $status,
-                            'color' => config('status.program.' . $status, 'gray'), // fallback
-                        ];
+                        $program->status = ApiContract::statusMeta('program', $program->status);
                     }
 
-                    return response()->json(['programs' => $programs]);
+                    return ApiContract::listResponse('Programs fetched successfully.', $programs, $page, ['programs']);
                 }
             }
             else{
@@ -102,21 +101,20 @@ class ProgramController extends Controller
             }
 
             // Public programs
-            $programs = Program::withCount(['liked', 'applications'])->where('status', '!=', 'draft')->get();
+            [$programs, $page] = ApiContract::fetch(
+                Program::withCount(['liked', 'applications'])->where('status', '!=', 'draft'),
+                request()
+            );
+            Program::annotateApplicationState($programs);
             foreach ($programs as $program){
                 $program->pitch_count = $program->applications_count ?? 0;
 
                 $program->liked = $user_id ? $program->liked()->where('user_id', $user_id)->exists() : false;
                 $program->owner_website = $program->owner->website ?? null;
 
-                $status = $program->status; // âœ… store original value first
-
-                $program->status = [
-                    'value' => $status,
-                    'color' => config('status.program.' . $status, 'gray'), // fallback
-                ];
+                $program->status = ApiContract::statusMeta('program', $program->status);
             }
-            return response()->json(['programs' => $programs]);
+            return ApiContract::listResponse('Programs fetched successfully.', $programs, $page, ['programs']);
         }
         catch (\Exception $e) {
             ErrorLogService::report($e, [
@@ -134,20 +132,16 @@ class ProgramController extends Controller
     {
         try{
             $user_id = Auth::id();
-            $programs = Program::withCount(['liked', 'applications'])->get();
+            [$programs, $page] = ApiContract::fetch(Program::withCount(['liked', 'applications']), request());
+            Program::annotateApplicationState($programs);
             foreach ($programs as $program){
                 $program->pitch_count = $program->applications_count ?? 0;
                 $program->liked = $user_id ? $program->liked()->where('user_id', $user_id)->exists() : false;
                 $program->owner_website = $program->owner->website ?? null;
 
-                $status = $program->status; // store original value first
-
-                $program->status = [
-                    'value' => $status,
-                    'color' => config('status.program.' . $status, 'gray'), // fallback
-                ];
+                $program->status = ApiContract::statusMeta('program', $program->status);
             }
-            return response()->json(['programs' => $programs]);
+            return ApiContract::listResponse('Programs fetched successfully.', $programs, $page, ['programs']);
         }
         catch (\Exception $e) {
         ErrorLogService::report($e, ['input' => request()->except(['password', 'token']),]);
@@ -182,6 +176,8 @@ class ProgramController extends Controller
                 "startup_stage_focus" => "required|array",
                 'regions' => 'nullable|array',
                 'bonus_points' => 'nullable|array',
+                // Bonus points only count for applicants whose match score reaches this (1 to 100)
+                'match_score_limit' => 'nullable|integer|min:1|max:100',
 
                 "impact_objectives" => "nullable|string",
                 "social_impact_areas" => "nullable|array",
@@ -242,6 +238,11 @@ class ProgramController extends Controller
             $validated['program_type'] = $validated['program_type'] ?? 'single_round';
             $validated['total_rounds'] = $validated['total_rounds'] ?? 1;
 
+            // Without the column yet, the limit is simply not stored
+            if (! Program::supportsMatchScoreLimit()) {
+                unset($validated['match_score_limit']);
+            }
+
             $program = Program::create(
                 Arr::except($validated, ['application_round', 'round_questions'])
             );
@@ -265,7 +266,7 @@ class ProgramController extends Controller
             $wallet['total_deposited'] = 0.00; $wallet['total_disbursed'] = 0.00;
             $wallet['total_reserved'] = 0.00;  $wallet['balance'] = 0.00;
             $wallet['status'] = 'inactive';  // not active until funded
-            $wallet['currency'] = $validated['currency'] ?? 'USD'; //KES
+            $wallet['currency'] = $validated['currency'] ?? config('app.currency', 'KES');
             $wallet['program_id'] = $program->id;
 
             ProgramWallet::create($wallet);
@@ -300,7 +301,7 @@ class ProgramController extends Controller
             $user = Auth::user();
 
             // 1. Authorization (VERY IMPORTANT)
-            if ($program->user_id !== $user->id) {
+            if (!\App\Service\Program\ProgramAccess::owns($program)) {
                 return response()->json([
                     'message' => 'Unauthorized action.'
                 ], 403);
@@ -337,11 +338,15 @@ class ProgramController extends Controller
             // 6. Duplicate rounds + questions
             foreach ($program->rounds as $round) {
 
-                $newRound = $round->replicate([
-                    'program_id', 'open_date', 'close_date', 'created_at', 'updated_at'
-                ]);
+                // A copy starts fresh: every round is a draft and none of its setup steps count as confirmed
+                $excluded = ['program_id', 'open_date', 'close_date', 'status', 'created_at', 'updated_at'];
+                if (\Illuminate\Support\Facades\Schema::hasColumn('program_rounds', 'confirmed_steps')) {
+                    $excluded[] = 'confirmed_steps';
+                }
+                $newRound = $round->replicate($excluded);
 
                 $newRound->program_id = $newProgram->id;
+                $newRound->status = 'draft';
                 $newRound->open_date = null;
                 $newRound->close_date = null;
                 $newRound->push();
@@ -458,8 +463,13 @@ class ProgramController extends Controller
         $userId = auth()->id();
 
         // Authorization
-        if ($program->user_id !== $userId) {
+        if (!\App\Service\Program\ProgramAccess::owns($program)) {
             return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
+        // The edit form sends an empty list as the text "[]"
+        if (is_string($request->input('bonus_points'))) {
+            $request->merge(['bonus_points' => json_decode($request->input('bonus_points'), true) ?: []]);
         }
 
         DB::beginTransaction();
@@ -486,7 +496,14 @@ class ProgramController extends Controller
                 'total_rounds' => 'sometimes|required|numeric|min:1',
 
                 'disbursement_type' => 'nullable|in:supplier,hybrid,beneficiary',
+
+                'bonus_points' => 'sometimes|nullable|array',
+                'match_score_limit' => 'sometimes|nullable|integer|min:1|max:100',
             ]);
+
+            if (! Program::supportsMatchScoreLimit()) {
+                unset($validated['match_score_limit']);
+            }
 
             if($program->program_type == 'single_round' && $validated['total_rounds'] > 1) {
                 throw new ValidationException([
@@ -544,14 +561,18 @@ class ProgramController extends Controller
 
             // Authorization check (if needed)
             $userId = auth()->id();
-            if ($program->user_id !== $userId) {
+            if (!\App\Service\Program\ProgramAccess::owns($program)) {
                 return response()->json(['error' => 'Unauthorized'], 403);
             }
 
-            // Check for active applications
-            if ($program->activeApplications()->count() > 0) {
+            // Any application, whatever its status (draft, submitted, approved...), belongs to a business that applied
+            $applicationCount = $program->applications()->count();
+            if ($applicationCount > 0) {
+                DB::rollBack();
                 return response()->json([
-                    'message' => 'Program cannot be deleted due to associated applications.'
+                    'message' => $applicationCount === 1
+                        ? 'This program cannot be deleted because 1 applicant has applied to it. Close the program instead to stop new applications.'
+                        : "This program cannot be deleted because {$applicationCount} applicants have applied to it. Close the program instead to stop new applications.",
                 ], 422);
             }
 
@@ -584,14 +605,25 @@ class ProgramController extends Controller
             return response()->json(['message' => 'Program deleted successfully'], 200);
 
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            DB::rollBack();
             return response()->json(['message' => 'Program not found'], 404);
+
+        } catch (\Illuminate\Database\QueryException $e) {
+            DB::rollBack();
+            // Something else still points at this program (a deal room, payment, reviewer...), so it is kept
+            if (in_array((int) ($e->errorInfo[1] ?? 0), [1451, 1217], true)) {
+                return response()->json([
+                    'message' => 'This program cannot be deleted because it already has activity linked to it. Close the program instead.',
+                ], 422);
+            }
+            ErrorLogService::report($e, ['input' => request()->except(['password', 'token'])]);
+            return response()->json(['message' => 'Something went wrong, please try again later.'], 500);
 
         } catch (\Exception $e) {
             DB::rollBack();
             ErrorLogService::report($e, ['input' => request()->except(['password', 'token'])]);
             return response()->json([
                 'message' => 'Something went wrong, please try again later.',
-                'error' => $e->getMessage() // Remove in production
             ], 500);
         }
     }
@@ -611,6 +643,7 @@ class ProgramController extends Controller
             //  Handle not found
             if (!$program) {
                 return response()->json([
+                    'success' => false,
                     'message' => 'Program not found'
                 ], 404);
             }
@@ -625,10 +658,13 @@ class ProgramController extends Controller
                     ->exists();
             }
 
-            return response()->json([
-                'program_data' => $program,
-                'application_round' => $round1,
-            ], 200);
+            return ApiContract::itemResponse(
+                'Program fetched successfully.',
+                'program',
+                $program,
+                ['application_round' => $round1],
+                ['program_data' => $program, 'application_round' => $round1],
+            );
         }
         catch (\Exception $e) {
             ErrorLogService::report($e, [
@@ -675,18 +711,39 @@ class ProgramController extends Controller
     public function update_user(Request $request)
     {
         try{
+            // A role change sends only the role; the name is optional and only changed when sent
             $request->validate([
-                'id'    => 'required',
-                'first_name'  => 'required|string|max:255',
-                //'email' => 'required|string|max:255',
-                'role_id'  => 'required|numeric',
+                'id'          => 'required',
+                'first_name'  => 'sometimes|required|string|max:255',
+                'last_name'   => 'sometimes|nullable|string|max:255',
+                'role_id'     => 'required|numeric|exists:roles,id',
             ]);
 
-            $data = $request->except(['_token', 'id', 'role_id']);
             $user = User::findOrFail($request->id);
-            $user->update($data); // performs mass update
+
+            // Only people in your own organization can be changed here
+            $me = Auth::user();
+            if (! $me || ! $me->organization_id || (int) $me->organization_id !== (int) $user->organization_id) {
+                return response()->json(['message' => 'You can only update members of your own organization.'], 403);
+            }
+
+            // Only the name can be edited here (never type, email, organization or other account fields)
+            $data = $request->only(['first_name', 'last_name']);
+            if (! empty($data)) {
+                $user->update($data);
+            }
+            $previousRoleId = $user->organizationRole?->role_id;
             $user->organizationRole()->update(['role_id' => $request->role_id]);
+
+            if ((int) $previousRoleId !== (int) $request->role_id && (int) $user->user_type_id === 4) {
+                $newRole = \App\Models\Auth\Role::find($request->role_id);
+                TeamMemberNotifier::notify($user, Auth::user(), 'role_changed', $newRole?->name ?? 'Team member');
+            }
+
             return response()->json(['message' => 'User updated.'], 200);
+        }
+        catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json(['message' => $e->validator->errors()->first(), 'errors' => $e->errors()], 422);
         }
         catch (\Exception $e) {
             ErrorLogService::report($e, [
@@ -766,6 +823,8 @@ class ProgramController extends Controller
         DB::beginTransaction();
         try{
             $user = User::find($request->id);
+            $roleName = $user->organizationRole?->role?->name ?? 'Team member';
+            $memberSnapshot = $user->replicate(['password']);
             User::where('id',$request->id)->delete();
 
             if($user->user_type_id == 4) // Program organization
@@ -774,6 +833,11 @@ class ProgramController extends Controller
                 CapitalProfile::where('user_id',$request->id)->delete();
 
             DB::commit();
+
+            // Email only: the account is gone, so there is no inbox for an in-app notification
+            if ((int) $user->user_type_id === 4) {
+                TeamMemberNotifier::notify($memberSnapshot, Auth::user(), 'removed', $roleName, notify: false);
+            }
             return response()->json([ 'message' => 'User deleted'], 200);
         }
         catch (\Exception $e) {

@@ -10,6 +10,7 @@ use App\Models\Communication\Notifications;
 use App\Models\Milestones\Milestones;
 use App\Models\Services\Services;
 use App\Service\Misc\ErrorLogService;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
 class DashboardController extends Controller
@@ -93,18 +94,35 @@ class DashboardController extends Controller
             'milestones' => $milestones,
         ]);
     }
-    public function notifications()
+    // Who a notification is from, or null when that sender/business no longer exists
+    private function notifierFor($notice)
     {
-        $notifications = Notifications::where('receiver_id', Auth::id())
-            ->where('visible', 1)->latest()->get();
+        return match($notice->type) {
+            'investor', 'customer' => User::find($notice->customer_id),
+            'business'             => Listing::find($notice->customer_id),
+            'program'              => 'Program',
+            default                => 'Tujitume',
+        };
+    }
+
+    public function notifications(Request $request)
+    {
+        $query = Notifications::where('receiver_id', Auth::id())->where('visible', 1);
+
+        // Paged for the bell (?page=1&per_page=10): newest first, the app asks for more as the list is scrolled.
+        // Without per_page the full list is returned, as before.
+        $paged = $request->filled('per_page');
+        $page = null;
+        if ($paged) {
+            $perPage = min(max((int) $request->query('per_page'), 1), 50);
+            $page = (clone $query)->latest()->orderByDesc('id')->paginate($perPage);
+            $notifications = collect($page->items());
+        } else {
+            $notifications = $query->latest()->get();
+        }
 
         $result = $notifications->filter(function ($notice) {
-            $notifier = match($notice->type) {
-                'investor', 'customer' => User::find($notice->customer_id),
-                'business'             => Listing::find($notice->customer_id),
-                'program'                 => 'Program',
-                default                 => 'Tujitume',
-            };
+            $notifier = $this->notifierFor($notice);
 
             if (!$notifier) return false;
 
@@ -119,7 +137,43 @@ class DashboardController extends Controller
             return true;
         })->values();
 
-        return response()->json(['data' => $result]);
+        if (!$page) {
+            return response()->json(['data' => $result]);
+        }
+
+        return response()->json([
+            'data' => $result,
+            'meta' => [
+                'current_page' => $page->currentPage(),
+                'last_page'    => $page->lastPage(),
+                'total'        => $page->total(),
+                'has_more'     => $page->hasMorePages(),
+                // Unread across ALL pages, so the bell badge stays right while only 10 are loaded
+                // Only ones that can actually be shown: a notification whose sender or business
+                // was deleted is hidden from the list, so it must not be counted either.
+                'unread_count' => Notifications::where('receiver_id', Auth::id())->where('visible', 1)->where('new', 1)->get()
+                    ->filter(fn ($n) => (bool) $this->notifierFor($n))
+                    ->count(),
+            ],
+        ]);
+    }
+
+    // Mark a single notification as read (only the receiver's own)
+    public function notificationMarkRead(Request $request)
+    {
+        $validated = $request->validate(['id' => 'required|integer']);
+
+        $updated = Notifications::where('receiver_id', Auth::id())
+            ->where('id', $validated['id'])
+            ->update(['new' => 0]);
+
+        if (!$updated) {
+            // Already read, or not this user's notification — nothing to change
+            $exists = Notifications::where('receiver_id', Auth::id())->where('id', $validated['id'])->exists();
+            if (!$exists) return response()->json(['message' => 'Notification not found'], 404);
+        }
+
+        return response()->json(['message' => 'success'], 200);
     }
 
     public function notificationSetRead()

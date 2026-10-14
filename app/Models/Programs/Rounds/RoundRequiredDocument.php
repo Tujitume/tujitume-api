@@ -7,9 +7,18 @@ use App\Models\Programs\ProgramApplication;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use App\Traits\HasS3Files;
 
 class RoundRequiredDocument extends Model
 {
+    use HasS3Files;
+
+    // file_path_url: a signed, time-limited link to the file on S3
+    protected function privateFileFields(): array
+    {
+        return ['file_path'];
+    }
+
     protected $fillable = [
         'application_id',
         'round_id',

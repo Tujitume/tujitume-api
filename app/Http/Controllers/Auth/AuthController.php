@@ -12,6 +12,7 @@ use App\Models\EmailVerificationCode;
 use App\Service\Account\DeviceVerificationService;
 use App\Service\Account\RegisterService;
 use App\Service\Misc\ErrorLogService;
+use App\Service\Notification\EmailBrand;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -43,8 +44,9 @@ class AuthController extends Controller
         ]);
 
         // Send email
-        Mail::send('verify_mail', ['code' => $code], function ($msg) use ($email) {
-            $msg->to($email)->subject('Email Verification');
+        // Code in the subject + a plain-text part is what lets Gmail offer its "Copy code" chip
+        Mail::send(['html' => 'verify_mail', 'text' => 'verify_mail_text'], ['code' => $code, 'brand' => EmailBrand::forEmail($email)], function ($msg) use ($email, $code) {
+            $msg->to($email)->subject("{$code} – your Tujitume verification code");
         });
 
         return response()->json([
@@ -105,12 +107,26 @@ class AuthController extends Controller
 
             $msg = $user ? 'Incorrect password.' : 'No account found with this email.';
 
+            // Invited by an organization but never set a password: point them to the invitation, not "incorrect password"
+            if ($user && empty($user->getAttributes()['password'] ?? null) && ($user->invited_at || $user->organization_id)) {
+                $msg = 'Your account is not set up yet. Open the invitation email and use its link to accept the invitation and choose a password.';
+            }
+
             return response([
                 'message' => $msg, 'auth' => Auth::check()
             ], 200);
         }
 
         $user = Auth::user();
+
+        // A team member whose access was deactivated cannot sign in; say so and who to ask
+        if ($reason = $this->deactivatedMessage($user)) {
+            Auth::logout();
+
+            return response([
+                'message' => $reason, 'auth' => false
+            ], 200);
+        }
 
         // D e v i c e   V e r i f i c a t i o n
         $testingNow = false;
@@ -138,6 +154,27 @@ class AuthController extends Controller
             'auth' => Auth::check()
         ]);
 
+    }
+
+    /**
+     * Why this person may not sign in, or null when they may. "Deactivate" on Team Members sets the
+     * membership to revoked, so that is the only access state an organization team member can be locked out by.
+     */
+    private function deactivatedMessage(User $user): ?string
+    {
+        if ((int) $user->user_type_id !== 4) {
+            return null;
+        }
+
+        $membership = $user->organizationRole()->with('organization:id,name,display_name')->first();
+
+        if ($membership?->status !== 'revoked') {
+            return null;
+        }
+
+        $org = $membership->organization?->display_name ?: $membership->organization?->name ?: 'your organisation';
+
+        return "Your account access to {$org} has been deactivated. Please contact {$org}'s administrator to have it restored.";
     }
 
     public function verifyDevice(Request $request, DeviceVerificationService $deviceService)
@@ -343,9 +380,12 @@ class AuthController extends Controller
 
     public function logout(Request $request)
     {
-        $user = $request->user();
+        // Public route: the token may already be expired or revoked, which still counts as logged out
+        $token = $request->user()?->currentAccessToken();
 
-        $user->currentAccessToken()->delete();
+        if ($token instanceof \Laravel\Sanctum\PersonalAccessToken) {
+            $token->delete();
+        }
 
         return response('',204);
     }

@@ -9,13 +9,109 @@ use App\Models\Communication\Messages;
 use App\Models\Services\ServiceMessages;
 use App\Models\Services\Services;
 use App\Service\Misc\ErrorLogService;
+use App\Service\Notification\EmailBrand;
+use App\Service\Notification\EmailLink;
+use App\Service\Notification\EmailService;
 use Exception;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\ValidationException;
+use Throwable;
 
 class MessageController extends Controller
 {
+    private const PAGE_SIZE = 20;
+
+    /**
+     * Real-time push is best effort. The message is already saved, so an
+     * unreachable websocket server must not fail the request.
+     */
+    private function broadcastChat(array $payload, $toId): void
+    {
+        try {
+            event(new ChatNotification($payload, $toId));
+        } catch (Throwable $e) {
+            Log::warning('Chat broadcast failed: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * A page of one conversation, newest first. `before` is the id of the oldest
+     * message the client already has.
+     */
+    private function threadPage(int $authId, int $partnerId, ?int $before, int $limit): array
+    {
+        $rows = Messages::where(function ($q) use ($authId, $partnerId) {
+            $q->where(function ($q) use ($authId, $partnerId) {
+                $q->where('from_id', $authId)->where('to_id', $partnerId);
+            })->orWhere(function ($q) use ($authId, $partnerId) {
+                $q->where('from_id', $partnerId)->where('to_id', $authId);
+            });
+        })
+            ->when($before, fn ($q) => $q->where('id', '<', $before))
+            ->orderByDesc('id')
+            ->limit($limit + 1)
+            ->get();
+
+        $hasMore = $rows->count() > $limit;
+
+        // Who really wrote each message (it is stored under the organization owner when a team member sends it)
+        $authors = User::whereIn('id', $rows->take($limit)->pluck('sent_by_id')->filter()->unique())
+            ->get(['id', 'first_name', 'last_name', 'display_name', 'image'])
+            ->keyBy('id');
+
+        $messages = $rows->take($limit)->map(function ($msg) use ($authId, $authors) {
+            $msg->sender = $msg->from_id === $authId ? 'me' : '';
+
+            $author = $authors->get($msg->sent_by_id);
+            $msg->author = $author ? [
+                'id'    => $author->id,
+                'name'  => $author->display_name ?: trim($author->first_name . ' ' . $author->last_name),
+                'image' => $author->image,
+                'is_me' => (int) $author->id === $authId,
+            ] : null;
+
+            return $msg;
+        })->values();
+
+        return ['messages' => $messages, 'has_more' => $hasMore];
+    }
+
+    /**
+     * Older messages for one conversation: GET messages/thread/{partnerId}?before=<id>&limit=20
+     */
+    public function thread(Request $request, $partnerId)
+    {
+        try {
+            $validated = $request->validate([
+                'before' => 'nullable|integer|min:1',
+                'limit'  => 'nullable|integer|min:1|max:50',
+            ]);
+
+            return response()->json(
+                $this->threadPage(
+                    (int) Auth::id(),
+                    (int) $partnerId,
+                    isset($validated['before']) ? (int) $validated['before'] : null,
+                    (int) ($validated['limit'] ?? self::PAGE_SIZE)
+                ),
+                200
+            );
+        } catch (ValidationException $e) {
+            throw $e;
+        } catch (Exception $e) {
+            ErrorLogService::report($e, [
+                'input' => request()->except(['password', 'token']),
+            ]);
+
+            return response()->json([
+                'message' => 'Something went wrong, please try again later.'
+            ], 500);
+        }
+    }
+
     /**
      * Display a listing of the resource.
      */
@@ -33,33 +129,27 @@ class MessageController extends Controller
                 ->distinct()
                 ->pluck('partner_id');
 
-            // Step 2: Build a structured response for each chat partner
+            // Step 2: One entry per chat partner: profile, unread count and only the
+            // latest page of messages. Older messages load through thread().
             $results = $partnerIds->map(function ($partnerId) use ($authId) {
-                // Fetch full conversation (both directions)
-                $conversation = Messages::where(function ($q) use ($authId, $partnerId) {
-                    $q->where('from_id', $authId)
-                        ->where('to_id', $partnerId);
-                })
-                    ->orWhere(function ($q) use ($authId, $partnerId) {
-                        $q->where('from_id', $partnerId)
-                            ->where('to_id', $authId);
-                    })
-                    ->latest()
-                    ->get()
-                    ->map(function ($msg) use ($authId) {
-                        // Tag sender for frontend use
-                        $msg->sender = $msg->from_id === $authId ? 'me' : '';
-                        return $msg;
-                    });
-
-                // Get the partner (sender) info
                 $partner = User::find($partnerId);
-                if (!$partner) return null;
+                if (! $partner) return null;
+
+                $page = $this->threadPage($authId, $partnerId, null, self::PAGE_SIZE);
 
                 return [
-                    'sender'   => $partner->first_name . ' ' . $partner->last_name,
-                    'email'    => $partner->email,
-                    'messages' => $conversation,
+                    'id'           => $partner->id,
+                    'fname'        => $partner->first_name,
+                    'lname'        => $partner->last_name,
+                    'image'        => $partner->image,
+                    'sender'       => $partner->first_name . ' ' . $partner->last_name,
+                    'email'        => $partner->email,
+                    'unread_count' => Messages::where('from_id', $partnerId)
+                        ->where('to_id', $authId)
+                        ->where('is_new', 1)
+                        ->count(),
+                    'has_more'     => $page['has_more'],
+                    'messages'     => $page['messages'],
                 ];
             })->filter()->values();
 
@@ -129,29 +219,58 @@ class MessageController extends Controller
                 return response()->json(['message' => 'You cannot send message to yourself'], 422);
             }
 
+            // Email only for the first unread message from this sender, so a burst of messages is one email
+            $hadUnreadFromSender = Messages::where('from_id', $from_id)->where('to_id', $to_id)->where('is_new', 1)->exists();
+
             $message = Messages::create([
                 'msg' => $validated['msg'],
                 'to_id' => $to_id,
                 'from_id' => $from_id,
-            ]);
+            ] + (
+                // from_id can be the organization owner, so keep who really wrote it
+                // (skipped only until the sent_by_id migration has run, so sending never breaks)
+                Schema::hasColumn('messages', 'sent_by_id') ? ['sent_by_id' => $user->id] : []
+            ));
 
             // NotificationService
-            event(new ChatNotification(['message' => 'Encrypted!'], $to_id));
+            $this->broadcastChat(['message' => 'Encrypted!'], $to_id);
 
-            if( ($userTo->user_type_id == 4 && $user->user_type_id == 1) ||
-                ($user->user_type_id == 4 && $userTo->user_type_id == 1) ||
-                ($user->user_type_id == 4 && $userTo->user_type_id == 5) ||
-                ($user->user_type_id == 5 && $userTo->user_type_id == 4)
-            ){
-                //E m a i l
-                $receiver = User::find($to_id);
-                $sender = User::find($from_id);
+            // Email the person who received the DM: the exact message, and a button straight to that chat.
+            // Best effort: the message is already saved.
+            if (! $hadUnreadFromSender) {
+                try {
+                    $receiver = User::with('settings')->find($to_id);
+                    $sender = User::find($from_id);
 
-                $user['to'] = $receiver->email;
-                $info=[ 'sender'=>$sender->first_name, 'msg'=>$validated['msg'] ];
-                Mail::send('bids.conv_mail', $info, function($msg) use ($user){
-                    $msg->to($user['to']); $msg->subject('Message Received.');
-                });
+                    if ($receiver?->email && $sender && ($receiver->settings?->email_notifications ?? true)) {
+                        $root = match ((int) $receiver->user_type_id) {
+                            1 => 'entrepreneur',
+                            2 => 'investor',
+                            3 => 'serviceProvider',
+                            4 => 'programOrg',
+                            5 => 'capitalOrg',
+                            default => 'reviewerGrantOrg',
+                        };
+                        $senderName = trim($sender->first_name . ' ' . $sender->last_name);
+
+                        (new EmailService())->send(
+                            'New message from ' . $senderName,
+                            'bids.conv_mail',
+                            [
+                                'sender'       => $senderName,
+                                'msg'          => $validated['msg'],
+                                // Opens the chat with this sender ("@" marks an id the app obfuscates)
+                                'action_url'   => EmailLink::url("dashboard.{$root}.messages?chat=@{$from_id}"),
+                                'action_label' => 'View Message',
+                                // From an organisation member the email wears the organisation's look and name
+                                'brand'        => EmailBrand::forUser($sender),
+                            ],
+                            $receiver->email
+                        );
+                    }
+                } catch (\Throwable $e) {
+                    \Log::warning('Message email failed: ' . $e->getMessage());
+                }
             }
 
             return response()->json([
@@ -272,7 +391,7 @@ class MessageController extends Controller
                 'from_id'          => $booker->id,
             ]);
 
-            event(new ChatNotification(['message' => 'new message'], $owner->user_id));
+            $this->broadcastChat(['message' => 'new message'], $owner->user_id);
 
             return response()->json(['message' => 'Message sent.'], 200);
 
@@ -311,7 +430,7 @@ class MessageController extends Controller
                     'from_id'          => $fromId,
                 ]);
 
-                event(new ChatNotification(['message' => 'new message'], $toId));
+                $this->broadcastChat(['message' => 'new message'], $toId);
                 return response()->json(['message' => 'Message sent.', 'status' => 200], 200);
             }
 
@@ -356,7 +475,7 @@ class MessageController extends Controller
                 $receiver->email
             );
 
-            event(new ChatNotification(['message' => 'new message'], $toId));
+            $this->broadcastChat(['message' => 'new message'], $toId);
 
             return response()->json(['message' => 'Message sent.', 'status' => 200], 200);
 

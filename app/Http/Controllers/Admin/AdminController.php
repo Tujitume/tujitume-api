@@ -26,6 +26,7 @@ use App\Models\Services\ServiceBooking;
 use App\Service\Account\AccountDeletionEligibilityService;
 use App\Service\Misc\ErrorLogService;
 use App\Service\Notification\BulkEmailService;
+use App\Service\Notification\EmailLink;
 use DB;
 use Hash;
 use Illuminate\Http\Request;
@@ -167,12 +168,43 @@ class AdminController extends Controller
             $name = trim(($user->first_name ?? '') . ' ' . ($user->last_name ?? ''))
                 ?: ($user->display_name ?: 'there');
 
+            // What verification unlocks, and where to go next, depends on who was verified
+            [$intro, $next, $linkKey, $linkLabel] = match ($kyc->verification_type) {
+                'entrepreneur' => [
+                    'Your identity has been confirmed.',
+                    'The next step is to list your first business on Tujitume, so it is ready when you want to apply for funding.',
+                    'dashboard.entrepreneur.myBusinesses.create', 'List Your First Business',
+                ],
+                'service_provider' => [
+                    'Your identity has been confirmed.',
+                    'You can now list your services and start receiving bookings and program work.',
+                    'overview/account', 'Open My Account',
+                ],
+                default => [
+                    'Your organization has been verified.',
+                    'You can now publish programs and fund applicants on Tujitume.',
+                    'dashboard.programOrg.programsDiscover', 'View My Programs',
+                ],
+            };
+
+            $details = match ($kyc->verification_type) {
+                'entrepreneur' => $kyc->entrepreneurDetails,
+                'service_provider' => $kyc->serviceProviderDetails,
+                default => $kyc->organizationDetails,
+            };
+
             $this->emailService->send(
-                'Your KYC verification is complete',
+                'You are verified on Tujitume',
                 'kyc.verified',
                 [
                     'name' => $name,
+                    'legalName' => $details?->legal_name ?: $name,
                     'verificationType' => ucfirst(str_replace('_', ' ', $kyc->verification_type)),
+                    'verifiedAt' => now()->format('j M Y'),
+                    'intro' => $intro,
+                    'next' => $next,
+                    'action_url' => EmailLink::url($linkKey),
+                    'action_label' => $linkLabel,
                 ],
                 $user->email
             );

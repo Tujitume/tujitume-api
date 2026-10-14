@@ -28,8 +28,8 @@
                 <td>{{ $setting->id }}</td>
                 <td>{{ $setting->key }}</td>
                 <td>{{ $setting->value }}</td>
-                <td>{{ $setting->created_at->format('Y-m-d H:i') }}</td>
-                <td>{{ $setting->updated_at->format('Y-m-d H:i') }}</td>
+                <td>{{ $setting->created_at?->format('Y-m-d H:i') ?? '—' }}</td>
+                <td>{{ $setting->updated_at?->format('Y-m-d H:i') ?? '—' }}</td>
                 <td class="text-center">
                     <a href="{{ route('settings.show', $setting->id) }}" class="btn btn-info btn-sm">View</a>
                     <a href="{{ route('settings.edit', $setting->id) }}" class="btn btn-primary btn-sm">Edit</a>

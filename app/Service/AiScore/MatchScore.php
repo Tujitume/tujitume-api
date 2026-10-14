@@ -140,10 +140,18 @@ class MatchScore
                 $bonusInput = $bonusInput ? [$bonusInput] : [];
             }
 
+            // Bonus points only count for an applicant whose score so far reaches the program's match score limit.
+            // A program without a limit (older ones) gives its bonus to everyone.
+            $baseScore = $score;
+            $limit = $program->getAttributes()['match_score_limit'] ?? null; // null: no limit set (or the column does not exist yet)
+            $bonusUnlocked = $limit === null || $baseScore >= (float) $limit;
+
             $bo = 0;
-            foreach ($bonusInput ?? [] as $bonus) {
-                if (in_array($bonus, $program->bonus_points ?? [])) {
-                    $bo += 5;
+            if ($bonusUnlocked) {
+                foreach ($bonusInput ?? [] as $bonus) {
+                    if (in_array($bonus, $program->bonus_points ?? [])) {
+                        $bo += 5;
+                    }
                 }
             }
             $score += $bo;
@@ -181,6 +189,10 @@ class MatchScore
                     'Document Completeness' => round($documentScore * 0.05, 2),
                     'Bonus ' => $bo
                 ],
+                // For the applicant to read: the score before bonus, the limit, and whether bonus counted
+                'base_score' => round($baseScore, 2),
+                'match_score_limit' => $limit,
+                'bonus_unlocked' => $bonusUnlocked,
                 //'value_sent' => $request->all(),
                 //'value_compare' => $value_compare
             ]);

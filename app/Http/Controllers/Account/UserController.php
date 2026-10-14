@@ -24,6 +24,7 @@ use App\Models\Services\Smilestones;
 use App\Service\Account\AccountDeletionEligibilityService;
 use App\Service\Account\CalculateUserFunds;
 use App\Service\Misc\ErrorLogService;
+use App\Service\Organization\TeamMemberNotifier;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -82,6 +83,61 @@ class UserController extends Controller
         //
     }
 
+    /** Friendly label for a user type, as shown on a chat profile. */
+    private function chatRoleLabel(User $user): string
+    {
+        return match ((int) $user->user_type_id) {
+            1 => 'Entrepreneur',
+            2 => 'Investor',
+            3 => 'Service Provider',
+            4 => 'Program Organization',
+            5 => 'Capital Provider',
+            6 => 'External Reviewer',
+            7 => 'Admin',
+            default => 'Member',
+        };
+    }
+
+    /** The business / company a person is known by, depending on who they are. */
+    private function chatAffiliation(User $user): ?string
+    {
+        $name = match ((int) $user->user_type_id) {
+            1 => $user->listings()->value('name'),              // entrepreneur: their business
+            3 => $user->services()->value('name'),              // service provider: their service
+            4, 6 => $user->organization?->name,                 // organization staff and reviewers
+            default => null,
+        };
+
+        return $name ?: ($user->organization?->name ?: $user->display_name);
+    }
+
+    /**
+     * Public contact card used by chat: name, photo and a small profile.
+     * No email or phone; any signed-in user can call this.
+     */
+    public function contact($id)
+    {
+        $user = User::with('organization')->find($id);
+        if (! $user) {
+            return response()->json(['message' => 'User not found. The account may have been deleted.'], 404);
+        }
+
+        return response()->json([
+            'status' => 200,
+            'user' => [
+                'id' => $user->id,
+                'fname' => $user->first_name,
+                'lname' => $user->last_name,
+                'image' => $user->image,
+                'role' => $this->chatRoleLabel($user),
+                'affiliation' => $this->chatAffiliation($user),
+                'city' => $user->city,
+                'country' => $user->country,
+                'member_since' => $user->created_at,
+            ],
+        ], 200);
+    }
+
     public function me(CalculateUserFunds $funds)
     {
         $user = Auth::user();
@@ -104,8 +160,13 @@ class UserController extends Controller
                     return response()->json($funds->calculateCapitalFunds($user), 200);
 
                 case 4: // Org / Internal Reviewer (with role_id = 10004)
+                    // The same reply as before, plus the organization's program funds for the Wallet & Funds section
+                    $programFunds = $funds->calculateProgramFunds($user);
+
                     return response()->json([
                         'data' => new UserResource($user),
+                        'total_funds' => $programFunds['total_funds'],
+                        'available_funds' => $programFunds['available_funds'],
                     ], 200);
 
                 case 5: // Service Provider
@@ -368,7 +429,11 @@ class UserController extends Controller
             ->where('user_id', $teamMember->id)
             ->first();
 
-        if (! $membership) {
+        // External reviewers belong to an organization only through users.organization_id and have no membership row.
+        $isExternalReviewer = (int) $teamMember->user_type_id === 6
+            && (int) $teamMember->organization_id === (int) $user->organization_id;
+
+        if (! $membership && ! $isExternalReviewer) {
             return response()->json(['message' => 'Team member not found in your organization.'], 404);
         }
 
@@ -383,10 +448,17 @@ class UserController extends Controller
         }
 
         try {
+            // Their account is about to be deleted, so tell them first (email only: there is no inbox left for a notification)
+            $roleName = $membership?->loadMissing('role')->role?->name ?? 'External Reviewer';
+            $memberSnapshot = $teamMember->replicate(['password']);
+            $memberSnapshot->email = $teamMember->email;
+
             DB::transaction(function () use ($teamMember): void {
                 // organization_user_roles.user_id cascades with the user deletion.
                 $teamMember->delete();
             });
+
+            TeamMemberNotifier::notify($memberSnapshot, $user, 'removed', $roleName, notify: false);
 
             return response()->json(['message' => 'Team member deleted.'], 200);
         } catch (\Exception $e) {
@@ -403,7 +475,7 @@ class UserController extends Controller
     public function updateOrgTeamMemberStatus(Request $request, User $teamMember)
     {
         $data = $request->validate([
-            'status' => ['required', 'in:pending,revoked'],
+            'status' => ['required', 'in:pending,revoked,active'],
         ]);
 
         $user = $request->user();
@@ -427,10 +499,30 @@ class UserController extends Controller
             return response()->json(['message' => 'The organization owner cannot have their membership status changed.'], 422);
         }
 
+        // Activate restores someone who accepted before and was deactivated: no new invitation is needed.
+        // A person who never accepted has to be re-invited instead.
+        if ($data['status'] === 'active') {
+            if ($membership->status !== 'revoked') {
+                return response()->json(['message' => 'Only a deactivated team member can be activated.'], 422);
+            }
+            if (! $membership->accepted_at) {
+                return response()->json(['message' => 'This person never accepted their invitation. Resend the invitation instead.'], 422);
+            }
+        }
+
         try {
             $invitationToken = null;
 
             DB::transaction(function () use ($data, $membership, $user, &$invitationToken): void {
+                if ($data['status'] === 'active') {
+                    $membership->update([
+                        'status' => 'active',
+                        'revoked_at' => null,
+                    ]);
+
+                    return;
+                }
+
                 if ($data['status'] === 'pending') {
                     $invitationToken = \Illuminate\Support\Str::random(64);
                     $membership->update([
@@ -456,10 +548,25 @@ class UserController extends Controller
 
             $membership->refresh()->load('role');
 
+            // A deactivated member must not stay signed in on a device they already used
+            if ($membership->status === 'revoked') {
+                $teamMember->tokens()->delete();
+            }
+
+            TeamMemberNotifier::notify(
+                $teamMember,
+                $user,
+                match ($membership->status) { 'pending' => 'reinvited', 'active' => 'activated', default => 'revoked' },
+                $membership->role?->name ?? 'Team member',
+                $invitationToken ? rtrim(config('app.app_url'), '/') . '/organization-invitations/accept?token=' . $invitationToken : null,
+            );
+
             return response()->json([
-                'message' => $membership->status === 'pending'
-                    ? 'Team-member invitation reopened.'
-                    : 'Team-member access revoked.',
+                'message' => match ($membership->status) {
+                    'pending' => 'Team-member invitation reopened.',
+                    'active' => 'Team-member access restored.',
+                    default => 'Team-member access deactivated.',
+                },
                 'membership' => $this->organizationMembershipPayload($membership),
                 // Send this only to the intended recipient through the invitation email.
                 'invitation_token' => $invitationToken,
@@ -508,14 +615,18 @@ class UserController extends Controller
                         hash('sha256', $data['token'])
                     )->lockForUpdate()->first();
 
-                    if (! $user) {
+                    if (! $user || ($user->invitation_expires_at && \Illuminate\Support\Carbon::parse($user->invitation_expires_at)->isPast())) {
                         abort(422, 'This invitation is invalid or has expired.');
                     }
 
                     $user->update([
                         'display_name' => $data['display_name'],
+                        'phone' => $data['phone'],
                         'image' => $uploadedImage,
                         'password' => Hash::make($data['password']),
+                        // One use only
+                        'invitation_token_hash' => null,
+                        'invitation_expires_at' => null,
                     ]);
 
                     return [
@@ -532,6 +643,7 @@ class UserController extends Controller
 
                 $membership->user->update([
                     'display_name' => $data['display_name'],
+                    'phone' => $data['phone'],
                     'image' => $uploadedImage,
                     'password' => Hash::make($data['password']),
                 ]);

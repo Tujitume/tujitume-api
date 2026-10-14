@@ -13,6 +13,7 @@ use App\Models\Users\InvestorProfile;
 use App\Models\Users\ServiceProviderProfile;
 use App\Service\File\ImageUploadService;
 use App\Service\Misc\ErrorLogService;
+use App\Service\Notification\EmailBrand;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -405,7 +406,7 @@ class RegisterService
             'user_type_id' => ['required', 'integer', 'in:4,6'],
             'organization_id' => ['required', 'integer', 'exists:organizations,id'],
             'role_id' => ['required', 'integer', 'exists:roles,id'],
-            'email' => ['required', 'email', 'unique:users,email'],
+            'email' => ['required', 'email', 'max:255'],
             'first_name' => ['required', 'string', 'max:255'],
             'last_name' => ['required', 'string', 'max:255'],
             'image' => ['nullable', 'image', 'mimes:jpeg,png,jpg,gif,svg', 'max:2048'],
@@ -422,6 +423,10 @@ class RegisterService
 
         if (! $isOrganizationOwner && ! $isOrganizationAdmin) {
             return response()->json(['message' => 'Only an organization super admin can invite team members.'], 403);
+        }
+        // One account belongs to one organization: say clearly when the email is already used
+        if ($conflict = \App\Service\Organization\InviteEmailCheck::conflict($data['email'], (int) $organization->id)) {
+            return response()->json(['message' => $conflict, 'errors' => ['email' => [$conflict]]], 422);
         }
 
         $uploadedImage = null;
@@ -464,8 +469,11 @@ class RegisterService
             $invitationUrl = rtrim(config('app.app_url'), '/')
                 .'/organization-invitations/accept?token='.$invitationToken;
 
+            $emailSent = true;
+
             try {
                 Mail::send('organization_team_invitation', [
+                    'brand' => EmailBrand::forOrganization($organization),
                     'teamMember' => $user,
                     'organization' => $organization,
                     'inviter' => $inviter,
@@ -478,6 +486,7 @@ class RegisterService
                 });
             } catch (\Throwable $mailException) {
                 // The pending membership remains valid so the invite can be resent.
+                $emailSent = false;
                 ErrorLogService::report($mailException, [
                     'organization_id' => $organization->id,
                     'team_member_id' => $user->id,
@@ -485,7 +494,10 @@ class RegisterService
             }
 
             return response()->json([
-                'message' => 'Team member invited successfully.',
+                'message' => $emailSent
+                    ? 'Team member invited successfully.'
+                    : 'Team member added, but the invitation email could not be sent. Check the mail settings, then resend the invite.',
+                'email_sent' => $emailSent,
                 'user' => new UserResource($user->load('organizationRoles.role')),
                 'invitation_expires_at' => now()->addDays(7)->toISOString(),
             ], 201);
@@ -504,7 +516,7 @@ class RegisterService
         $data = $request->validate([
             'user_type_id' => ['required', 'integer', 'in:6'],
             'organization_id' => ['required', 'integer', 'exists:organizations,id'],
-            'email' => ['required', 'email', 'unique:users,email'],
+            'email' => ['required', 'email', 'max:255'],
             'first_name' => ['required', 'string', 'max:255'],
             'last_name' => ['required', 'string', 'max:255'],
             'image' => ['nullable', 'image', 'mimes:jpeg,png,jpg,gif,svg', 'max:2048'],
@@ -521,6 +533,10 @@ class RegisterService
 
         if (! $isOrganizationOwner && ! $isOrganizationAdmin) {
             return response()->json(['message' => 'Only an organization super admin can invite reviewers.'], 403);
+        }
+        // One account belongs to one organization: say clearly when the email is already used
+        if ($conflict = \App\Service\Organization\InviteEmailCheck::conflict($data['email'], (int) $organization->id)) {
+            return response()->json(['message' => $conflict, 'errors' => ['email' => [$conflict]]], 422);
         }
 
         $uploadedImage = null;
@@ -556,8 +572,11 @@ class RegisterService
             $invitationUrl = rtrim(config('app.app_url'), '/')
                 . '/organization-invitations/accept?token=' . $invitationToken;
 
+            $emailSent = true;
+
             try {
                 Mail::send('external_reviewer_invitation', [
+                    'brand' => EmailBrand::forOrganization($organization),
                     'teamMember' => $user,
                     'organization' => $organization,
                     'inviter' => $inviter,
@@ -570,6 +589,7 @@ class RegisterService
                 });
             } catch (\Throwable $mailException) {
                 // The pending membership remains valid so the invite can be resent.
+                $emailSent = false;
                 ErrorLogService::report($mailException, [
                     'organization_id' => $organization->id,
                     'team_member_id' => $user->id,
@@ -577,7 +597,10 @@ class RegisterService
             }
 
             return response()->json([
-                'message' => 'External reviewer invited successfully.',
+                'message' => $emailSent
+                    ? 'External reviewer invited successfully.'
+                    : 'Reviewer added, but the invitation email could not be sent. Check the mail settings, then resend the invite.',
+                'email_sent' => $emailSent,
                 'user' => new UserResource($user->load('organizationRoles.role')),
                 'invitation_expires_at' => now()->addDays(7)->toISOString(),
             ], 201);

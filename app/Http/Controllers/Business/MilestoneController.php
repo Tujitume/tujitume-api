@@ -202,6 +202,10 @@ class MilestoneController extends Controller
         try {
             $milestone = Milestones::findOrFail($id);
 
+            if ($milestone->user_id !== Auth::id()) {
+                return response()->json(['message' => 'Unauthorized!'], 401);
+            }
+
             if ($milestone->accepted_bids()->sum('amount') > 0) {
                 return response()->json(['message' => 'An active milestone cannot be deleted.'], 400);
             }

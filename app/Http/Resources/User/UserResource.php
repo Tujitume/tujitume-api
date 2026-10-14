@@ -23,10 +23,12 @@ class UserResource extends JsonResource
         $isOrganization = $userTypeId === 4;
         $isCapital = $userTypeId === 5;
 
-        if ($isOrganization) {
+        // An external reviewer works inside the organization that invited them, so they get its name, logo and
+        // dashboard address too (their look comes from the organization's settings, see effectiveSettings()).
+        if ($isOrganization || $userTypeId === 6) {
             $this->loadMissing('organization.workspaces', 'organization.programIndustry');
 
-            if ($this->resource->exists) {
+            if ($isOrganization && $this->resource->exists) {
                 $this->loadMissing('organizationRole.role');
             }
         } elseif ($isInvestor) {
@@ -135,8 +137,19 @@ class UserResource extends JsonResource
             'role' => $role,
             'organization_membership' => $organizationMembership,
             'workspaces' => $organizationWorkspaces,
-            'settings' => $this->getSettings()->toFrontendArray(),
+            // A team member sees the organization's look (theme, logo, regional settings) and cannot change it
+            'settings' => $this->effectiveSettings()->toFrontendArray(),
+            'is_team_member' => $this->isOrganizationTeamMember(),
         ];
+
+        // Only on your own account: when you joined, and when your email was verified. Email verification is recorded
+        // when the code is entered at sign-up (not always on the user itself), so that record counts too.
+        if ((int) $request->user()?->id === (int) $this->id) {
+            $user['created_at'] = $this->created_at;
+            $user['updated_at'] = $this->updated_at;
+            $user['email_verified_at'] = $this->email_verified_at
+                ?? \App\Models\EmailVerificationCode::where('email', $this->email)->whereNotNull('verified_at')->latest('verified_at')->value('verified_at');
+        }
 
         if (! $isOrganization) {
             $user['gender'] = $this->gender;

@@ -42,8 +42,34 @@ class ServiceController extends Controller
         //$this->middleware('business');
     }
 
+    /**
+     * A provider can only list a service once their identity is verified and they can be paid
+     * (a Tujitume wallet or a completed Stripe payout account). Returns the reason, or null.
+     */
+    private function listingBlockedReason(?User $user): ?array
+    {
+        if (!$user) return ['code' => 'unauthenticated', 'message' => 'Please sign in to create a service.'];
+
+        $kycStatus = $user->currentKycVerification()->value('status');
+        if ($kycStatus !== 'verified') {
+            return ['code' => 'kyc_required', 'message' => 'Verify your account (KYC) before you create a service.'];
+        }
+
+        $hasWallet = !empty($user->lipr_wallet);
+        $hasStripe = !empty($user->connect_id) && $user->connect_id !== 'null' && $user->completed_onboarding;
+        if (!$hasWallet && !$hasStripe) {
+            return ['code' => 'payment_setup_required', 'message' => 'Set up a payment method before you create a service.'];
+        }
+
+        return null;
+    }
+
     public function storeService(Request $request, SpamWordChecker $spam, SpamImageChecker $spamI)
     {
+        if ($blocked = $this->listingBlockedReason(Auth::user())) {
+            return response()->json($blocked + ['status' => 403], 403);
+        }
+
         $uploadedFiles = [];
 
         DB::beginTransaction();

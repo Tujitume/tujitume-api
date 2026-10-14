@@ -202,7 +202,7 @@ class ProgramMilestoneController extends Controller
             $application = ProgramApplication::findOrFail($applicationId);
 
             // Authorization: Only program owner can create templates
-            if ($application->program->user_id !== $userId) {
+            if (!\App\Service\Program\ProgramAccess::owns($application->program)) {
                 return response()->json(['error' => 'Unauthorized'], 403);
             }
 
@@ -291,6 +291,13 @@ class ProgramMilestoneController extends Controller
                     ->where('user_id', $userId)
                     ->firstOrFail();
 
+                // A deactivated supplier is hidden from the deal room; their account is untouched
+                if (! (bool) ($supplier->is_active ?? true)) {
+                    throw ValidationException::withMessages([
+                        'supplier_id' => ['This supplier is deactivated. Activate them in the supplier directory first.'],
+                    ]);
+                }
+
                 MilestoneSupplier::create([
                     'milestone_id' => $milestone->id,
                     'supplier_id' => $supplier->id,
@@ -340,7 +347,7 @@ class ProgramMilestoneController extends Controller
             $application = ProgramApplication::findOrFail($applicationId);
 
             // Authorization: Program owner or applicant can view
-            if ($application->program->user_id !== $userId && $application->user_id !== $userId) {
+            if (!\App\Service\Program\ProgramAccess::owns($application->program) && $application->user_id !== $userId) {
                 return response()->json(['error' => 'Unauthorized'], 403);
             }
 
@@ -365,6 +372,10 @@ class ProgramMilestoneController extends Controller
                     'remaining' => $approvedAmount - $totalAmount,
                     'is_complete' => abs($approvedAmount - $totalAmount) < 0.01, // Account for floating point
                     'funding_setup_status' => $application->funding_setup_status,
+                    // Which deal room step the person is on, and what is left in funding setup (decided here, not in the browser)
+                    'dealroom_progress' => \App\Service\Program\DealRoomProgress::forApplication(
+                        $application, $templates, (float) $totalAmount, (float) $approvedAmount
+                    ),
                 ],
             ], 200);
 
@@ -513,7 +524,7 @@ class ProgramMilestoneController extends Controller
             $application = ProgramApplication::findOrFail($applicationId);
 
             // Authorization: Only program owner can activate locked mode
-            if ( $application->planning_mode == 'locked' && $application->program->user_id !== $userId) {
+            if ( $application->planning_mode == 'locked' && !\App\Service\Program\ProgramAccess::owns($application->program)) {
                 return response()->json(['error' => 'Unauthorized'], 403);
             }
 
@@ -611,7 +622,7 @@ class ProgramMilestoneController extends Controller
             $milestone = ProgramMilestone::findOrFail($milestoneId); //where('is_template', true)
 
             // Authorization: Only program owner
-            if ($milestone->application->program->user_id !== $userId) {
+            if (!\App\Service\Program\ProgramAccess::owns($milestone->application->program)) {
                 return response()->json(['error' => 'Unauthorized'], 403);
             }
 

@@ -11,8 +11,10 @@ use App\Models\Programs\ProgramMilestone;
 use App\Models\Programs\ProgramWatchlist;
 use App\Models\Programs\Rounds\ApplicationRoundResponse;
 use App\Models\Programs\Rounds\ProgramRound;
+use App\Models\Programs\Rounds\ReviewerApplicationAssignment;
 use App\Models\Programs\Rounds\RoundCustomQuestion;
 use App\Models\Programs\Rounds\RoundRequiredDocument;
+use App\Service\Program\ProgramAccess;
 use App\Service\Program\RoundHelperService;
 use App\Service\Program\RoundHistoryService;
 use App\Service\Misc\ErrorLogService;
@@ -35,6 +37,8 @@ class ProgramApplicationController extends Controller
     public function index($program_id)
     {
         $user_id = Auth::id();
+
+        (new ProgramAccess())->authorizeProgramStaff(auth()->user(), Program::findOrFail($program_id));
 
         $pitches = ProgramApplication::with('program_milestones')
             ->where('program_id', $program_id)->latest()->get();
@@ -63,15 +67,22 @@ class ProgramApplicationController extends Controller
                 'currentRound',
             ])->findOrFail($id);
 
+            (new ProgramAccess())->authorizeApplication(auth()->user(), $pitch);
+
             $roundData = null;
             $roundService = new RoundHelperService();
             if ($pitch->current_round_id) {
                 $roundData = $roundService->buildRoundData($pitch->currentRound, $pitch);
             }
+            $myReviewAssignment = ReviewerApplicationAssignment::where('application_id', $pitch->id)
+                ->where('reviewer_id', Auth::id())
+                ->latest('id')
+                ->first();
 
             return response()->json([
                 'pitch' => [
                     ...$pitch->toArray(),
+                    'my_review_assignment' => $myReviewAssignment,
                     'status' => [
                         'value' => $pitch->status,
                         'color' => config('status.program_application.' . $pitch->status, 'gray'),
@@ -92,8 +103,11 @@ class ProgramApplicationController extends Controller
                 'round_data' => $roundData,
             ]);
 
+        } catch (\Illuminate\Auth\Access\AuthorizationException $e) {
+            throw $e; // handled globally as a 403
+
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
-            return response()->json(['message' => 'Application not found'], 404);
+            throw $e; // handled globally as a standard 404 not_found response
 
         } catch (\Exception $e) {
             ErrorLogService::report($e, ['input' => request()->except(['password', 'token'])]);
@@ -109,7 +123,7 @@ class ProgramApplicationController extends Controller
         $match_score = 0;
         $user = $this->get_role();
 
-        if (in_array($user->role, ['editor', 'viewer', 'admin'])) {
+        if (in_array($user->role, ['editor', 'viewer', 'admin', 'super_admin'])) {
             $watchlistPitchIds = ProgramWatchlist::where('program_owner_id', $user->program_owner_id)->pluck('pitch_id')->toArray();
             $pitches = ProgramApplication::with(['program', 'currentRound', 'program_milestones'])
                 ->where('program_owner_id', $user->program_owner_id)
@@ -182,8 +196,12 @@ class ProgramApplicationController extends Controller
                     ->exists();
             }
 
+            $closedReason = $program->applicationsClosedReason();
+
             $programData = [
                 ...$program->toArray(),
+                'accepting_applications' => $closedReason === null,
+                'applications_closed_reason' => $closedReason,
                 'status' => [
                     'value' => $program->status,
                     'color' => config('status.program.' . $program->status, 'gray'),
@@ -265,8 +283,9 @@ class ProgramApplicationController extends Controller
                 return response()->json(['message' => 'Only business owners can submit applications.'], 403);
             }
 
-            if ($program->status !== 'published') {
-                return response()->json(['message' => 'Program is not open for applications.'], 422);
+            // Closed once the first round is over and applicants have moved to the next round
+            if ($closedReason = $program->applicationsClosedReason()) {
+                return response()->json(['message' => $closedReason], 422);
             }
 
             $validated = $request->validate([
@@ -317,13 +336,30 @@ class ProgramApplicationController extends Controller
                 return response()->json(['message' => 'Business does not belong to the authenticated user.'], 403);
             }
 
+            // Work the match score out again here instead of trusting the number the browser sent
+            try {
+                $scoringRequest = $request->duplicate();
+                $scoringRequest->merge(['bonus_points' => array_values(array_filter(array_map('trim', explode(',', (string) $request->input('bonus_points')))))]);
+                $computed = (new \App\Service\AiScore\MatchScore())->program($scoringRequest, $program->id)->getData(true);
+
+                if (isset($computed['score'])) {
+                    $validated['match_score'] = $computed['score'];
+                    $validated['score_breakdown'] = collect($computed['score_breakdown'] ?? [])
+                        ->map(fn ($value, $label) => ['label' => trim($label), 'value' => $value])->values()->all();
+                }
+            } catch (\Throwable $e) {
+                ErrorLogService::report($e, ['program_id' => $program->id]);
+            }
+
+            if (($validated['match_score'] ?? 0) < 50) {
+                return response()->json(['message' => 'Your match score is ' . round($validated['match_score'] ?? 0) . '%, below the 50% needed to apply.'], 422);
+            }
+
             // Auto-set fields
             $validated['program_id'] = $program->id;  $validated['program_owner_id'] = $program->user_id;
             $validated['user_id'] = auth()->id(); $validated['status'] = 'pending';
-            $validated['current_round_id'] = $program->rounds()
-                ->where('status', 'published')
-                ->orderBy('round_number')
-                ->first()?->id ?? $program->rounds()->orderBy('round_number')->first()?->id;
+            // New applications always enter the first round; later rounds only take advanced applicants
+            $validated['current_round_id'] = $program->applicationRound()?->id;
 
             if( !$validated['current_round_id']) {
                 return response()->json(['message' => 'No round exists for the program.'], 422);
@@ -393,9 +429,13 @@ class ProgramApplicationController extends Controller
             // }
 
             $text = 'You have a new application pitch.';
-            $this->notification->create(
-                $program->user_id, $application->user_id,$text,'dashboard.programOrg.applications','program'
-            );
+            // straight to this applicant (multi-round programs open the round they applied in)
+            $pitchLink = $this->programNotification->orgApplicantLink([
+                'program_id'     => $program->id,
+                'application_id' => $application->id,
+                'round_id'       => $program->grant_type === 'multi_round' ? $application->current_round_id : null,
+            ]);
+            $this->notification->create($program->user_id, $application->user_id, $text, $pitchLink, 'program');
 
             // Commit changes
             DB::commit();
@@ -405,8 +445,28 @@ class ProgramApplicationController extends Controller
             $smeName = $sme->first_name. ' '. $sme->last_name;
             $go_email = User::where('id', $program->user_id)->value('email');
 
-            $info=[ 'program'=>$program->program_title, 'SME'=>$smeName ];
+            // The email button opens this exact application, same as the in-app notification
+            $info=[ 'program'=>$program->program_title, 'SME'=>$smeName,
+                    'action_url' => \App\Service\Notification\EmailLink::url($pitchLink), 'action_label' => 'Review Pitch' ];
             $this->emailService->send('New Program Pitch', 'opportunities.program_pitch', $info, $go_email);
+
+            // And a thank-you to the applicant, from the organization (best effort: never fails the submission)
+            try {
+                $round = $program->applicationRound();
+                $this->programNotification->send('application.received', [$sme], [
+                    'program_id' => $program->id,
+                    'program_title' => $program->program_title,
+                    'application_id' => $application->id,
+                    'business_name' => $application->startup_name,
+                    'round_name' => $round?->round_name,
+                    'organization_name' => $program->owner?->display_name ?: $program->funder_name,
+                    'announcement_date' => $round?->announcement_date?->format('j F Y'),
+                    'submitted_at' => now()->format('j M Y, H:i'),
+                    'recipientName' => $sme->first_name ?: $sme->display_name,
+                ]);
+            } catch (\Throwable $e) {
+                ErrorLogService::report($e, ['application_id' => $application->id]);
+            }
 
             return response()->json([
                 'message' => 'Application submitted successfully.',
@@ -549,16 +609,27 @@ class ProgramApplicationController extends Controller
     public function fund_request($pitch_id)
     {
         try{
-            $pitch = ProgramApplication::with('program')->where('id',$pitch_id)->first();
+            $pitch = ProgramApplication::with('program')->findOrFail($pitch_id);
+            if (!(new ProgramAccess())->isApplicant(auth()->user(), $pitch)) {
+                throw new \Illuminate\Auth\Access\AuthorizationException(ProgramAccess::DENIED);
+            }
             $user = User::select('first_name','last_name')->where('id',$pitch->user_id)->first();
 
             $text = $user->first_name.' '.$user->last_name. 'Has requested funding to the Program'.$pitch->program->program_title;
             $notification = new NotificationService();
             $notification->create($pitch->program->user_id,$pitch->user_id,$text,
-                'dashboard.programOrg.applications','program_fund_request');
+                $this->programNotification->orgApplicantLink([
+                    'program_id'     => $pitch->program_id,
+                    'application_id' => $pitch->id,
+                    'round_id'       => $pitch->program->grant_type === 'multi_round' ? $pitch->current_round_id : null,
+                ]),
+                'program_fund_request');
 
             //MAIL
             return response()->json(['message' => 'Fund Requested.'], 200);
+        }
+        catch (\Illuminate\Auth\Access\AuthorizationException | \Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            throw $e;
         }
         catch (\Exception $e) {
             ErrorLogService::report($e, [

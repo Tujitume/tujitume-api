@@ -38,7 +38,7 @@ class RoundQuestionController extends Controller
     {
         $userId = auth()->id();
 
-        if ($question->round->program->user_id !== $userId) {
+        if (!\App\Service\Program\ProgramAccess::owns($question->round->program)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -82,7 +82,7 @@ class RoundQuestionController extends Controller
     {
         $userId = auth()->id();
 
-        if ($round->program->user_id !== $userId) {
+        if (!\App\Service\Program\ProgramAccess::owns($round->program)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -129,7 +129,7 @@ class RoundQuestionController extends Controller
     {
         $userId = auth()->id();
 
-        if ($question->round->program->user_id !== $userId) {
+        if (!\App\Service\Program\ProgramAccess::owns($question->round->program)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -162,6 +162,11 @@ class RoundQuestionController extends Controller
                 return response()->json([
                     'error' => 'Application is not in this round'
                 ], 400);
+            }
+
+            // A round that has not opened can only be read
+            if ($reason = $application->currentRound?->notOpenReason()) {
+                return response()->json(['message' => $reason, 'error' => $reason], 422);
             }
 
             $validated = $request->validate([

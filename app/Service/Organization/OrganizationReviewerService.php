@@ -5,6 +5,7 @@ namespace App\Service\Organization;
 use App\Models\Auth\OrganizationUserRole;
 use App\Models\Auth\User;
 use App\Models\Organizations\Organization;
+use App\Models\Organizations\OrganizationProvider;
 use App\Models\Programs\Monitoring\MESiteVisit;
 use App\Models\Programs\Rounds\RoundReviewer;
 use Illuminate\Support\Collection;
@@ -18,10 +19,12 @@ class OrganizationReviewerService
     {
         $internalReviewerMemberships = $this->internalReviewerMemberships($organization);
         $externalReviewers = $this->externalReviewers($organization);
+        $thirdPartyProviders = $this->thirdPartyProviders($organization);
 
         $reviewerIds = $internalReviewerMemberships
             ->pluck('user_id')
             ->merge($externalReviewers->pluck('id'))
+            ->merge($thirdPartyProviders->pluck('id'))
             ->unique()
             ->values();
 
@@ -41,6 +44,12 @@ class OrganizationReviewerService
                 $roundIdsByReviewer,
                 $siteVisitIdsByReviewer,
             )))
+            ->concat($thirdPartyProviders->map(fn (User $provider) => $this->reviewerPayload(
+                $provider,
+                'third_party',
+                $roundIdsByReviewer,
+                $siteVisitIdsByReviewer,
+            )))
             ->values();
     }
 
@@ -49,8 +58,9 @@ class OrganizationReviewerService
         return OrganizationUserRole::query()
             ->select(['id', 'organization_id', 'user_id', 'role_id', 'status', 'accepted_at', 'created_at'])
             ->where('organization_id', $organization->id)
-            ->where('status', 'active')
-            ->whereHas('role', fn ($query) => $query->where('name', 'internal_reviewer'))
+            // Deactivated reviewers stay in the list (marked inactive) so they can be activated again
+            ->whereIn('status', ['active', 'revoked'])
+            ->whereHas('role', fn ($query) => $query->whereIn('name', ['super_admin', 'super-admin', 'editor', 'viewer']))
             ->whereHas('user', fn ($query) => $query->where('user_type_id', 4))
             ->with([
                 'role:id,name,access_types',
@@ -62,6 +72,20 @@ class OrganizationReviewerService
             ->get();
     }
 
+    /** Tujitume service providers the organization added as third-party reviewers/auditors. */
+    private function thirdPartyProviders(Organization $organization): Collection
+    {
+        if (! OrganizationProvider::available()) {
+            return collect();
+        }
+
+        return User::query()
+            ->whereIn('id', OrganizationProvider::where('organization_id', $organization->id)->select('user_id'))
+            ->where('user_type_id', 3)
+            ->orderBy('first_name')
+            ->get(['id', 'user_type_id', 'first_name', 'last_name', 'display_name', 'email', 'phone', 'image', 'organization_id', 'password']);
+    }
+
     private function externalReviewers(Organization $organization): Collection
     {
         // External reviewers are linked directly to users.organization_id and
@@ -71,7 +95,7 @@ class OrganizationReviewerService
             ->where('organization_id', $organization->id)
             ->where('user_type_id', 6)
             ->orderBy('created_at')
-            ->get(['id', 'user_type_id', 'first_name', 'last_name', 'display_name', 'email', 'phone', 'image', 'organization_id']);
+            ->get(['id', 'user_type_id', 'first_name', 'last_name', 'display_name', 'email', 'phone', 'image', 'organization_id', 'password']);
     }
 
     private function assignmentIds(Collection $reviewerIds): array
@@ -118,6 +142,9 @@ class OrganizationReviewerService
             'phone' => $reviewer->phone,
             'image' => $reviewer->image,
             'organization_id' => $membership?->organization_id ?? $reviewer->organization_id,
+            // Internal reviewers are only listed once their membership is active. An external reviewer has no
+            // membership: they are invited without a password, so having one means the invitation was accepted.
+            'active' => $membership ? $membership->status === 'active' : ! empty($reviewer->getAttributes()['password'] ?? null),
             'role' => $membership ? [
                 'id' => $membership->role->id,
                 'name' => $membership->role->name,

@@ -195,6 +195,7 @@ class MpesaCallbackController extends Controller
                 'amount'         => $milestone->amount,
                 'supplier_name'  => $supplier->supplierDirectory->legal_name,
                 'application_id' => $milestone->app_id,
+                'milestone_number' => $milestone->sequence_order,
             ]);
 
             return response()->json(['message' => 'Callback received'], 200);
@@ -327,6 +328,8 @@ class MpesaCallbackController extends Controller
                 ], [
                     'amount'        => $milestone->amount,
                     'supplier_name' => $supplier?->supplierDirectory->legal_name,
+                    'application_id'    => $milestone->app_id,
+                    'milestone_number' => $milestone->sequence_order,
                 ]);
 
                 // supplier invoice
@@ -353,6 +356,8 @@ class MpesaCallbackController extends Controller
                     'amount'        => $milestone->amount,
                     'supplier_name' => $supplier?->supplierDirectory->legal_name,
                     'reason'        => 'Supplier transfer failed',
+                    'application_id'    => $milestone->app_id,
+                    'milestone_number' => $milestone->sequence_order,
                 ]);
             }
 
@@ -447,8 +452,8 @@ class MpesaCallbackController extends Controller
 
 
             } else {
-                // W2W failed — revert to failed
-                $order->update(['payment_status' => 'failed']);
+                // W2W failed: the money held for it goes back to the program wallet, and the payment can be retried
+                //(new \App\Service\Program\ReviewerPaymentService())->release($order->id, null, 'failed');
 
                 $this->programNotification->send('reviewer.payment_failed', [
                     $order->program->owner

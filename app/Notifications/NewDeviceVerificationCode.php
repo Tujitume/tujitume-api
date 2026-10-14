@@ -2,6 +2,7 @@
 
 namespace App\Notifications;
 
+use App\Service\Notification\EmailBrand;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
@@ -34,13 +35,15 @@ class NewDeviceVerificationCode extends Notification
      */
     public function toMail(object $notifiable): MailMessage
     {
-        return (new \Illuminate\Notifications\Messages\MailMessage)
-            ->subject('Verify new device')
-            ->greeting('Hi '.$notifiable->name)
-            ->line('A new device is trying to access your account: '.$this->deviceLabel)
-            ->line('Verification code: '.$this->code)
-            ->line('This code expires in 10 minutes.')
-            ->line('If this wasn’t you, we recommend changing your password.');
+        return (new MailMessage)
+            // Code in the subject + a plain-text part is what lets Gmail offer its "Copy code" chip
+            ->subject("{$this->code} – your Tujitume device verification code")
+            ->view(['device_verification_code', 'device_verification_code_text'], [
+                'brand'       => EmailBrand::forUser($notifiable),
+                'name'        => $notifiable->name,
+                'code'        => $this->code,
+                'deviceLabel' => $this->deviceLabel,
+            ]);
     }
 
     /**

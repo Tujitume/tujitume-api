@@ -39,8 +39,12 @@ class ProgramWalletController extends Controller
     {
         try{
             //$user_id = Auth::id();
+            (new \App\Service\Program\ProgramAccess())->authorizeProgramOwner(auth()->user(), \App\Models\Programs\Program::findOrFail($id));
             $wallet = ProgramWallet::with(['program'])->where('program_id', $id)->first();
             return response()->json(['wallet' => $wallet]);
+        }
+        catch (\Illuminate\Auth\Access\AuthorizationException $e) {
+            throw $e;
         }
         catch (\Exception $e) {
             ErrorLogService::report($e, ['input' => request()->except(['password', 'token']),]);

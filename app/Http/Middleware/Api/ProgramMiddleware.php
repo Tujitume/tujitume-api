@@ -49,18 +49,20 @@ class ProgramMiddleware
         if($user->user_type_id == 4) {
             if($role == 'editor')
             {
-                if(in_array($route_name, $editorForbidden)){
-                    return response()->json(['message' => 'Unauthorized','line' => __LINE__, 'status' => 401], 400);
+                // Editors create and edit records but never delete them
+                if(in_array($route_name, $editorForbidden) || $method == 'DELETE'){
+                    return response()->json(['success' => false, 'code' => 'forbidden', 'message' => "Your role doesn't allow this action.", 'error' => "Your role doesn't allow this action."], 403);
                 }
             }
             if($role == 'viewer')
             {
-                if($method == 'POST'){
-                    return response()->json(['message' => 'Unauthorized','line' => __LINE__, 'status' => 401], 400);
+                // Viewers read only: every method that changes data is refused
+                if(! in_array($method, ['GET', 'HEAD', 'OPTIONS'])){
+                    return response()->json(['success' => false, 'code' => 'forbidden', 'message' => "Your role doesn't allow this action.", 'error' => "Your role doesn't allow this action."], 403);
                 }
                 else {
                     if(in_array($route_name, $viewerForbidden)){
-                        return response()->json(['message' => 'Unauthorized','line' => __LINE__, 'status' => 401], 400);
+                        return response()->json(['success' => false, 'code' => 'forbidden', 'message' => "Your role doesn't allow this action.", 'error' => "Your role doesn't allow this action."], 403);
                     }
                 }
             }

@@ -56,6 +56,8 @@ Route::prefix('/programs')->middleware(['program', 'program.response'])->group(f
 
     Route::post('create-program', [ProgramController::class, 'store']);
     Route::post('programs/{program}', [ProgramController::class, 'update']);
+    // The app calls POST /programs/{id}/duplicate. The older doubled path stays so nothing that used it breaks.
+    Route::post('{program}/duplicate', [ProgramController::class, 'duplicate'])->whereNumber('program');
     Route::post('/programs/{program}/duplicate', [ProgramController::class, 'duplicate']);
 
     // for SME
@@ -126,11 +128,14 @@ Route::prefix('/programs')->middleware(['program', 'program.response'])->group(f
     Route::apiResource('/{program}/rounds', ProgramRoundController::class)->shallow();
     Route::get('rounds/{round}', [ProgramRoundController::class, 'showRound']);
     Route::patch('rounds/{round}', [ProgramRoundController::class, 'update']);
+    Route::post('rounds/{round}/configuration-steps', [ProgramRoundController::class, 'confirmStep']);
     Route::delete('rounds/{round}', [ProgramRoundController::class, 'destroy']);
 
     Route::post('rounds/{round}/publish', [ApplicationRoundProgressController::class, 'publish']);
 
     Route::get('/rounds/{round}/applications', [ProgramRoundController::class, 'applications']);
+    Route::get('/rounds/{round}/finalize-preview', [ProgramRoundController::class, 'finalizePreview']);
+    Route::post('/rounds/{round}/reviewer-payments', [ProgramRoundController::class, 'startPayments']);
     Route::get('/rounds/{round}/applications/active', [ApplicationRoundProgressController::class, 'activeApplications']);
     Route::get('/rounds/{round}/applications/advanced', [ApplicationRoundProgressController::class, 'advancedApplications']);
     Route::get('/rounds/{round}/applications/not_selected', [ApplicationRoundProgressController::class, 'notSelectedApplications']);
@@ -164,11 +169,17 @@ Route::prefix('/programs')->middleware(['program', 'program.response'])->group(f
     Route::post('rounds/{round}/reviewers/accept',   [RoundReviewerController::class, 'accept']);
     Route::post('rounds/{round}/reviewers/decline',  [RoundReviewerController::class, 'decline']);
     Route::post('rounds/{round}/reviewers/{reviewer}/assign-applications', [RoundReviewerController::class, 'assignApplications']);
+    Route::delete('rounds/{round}/applications/{application}/assignment', [RoundReviewerController::class, 'unassignApplication']);
     Route::post('rounds/{round}/applications/{application}/start-review',  [RoundReviewerController::class, 'startReview']);
     Route::get('rounds/{round}/my-applications',     [RoundReviewerController::class, 'myAssignedApplications']);
 
 
     Route::get('reviewer/assigned-requests', [RoundReviewerController::class, 'myAssignedRequests']);
+    Route::get('reviewer/assignment-counts', [RoundReviewerController::class, 'assignmentCounts']);
+
+    // Service providers: the work organizations assigned to them, and the list organizations search
+    Route::get('provider/work', [\App\Http\Controllers\Program\ProviderWorkController::class, 'index']);
+    Route::get('third-party-providers', [\App\Http\Controllers\Program\ProviderWorkController::class, 'providers']);
 
     Route::get('rounds/{round}/reviewer-orders', [ReviewerOrderController::class, 'roundOrders']);
     Route::post('reviewer-orders/{order}/deliver', [ReviewerOrderController::class, 'deliver']);
@@ -194,6 +205,8 @@ Route::prefix('/programs')->middleware(['program', 'program.response'])->group(f
 
     // Funding Setup & Supplier Directory
     Route::get('supplier-directory/{supplierId}/assigned-milestones', [SupplierDirectoryController::class, 'assignedMilestones']);
+    Route::post('supplier-directory/{supplierId}/activate', [SupplierDirectoryController::class, 'activate']);
+    Route::post('supplier-directory/{supplierId}/deactivate', [SupplierDirectoryController::class, 'deactivate']);
     Route::apiResource('supplier-directory', SupplierDirectoryController::class);
     // Add supplier to milestone
     Route::post('milestones/{milestone}/assign-suppliers', [SupplierDirectoryController::class, 'assignToMilestone']);

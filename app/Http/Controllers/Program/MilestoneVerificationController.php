@@ -20,11 +20,15 @@ class MilestoneVerificationController extends Controller
     public function index(ProgramMilestone $milestone)
     {
         try {
+            (new \App\Service\Program\ProgramAccess())->authorizeMilestone(auth()->user(), $milestone);
             $verifications = MilestoneVerification::where('milestone_id', $milestone->id)
                 //->with(['submitter', 'decider', 'auditor'])
                 ->orderBy('created_at', 'desc')
                 ->get();
             return response()->json(['verifications' => $verifications]);
+        }
+        catch (\Illuminate\Auth\Access\AuthorizationException $e) {
+            throw $e;
         }
         catch (\Exception $e) {
             ErrorLogService::report($e, ['input' => request()->except(['password', 'token']),]);

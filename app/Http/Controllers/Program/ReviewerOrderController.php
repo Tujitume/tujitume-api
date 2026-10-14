@@ -223,7 +223,17 @@ class ReviewerOrderController extends Controller
         }
 
         try {
-            $transfer = $this->initiateReviewerPayment($order);
+            // Team members (internal reviewers) and any order without a fee are simply marked complete, with nothing to pay.
+            // Everyone else is approved and paid from the program wallet.
+            $needsPayment = (float) $order->fee_usd > 0;
+            if ($needsPayment) {
+                $payment = (new \App\Service\Program\ReviewerPaymentService())->pay($order);
+                if (! $payment['ok']) {
+                    return response()->json(['message' => $payment['message']], 422);
+                }
+            } else {
+                $order->update(['work_status' => 'approved', 'approved_at' => now()]);
+            }
 
             if (!$transfer || !($transfer['success'] ?? false)) {
                 throw new \Exception($transfer['error'] ?? $transfer['message'] ?? 'Transfer failed', 422);
@@ -251,12 +261,23 @@ class ReviewerOrderController extends Controller
                 'order_id' => $order->id,
             ]);
 
+<<<<<<< HEAD
             $this->programNotification->send('reviewer.payment_initiated', [$reviewer], [
                 'program_title' => $program->program_title,
                 'round_name' => $order->round?->round_name ?? $program->program_title,
                 'fee' => $order->fee_amount,
                 'order_id' => $order->id,
             ]);
+=======
+            // $this->programNotification->send('reviewer.payment_initiated', [$reviewer], [
+            //     'program_title' => $program->program_title,
+            //     'round_name' => $order->round?->round_name ?? $program->program_title,
+            //     'fee' => $order->fee_usd,
+            //     'order_id' => $order->id,
+            // ]);
+
+            // "Payment received" is sent when LIPR confirms the transfer landed (see the reviewer payment callback)
+>>>>>>> 9612db9565bcc9813954b0be96afc8f129e0b9f1
 
 
             $round = $order->round;
@@ -277,9 +298,16 @@ class ReviewerOrderController extends Controller
             }
 
             return response()->json([
+<<<<<<< HEAD
                 'message' => 'Work approved and Payment initiated successfully.',
                 'data' => $order->fresh(),
                 'transfer' => $transfer,
+=======
+                'message' => $needsPayment
+                    ? 'Work approved and payment sent. The reviewer is told when it lands.'
+                    : 'Work approved and the order is complete.',
+                'data' => $order->fresh(),
+>>>>>>> 9612db9565bcc9813954b0be96afc8f129e0b9f1
             ], 200);
 
 

@@ -1,9 +1,5 @@
-<div style="max-width:1024px;margin:auto;margin-top:4rem;background-color:white;border-radius:0.5rem;box-shadow:0 4px 6px rgba(0,0,0,0.1);overflow:hidden;">
-    <!-- Header -->
-    <div style="background-color:#14532d;padding:0.9rem 0;text-align:center;color:#ffffff;">
-        <img src="{{ $message->embed(public_path('images/Email/EmailWhite.png')) }}" alt="Tujitume Logo" style="height:3rem;width:auto;margin:0 auto;" />
-        <h1 style="font-size:2rem;font-weight:700;margin-top:1rem;">Applications to Review</h1>
-    </div>
+<div style="max-width:1024px;margin:auto;margin-top:4rem;background-color:white;border-radius:1.25rem;box-shadow:0 4px 6px rgba(0,0,0,0.1);overflow:hidden;">
+    @include('programs.partials.brand_header', ['title' => 'Applications to Review'])
 
 
     <div style="padding:20px;font-size:14px;line-height:1.6;">
@@ -22,18 +18,20 @@
             @endif
 
             @if(!empty($proposed_fee))
-            <p style="margin:0.5rem 0;"><strong>Proposed Fee per application:</strong> {{ $proposed_fee }}</p>
+                @if(($fee_type ?? 'flat') === 'per_application')
+                <p style="margin:0.5rem 0;"><strong>Fee per application reviewed:</strong> {{ $fee_currency ?? '' }} {{ number_format((float) $proposed_fee, 2) }}</p>
+                @else
+                <p style="margin:0.5rem 0;"><strong>Flat fee for the round:</strong> {{ $fee_currency ?? '' }} {{ number_format((float) $proposed_fee, 2) }}</p>
+                @endif
             @endif
 
 
         </div>
 
-        <p>Pleae Log in to your Tujitume dashabord and get started!</p>
+        <p>Please log in to your Tujitume dashboard and get started!</p>
 
+        @include('programs.partials.brand_button', ['label' => 'Start Reviewing'])
 
-
-
-        <!-- Footer -->
-
-    </div>
+        @include('programs.partials.brand_footer')
+</div>
 </div>

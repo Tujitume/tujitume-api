@@ -202,6 +202,7 @@ class ProgramDealRoomController extends Controller
                 'program:id,program_title,program_type,status,total_rounds,funding_per_business,disbursement_type,total_program_amount,available_amount',
             ])->findOrFail($id);
 
+            (new \App\Service\Program\ProgramAccess())->authorizeApplication(auth()->user(), $pitch);
 
             return response()->json([
                 'application' => [
@@ -217,6 +218,9 @@ class ProgramDealRoomController extends Controller
                 ],
 
             ]);
+
+        } catch (\Illuminate\Auth\Access\AuthorizationException $e) {
+            throw $e; // handled globally as a 403
 
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
             return response()->json(['message' => 'Application not found'], 404);
