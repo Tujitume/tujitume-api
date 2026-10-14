@@ -205,6 +205,14 @@ class User extends Authenticatable
 
     public function getSettings(): UserSetting
     {
+        if ($this->relationLoaded('settings')) {
+            return $this->getRelation('settings') ?? new UserSetting([
+                'theme' => 'default',
+                'mode' => 'system',
+                'accent_color' => '#14532d',
+            ]);
+        }
+
         return $this->settings ?? new UserSetting([
             'theme' => 'default',
             'mode' => 'system',

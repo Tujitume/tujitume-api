@@ -261,14 +261,6 @@ class ReviewerOrderController extends Controller
                 'order_id' => $order->id,
             ]);
 
-<<<<<<< HEAD
-            $this->programNotification->send('reviewer.payment_initiated', [$reviewer], [
-                'program_title' => $program->program_title,
-                'round_name' => $order->round?->round_name ?? $program->program_title,
-                'fee' => $order->fee_amount,
-                'order_id' => $order->id,
-            ]);
-=======
             // $this->programNotification->send('reviewer.payment_initiated', [$reviewer], [
             //     'program_title' => $program->program_title,
             //     'round_name' => $order->round?->round_name ?? $program->program_title,
@@ -277,7 +269,6 @@ class ReviewerOrderController extends Controller
             // ]);
 
             // "Payment received" is sent when LIPR confirms the transfer landed (see the reviewer payment callback)
->>>>>>> 9612db9565bcc9813954b0be96afc8f129e0b9f1
 
 
             $round = $order->round;
@@ -298,16 +289,10 @@ class ReviewerOrderController extends Controller
             }
 
             return response()->json([
-<<<<<<< HEAD
-                'message' => 'Work approved and Payment initiated successfully.',
-                'data' => $order->fresh(),
-                'transfer' => $transfer,
-=======
                 'message' => $needsPayment
                     ? 'Work approved and payment sent. The reviewer is told when it lands.'
                     : 'Work approved and the order is complete.',
                 'data' => $order->fresh(),
->>>>>>> 9612db9565bcc9813954b0be96afc8f129e0b9f1
             ], 200);
 
 

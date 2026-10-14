@@ -265,7 +265,7 @@ class ProgramRoundController extends Controller
                 ? ReviewerOrder::where('round_id', $round->id)
                     ->where('order_type', 'round_review')
                     ->whereIn('payment_status', ['unpaid', 'pending', 'failed'])
-                    ->where('fee_usd', '>', 0)
+                    ->where('fee_amount', '>', 0)
                     ->get()
                     ->filter(fn ($o) => in_array($o->work_status, ['delivered', 'approved'], true) || $this->reviewerFinishedScoring($round, $o->reviewer_id))
                     ->count()
@@ -938,32 +938,8 @@ class ProgramRoundController extends Controller
 
             DB::commit();
 
-<<<<<<< HEAD
-            // ─── Trigger payment to all reviewers ──────────────────────────────
-            $reviewerOrders = ReviewerOrder::where('round_id', $round->id)
-                ->where('order_type', 'round_review')
-                ->whereIn('work_status', ['delivered', 'approved'])
-                ->where('payment_status', 'unpaid')
-                ->where('fee_amount', '>', 0)
-                ->get();
-
-            foreach ($reviewerOrders as $reviewerOrder) {
-                // Mark as pending — PO will be prompted to pay via frontend
-                $reviewerOrder->update(['payment_status' => 'pending']);
-
-                $this->programNotification->send('reviewer.payment_initiated', [
-                    $reviewerOrder->reviewer
-                ], [
-                    'program_title' => $round->program->program_title,
-                    'round_name'    => $round->round_name,
-                    'fee'           => $reviewerOrder->fee_amount,
-                    'order_id'      => $reviewerOrder->id,
-                ]);
-            }
-=======
             // ─── Pay the reviewers ─────────────────────────────────────────────
             $payments = $this->startReviewerPayments($round);
->>>>>>> 9612db9565bcc9813954b0be96afc8f129e0b9f1
 
             // notify
             $roundFinalize = new RoundFinalizationService();
@@ -1020,7 +996,7 @@ class ProgramRoundController extends Controller
             ->where('round_id', $round->id)
             ->where('order_type', 'round_review')
             ->whereIn('payment_status', ['unpaid', 'pending', 'failed'])
-            ->where('fee_usd', '>', 0)
+            ->where('fee_amount', '>', 0)
             ->get();
 
         foreach ($orders as $reviewerOrder) {
@@ -1041,7 +1017,7 @@ class ProgramRoundController extends Controller
                 ], [
                     'program_title' => $round->program->program_title,
                     'round_name'    => $round->round_name,
-                    'fee'           => $reviewerOrder->fee_usd,
+                    'fee'           => $reviewerOrder->fee_amount,
                     'order_id'      => $reviewerOrder->id,
                 ]);
             }
@@ -1283,7 +1259,7 @@ class ProgramRoundController extends Controller
             $feeType = $assignment?->fee_type ?? $order->fee_type ?? 'per_application';
             $assigned = (int) $order->application_assignments_count;
             $scored = \App\Models\Programs\Rounds\ApplicationScore::where('round_id', $round->id)->where('reviewer_id', $order->reviewer_id)->count();
-            $amount = (float) $order->fee_usd;
+            $amount = (float) $order->fee_amount;
 
             if ($order->payment_status === 'completed') {
                 $state = 'paid';

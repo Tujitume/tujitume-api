@@ -238,12 +238,7 @@ class RoundReviewerController extends Controller
                 'order_type'      => 'round_review',
                 'round_id'        => $round->id,
                 'round_reviewer_id' => $roundReviewer->id,
-<<<<<<< HEAD
-                'fee_amount'         => $roundReviewer->fee_type === 'per_application'
-                    ? 0 : ($roundReviewer->reviewer_fee ?? 0),
-=======
-                'fee_usd'         => $orderFee,
->>>>>>> 9612db9565bcc9813954b0be96afc8f129e0b9f1
+                'fee_amount' => $orderFee,
 
                 'fee_type'        => $roundReviewer->fee_type,
                 'work_status'     => 'assigned',
@@ -719,13 +714,10 @@ class RoundReviewerController extends Controller
 
         $userId = $user->id;
 
-<<<<<<< HEAD
         if (!$user->lipr_wallet) {
             throw new \RuntimeException('You must onboard to Mpesa Lipr before starting a review.', 422);
         }
 
-=======
->>>>>>> 9612db9565bcc9813954b0be96afc8f129e0b9f1
         $assignment = ReviewerApplicationAssignment::where('round_id', $round->id)
             ->where('application_id', $application->id)
             ->where('reviewer_id', $userId)

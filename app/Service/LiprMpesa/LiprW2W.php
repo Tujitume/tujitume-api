@@ -53,11 +53,7 @@ class LiprW2W
 
         $fields = [
             "requestId" => 'stk-' . now()->format('YmdHis') . '-' . uniqid(),
-<<<<<<< HEAD
-            "resultUrl" => rtrim(config('app.api_url'), '/') . '/lipr-callback/transfer-to-supplier',
-=======
             "resultUrl" => $options['result_url'] ?? (rtrim(config('app.api_url'), '/') . '/lipr-callback-program-supplier'),
->>>>>>> 9612db9565bcc9813954b0be96afc8f129e0b9f1
             "timeoutUrl" => rtrim(config('app.api_url'), '/') . '/lipr-callback/timeout',
             "metadata" => [ "listingId" => $options['listing_id'] ?? $milestone?->id ],
 

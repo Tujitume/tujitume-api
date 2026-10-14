@@ -412,13 +412,8 @@ class MEController extends Controller
                     'program_id'      => $checkpoint->application->program_id,
                     'order_type'      => 'site_visit',
                     'site_visit_id'   => $siteVisit->id,
-<<<<<<< HEAD
                     'fee_amount'      => $validated['reviewer_fee'] ?? 0,
-                    'currency'        => 'USD',
-=======
-                    'fee_usd'         => $validated['reviewer_fee'] ?? 0,
                     'currency'        => $checkpoint->application->program->currency ?: config('app.currency', 'KES'),
->>>>>>> 9612db9565bcc9813954b0be96afc8f129e0b9f1
                     'work_status'     => 'assigned',
                     'payment_status'  => 'unpaid',
                     'deadline'        => $validated['start_date'] ?? null,

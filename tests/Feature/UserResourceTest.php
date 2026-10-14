@@ -18,7 +18,6 @@ class UserResourceTest extends TestCase
     public function test_it_maps_the_organization_workspace_schema(): void
     {
         $user = new User([
-            'id' => 42,
             'first_name' => 'Jane',
             'last_name' => 'Doe',
             'display_name' => 'Jane Org',
@@ -34,6 +33,7 @@ class UserResourceTest extends TestCase
             'user_type_id' => 4,
             'organization_id' => 7,
         ]);
+        $user->id = 42;
         $user->setRelation('currentKycVerification', new KycVerification([
             'status' => 'verified',
         ]));

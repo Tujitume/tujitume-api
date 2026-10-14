@@ -127,7 +127,7 @@ class UserResource extends JsonResource
             'phone' => $this->phone,
             'image' => $this->image,
             'completed_onboarding' => (bool) ($this->completed_onboarding ?? false),
-            'kyc_status' => $this->kycVerification?->status ?? 'not_started',
+            'kyc_status' => $this->currentKycVerification?->status ?? 'not_started',
             'organization_id' => $this->organization_id,
             'stripe_connect_id' => $stripeAccountId,
             'lipr_wallet' => $liprWallet,
