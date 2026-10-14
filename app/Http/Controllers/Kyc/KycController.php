@@ -8,7 +8,6 @@ use App\Http\Requests\Kyc\UploadKycDocumentRequest;
 use App\Http\Resources\ApiResponseResource;
 use App\Http\Resources\Kyc\KycVerificationResource;
 use App\Models\Kyc\KycDocument;
-use App\Models\Kyc\KycVerification;
 use App\Services\Kyc\KycService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
