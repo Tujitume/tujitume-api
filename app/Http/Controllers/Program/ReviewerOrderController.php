@@ -223,21 +223,17 @@ class ReviewerOrderController extends Controller
         }
 
         try {
-            // Team members (internal reviewers) and any order without a fee are simply marked complete, with nothing to pay.
-            // Everyone else is approved and paid from the program wallet.
-            $needsPayment = (float) $order->fee_usd > 0;
-            if ($needsPayment) {
-                $payment = (new \App\Service\Program\ReviewerPaymentService())->pay($order);
-                if (! $payment['ok']) {
-                    return response()->json(['message' => $payment['message']], 422);
-                }
-            } else {
-                $order->update(['work_status' => 'approved', 'approved_at' => now()]);
-            }
 
-            if (!$transfer || !($transfer['success'] ?? false)) {
-                throw new \Exception($transfer['error'] ?? $transfer['message'] ?? 'Transfer failed', 422);
+            $transfer = null;
+
+            if($order->fee_amount > 0) {
+                $transfer = $this->initiateReviewerPayment($order);
+
+                if (!$transfer || !($transfer['success'] ?? false)) {
+                    throw new \Exception($transfer['error'] ?? $transfer['message'] ?? 'Transfer failed', 422);
+                }
             }
+            
 
 
             if ($order->order_type === 'round_review') {
@@ -261,14 +257,12 @@ class ReviewerOrderController extends Controller
                 'order_id' => $order->id,
             ]);
 
-            // $this->programNotification->send('reviewer.payment_initiated', [$reviewer], [
-            //     'program_title' => $program->program_title,
-            //     'round_name' => $order->round?->round_name ?? $program->program_title,
-            //     'fee' => $order->fee_usd,
-            //     'order_id' => $order->id,
-            // ]);
-
-            // "Payment received" is sent when LIPR confirms the transfer landed (see the reviewer payment callback)
+            $this->programNotification->send('reviewer.payment_initiated', [$reviewer], [
+                'program_title' => $program->program_title,
+                'round_name' => $order->round?->round_name ?? $program->program_title,
+                'fee' => $order->fee_amount,
+                'order_id' => $order->id,
+            ]);
 
 
             $round = $order->round;
@@ -289,13 +283,10 @@ class ReviewerOrderController extends Controller
             }
 
             return response()->json([
-                'message' => $needsPayment
-                    ? 'Work approved and payment sent. The reviewer is told when it lands.'
-                    : 'Work approved and the order is complete.',
+                'message' => 'Work approved and Payment initiated successfully.',
                 'data' => $order->fresh(),
+                'transfer' => $transfer,
             ], 200);
-
-
         } catch (ValidationException $e) {
             return response()->json(['message' => 'Already paid'], 422);
         } catch (\Throwable $e) {
@@ -322,7 +313,7 @@ class ReviewerOrderController extends Controller
             $wallet = $program->wallet()->lockForUpdate()->first();
             $amount = round((float) $order->fee_amount, 2);
 
-            
+
             if (!$wallet || (float) $wallet->balance < $amount) {
                 throw new \RuntimeException('Insufficient program wallet balance.', 422);
             }
