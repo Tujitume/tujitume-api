@@ -721,6 +721,23 @@ class ProgramRoundController extends Controller
             return response()->json(['message' => $message, 'error' => $message], 422);
         }
 
+        $incompleteReviewerOrders = ReviewerOrder::where('round_id', $round->id)
+            ->where('order_type', 'round_review')
+            ->whereNotIn('work_status', ['approved', 'completed'])
+            ->count();
+
+        if ($incompleteReviewerOrders > 0) {
+            $message = $incompleteReviewerOrders === 1
+                ? '1 reviewer order is still awaiting approval. Approve all reviewer orders before finalizing this round.'
+                : "{$incompleteReviewerOrders} reviewer orders are still awaiting approval. Approve all reviewer orders before finalizing this round.";
+
+            return response()->json([
+                'message' => $message,
+                'error' => $message,
+                'incomplete_reviewer_orders' => $incompleteReviewerOrders,
+            ], 422);
+        }
+
         // A manual round has no scores to total up: the owner accepts or rejects each application, and the round is
         // finalized once every one has a decision.
         if (($round->advancement_mode ?? 'manual') === 'manual') {
@@ -782,6 +799,12 @@ class ProgramRoundController extends Controller
             ], 422);
         }
 
+        return $this->finalizeScoredRound($round);
+    }
+
+    /** Apply scoring outcomes and finish a scored round after its preconditions pass. */
+    private function finalizeScoredRound(ProgramRound $round)
+    {
         DB::beginTransaction();
         try {
             $knockoutService = new KnockoutEvaluator();
@@ -879,7 +902,7 @@ class ProgramRoundController extends Controller
 
                     $awardedCount++;
 
-                    $this->roundHistory->update($app, 'awarded', $validated['notes'] ?? 'Manually awarded');
+                    $this->roundHistory->update($app, 'awarded', 'Manually awarded');
 
 
                 } else {
