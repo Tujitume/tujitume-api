@@ -64,7 +64,10 @@ class ReviewerOrderController extends Controller
         }
 
         $orders = ReviewerOrder::where('round_id', $round->id)
-            ->with(['reviewer'])
+            ->with([
+                'applicationAssignments.application',
+                'reviewer'
+            ])
             ->get()
             ->map(fn($order) => [
                 ...$order->toArray(),
