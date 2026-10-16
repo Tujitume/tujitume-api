@@ -236,6 +236,13 @@ class ReviewerOrderController extends Controller
                     throw new \Exception($transfer['error'] ?? $transfer['message'] ?? 'Transfer failed', 422);
                 }
             }
+            else{
+                $order->update([
+                    'work_status' => 'approved',
+                    'approved_at' => now(),
+                    'payment_status' => 'pending',
+                ]);
+            }
             
 
 
