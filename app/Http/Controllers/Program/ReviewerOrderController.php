@@ -233,8 +233,17 @@ class ReviewerOrderController extends Controller
         try {
 
             $transfer = null;
+            // Approving a round review only approves the work. The money is sent when the owner finalizes the round
+            // (see ProgramRoundController::startReviewerPayments, which pays approved work).
+            $paysOnFinalize = $order->order_type === 'round_review';
 
-            if($order->fee_amount > 0) {
+            if ($paysOnFinalize) {
+                $order->update([
+                    'work_status' => 'approved',
+                    'approved_at' => $order->approved_at ?? now(),
+                ]);
+            }
+            elseif($order->fee_amount > 0) {
                 $transfer = $this->initiateReviewerPayment($order);
 
                 if (!$transfer || !($transfer['success'] ?? false)) {
@@ -272,12 +281,15 @@ class ReviewerOrderController extends Controller
                 'order_id' => $order->id,
             ]);
 
-            $this->programNotification->send('reviewer.payment_initiated', [$reviewer], [
-                'program_title' => $program->program_title,
-                'round_name' => $order->round?->round_name ?? $program->program_title,
-                'fee' => $order->fee_amount,
-                'order_id' => $order->id,
-            ]);
+            // The reviewer hears about the payment when it really starts: at once for other orders, at finalization for rounds
+            if (! $paysOnFinalize) {
+                $this->programNotification->send('reviewer.payment_initiated', [$reviewer], [
+                    'program_title' => $program->program_title,
+                    'round_name' => $order->round?->round_name ?? $program->program_title,
+                    'fee' => $order->fee_amount,
+                    'order_id' => $order->id,
+                ]);
+            }
 
 
             $round = $order->round;
@@ -298,7 +310,9 @@ class ReviewerOrderController extends Controller
             }
 
             return response()->json([
-                'message' => 'Work approved and Payment initiated successfully.',
+                'message' => $paysOnFinalize
+                    ? 'Work approved. Payment starts when you finalize the round.'
+                    : 'Work approved and Payment initiated successfully.',
                 'data' => $order->fresh(),
                 'transfer' => $transfer,
             ], 200);
