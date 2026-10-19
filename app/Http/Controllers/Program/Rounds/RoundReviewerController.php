@@ -34,29 +34,36 @@ class RoundReviewerController extends Controller
         }
 
         $reviewers = $round->reviewers()
-            ->withPivot(['reviewer_type', 'max_apps_assigned', 'minimum_apps_to_get_paid', 'expertise_tags', 'reviewer_fee', 'fee_type', 'fee_currency', 'acceptance_status'])
+            ->withPivot(['reviewer_type', 'max_apps_assigned', 'expertise_tags', 'reviewer_fee', 'fee_type', 'fee_currency', 'acceptance_status'])
+            ->get();
+
+        $orderThresholds = ReviewerOrder::where('round_id', $round->id)
+            ->whereIn('reviewer_id', $reviewers->pluck('id'))
+            ->orderBy('id')
             ->get()
-            ->map(function ($user) {
-                return [
-                    'user_id' => $user->id,
-                    'name' => $user->first_name.' '.$user->last_name,
-                    'email' => $user->email,
-                    'image' => $user->image,
-                    // A service provider is stored as an external reviewer but shown as what they are
-                    'reviewer_type' => (int) $user->user_type_id === 3 ? 'third_party' : $user->pivot->reviewer_type,
-                    'max_apps_assigned' => $user->pivot->max_apps_assigned,
-                    'minimum_apps_to_get_paid' => $user->pivot->minimum_apps_to_get_paid,
-                    // How this reviewer is paid, as the round setup form names it
-                    'reviewer_fee' => $user->pivot->reviewer_fee,
-                    'fee_type' => $user->pivot->fee_type,
-                    'fee_currency' => $user->pivot->fee_currency,
-                    'reviewer_payment_basis' => $user->pivot->fee_type === 'per_application' ? 'per_application' : 'flat_round_fee',
-                    'acceptance_status' => $user->pivot->acceptance_status,
-                    'expertise_tags' => $user->pivot->expertise_tags
-                        ? json_decode($user->pivot->expertise_tags, true)
-                        : [],
-                ];
-            });
+            ->keyBy('reviewer_id');
+
+        $reviewers = $reviewers->map(function ($user) use ($orderThresholds) {
+            return [
+                'user_id' => $user->id,
+                'name' => $user->first_name.' '.$user->last_name,
+                'email' => $user->email,
+                'image' => $user->image,
+                // A service provider is stored as an external reviewer but shown as what they are
+                'reviewer_type' => (int) $user->user_type_id === 3 ? 'third_party' : $user->pivot->reviewer_type,
+                'max_apps_assigned' => $user->pivot->max_apps_assigned,
+                'minimum_apps_to_get_paid' => $orderThresholds->get($user->id)?->minimumPaidApplications() ?: null,
+                // How this reviewer is paid, as the round setup form names it
+                'reviewer_fee' => $user->pivot->reviewer_fee,
+                'fee_type' => $user->pivot->fee_type,
+                'fee_currency' => $user->pivot->fee_currency,
+                'reviewer_payment_basis' => $user->pivot->fee_type === 'per_application' ? 'per_application' : 'flat_round_fee',
+                'acceptance_status' => $user->pivot->acceptance_status,
+                'expertise_tags' => $user->pivot->expertise_tags
+                    ? json_decode($user->pivot->expertise_tags, true)
+                    : [],
+            ];
+        });
 
         return response()->json(['data' => $reviewers], 200);
     }
@@ -225,7 +232,6 @@ class RoundReviewerController extends Controller
                 $round->reviewers()->attach($userId, [
                     'reviewer_type'       => 'internal',
                     'max_apps_assigned'   => $validated['max_apps_assigned'] ?? null,
-                    'minimum_apps_to_get_paid' => $minimumPaidApps,
                     'assigned_percentage' => $validated['assigned_percentage'] ?? null,
                     'expertise_tags'      => isset($validated['expertise_tags']) ? json_encode($validated['expertise_tags']) : null,
                     'reviewer_fee'        => 0,
@@ -240,7 +246,6 @@ class RoundReviewerController extends Controller
                 $round->reviewers()->attach($user->id, [
                     'reviewer_type'       => 'external',
                     'max_apps_assigned'   => $validated['max_apps_assigned'] ?? null,
-                    'minimum_apps_to_get_paid' => $minimumPaidApps,
                     'assigned_percentage' => $validated['assigned_percentage'] ?? null,
                     'expertise_tags'      => isset($validated['expertise_tags'])
                         ? json_encode($validated['expertise_tags']) : null,
@@ -578,6 +583,7 @@ class RoundReviewerController extends Controller
                     ->lockForUpdate()->first();
 
                 if (!$order || $order->work_status === 'approved') {
+                    $minimumPaidApps = $order?->minimumPaidApplications() ?? 0;
                     $feeType = $roundReviewer->reviewer_type === 'internal'
                         ? 'flat'
                         : ($roundReviewer->fee_type ?? 'per_application');
@@ -594,7 +600,7 @@ class RoundReviewerController extends Controller
                         'round_reviewer_id' => $roundReviewer->id,
                         'fee_amount' => $feeType === 'per_application' ? 0 : $reviewerFee,
                         'fee_type' => $feeType,
-                        'minimum_apps_to_get_paid' => $roundReviewer->minimum_apps_to_get_paid,
+                        'minimum_apps_to_get_paid' => $minimumPaidApps,
                         'work_status' => 'assigned',
                         'acceptance_status' => 'accepted',
                         'accepted_at' => $roundReviewer->accepted_at ?? now(),

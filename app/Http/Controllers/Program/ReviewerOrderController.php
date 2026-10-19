@@ -42,7 +42,7 @@ class ReviewerOrderController extends Controller
             ->get()
             ->map(fn($order) => [
                 ...$order->toArray(),
-                'fee_usd' => $order->fee_amount,
+            'fee_amount' => $order->fee_amount,
                 'completed_application_count' => $order->applicationAssignments->where('status', 'completed')->count(),
                 'minimum_apps_to_get_paid' => $order->minimumPaidApplications() ?: null,
                 'paid_threshold_met' => $order->minimumPaidApplications()
@@ -78,7 +78,7 @@ class ReviewerOrderController extends Controller
             ->get()
             ->map(fn($order) => [
                 ...$order->toArray(),
-                'fee_usd' => $order->fee_amount,
+            'fee_amount' => $order->fee_amount,
                 'completed_application_count' => $order->applicationAssignments->where('status', 'completed')->count(),
                 'minimum_apps_to_get_paid' => $order->minimumPaidApplications() ?: null,
                 'paid_threshold_met' => $order->minimumPaidApplications()
