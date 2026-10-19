@@ -5,6 +5,7 @@ namespace App\Models\Programs;
 use App\Models\AMAP\AmapFlag;
 use App\Models\AMAP\AmapTrigger;
 use App\Models\Auth\User;
+use App\Models\Auth\UserSetting;
 use App\Models\Programs\Rounds\ProgramRound;
 use App\Models\Organizations\Organization;
 use App\Models\Shared\Like;
@@ -28,6 +29,31 @@ class Program extends Model
     }
 
     protected $guarded = [];
+
+    // The organization's logo goes out with every program, so cards and pages can show it instead of the owner's photo.
+    protected $appends = ['organization_logo'];
+
+    /** Owner accounts' logos already looked up in this request (null when they have none). */
+    private static array $organizationLogos = [];
+
+    /**
+     * The organization's logo: the one saved in the owner account's appearance settings. Only a hosted image is sent;
+     * an inline data: image would bloat every list response.
+     */
+    public function getOrganizationLogoAttribute(): ?string
+    {
+        $ownerId = $this->user_id;
+        if (! $ownerId) {
+            return null;
+        }
+
+        if (! array_key_exists($ownerId, self::$organizationLogos)) {
+            $logo = UserSetting::where('user_id', $ownerId)->value('logo');
+            self::$organizationLogos[$ownerId] = is_string($logo) && preg_match('#^https?://#i', $logo) ? $logo : null;
+        }
+
+        return self::$organizationLogos[$ownerId];
+    }
 
     /** Has the programs table got the match_score_limit column yet? */
     public static function supportsMatchScoreLimit(): bool
