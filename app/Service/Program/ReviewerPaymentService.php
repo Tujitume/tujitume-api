@@ -31,7 +31,7 @@ class ReviewerPaymentService
                 $order = ReviewerOrder::whereKey($order->id)->lockForUpdate()->firstOrFail();
                 $reviewer = $order->reviewer;
                 $name = trim(($reviewer?->first_name ?? '') . ' ' . ($reviewer?->last_name ?? '')) ?: 'The reviewer';
-                $amount = round((float) $order->fee_usd, 2);
+                $amount = round((float) $order->fee_amount, 2);
 
                 if ($order->payment_status === 'completed') {
                     return "{$name} has already been paid.";
@@ -125,7 +125,7 @@ class ReviewerPaymentService
                 return;
             }
 
-            $amount = $amount ?? round((float) $order->fee_usd, 2);
+            $amount = $amount ?? round((float) $order->fee_amount, 2);
             $wallet = ProgramWallet::where('program_id', $order->program_id)->lockForUpdate()->first();
             if ($wallet) {
                 $wallet->balance = (float) $wallet->balance + $amount;
@@ -141,7 +141,7 @@ class ReviewerPaymentService
     public function settle(ReviewerOrder $order): void
     {
         DB::transaction(function () use ($order) {
-            $amount = round((float) $order->fee_usd, 2);
+            $amount = round((float) $order->fee_amount, 2);
             $wallet = ProgramWallet::where('program_id', $order->program_id)->lockForUpdate()->first();
             if ($wallet) {
                 $wallet->total_reserved = max(0, (float) $wallet->total_reserved - $amount);

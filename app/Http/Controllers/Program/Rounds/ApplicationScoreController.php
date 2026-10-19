@@ -42,11 +42,34 @@ class ApplicationScoreController extends Controller
             return response()->json(['message' => 'This round has been finalized. Scores can no longer be submitted or changed.'], 422);
         }
 
-        $isReviewer = $round->reviewers()->where('user_id', $userId)->exists()
-            || $round->program->user_id === $userId;
+        $isProgramOwner = $round->program->user_id === $userId;
+        $isReviewer = $round->reviewers()->where('user_id', $userId)->exists() || $isProgramOwner;
 
         if (!$isReviewer) {
             return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
+        if (!$isProgramOwner) {
+            $reviewPeriodEnd = $round->review_period_end ?? $round->close_date;
+            if (!$reviewPeriodEnd || now()->startOfDay()->gt($reviewPeriodEnd->copy()->startOfDay())) {
+                return response()->json(['error' => 'The review period has ended; applications can no longer be scored.'], 422);
+            }
+
+            $isAssigned = ReviewerApplicationAssignment::where('round_id', $round->id)
+                ->where('application_id', $application->id)
+                ->where('reviewer_id', $userId)
+                ->exists();
+            if (!$isAssigned) {
+                return response()->json(['error' => 'This application is not assigned to you for review.'], 403);
+            }
+
+            $order = ReviewerOrder::where('round_id', $round->id)
+                ->where('reviewer_id', $userId)
+                ->where('order_type', 'round_review')
+                ->latest('id')->first();
+            if (!$order || in_array($order->work_status, ['approved', 'rejected'], true)) {
+                return response()->json(['error' => 'This reviewer order is no longer open for scoring.'], 422);
+            }
         }
 
         DB::beginTransaction();
@@ -120,46 +143,7 @@ class ApplicationScoreController extends Controller
 
             // ─── Reviewer Order Status Updates ──────────────────────────────
 
-            // Update work_status to 'in_progress' on first score submission
-            ReviewerOrder::where('round_id', $round->id)
-                ->where('reviewer_id', Auth::id())
-                ->where('work_status', 'assigned')
-                ->update(['work_status' => 'in_progress']);
-
-            $assignedToReviewer = ReviewerApplicationAssignment::where('round_id', $round->id)
-                ->where('reviewer_id', Auth::id())
-                ->count();
-
-            $completedByReviewer = ReviewerApplicationAssignment::where('round_id', $round->id)
-                ->where('reviewer_id', Auth::id())
-                ->where('status', 'completed')
-                ->count();
-
-            // If reviewer has scored all applications assigned to them, mark as delivered.
-            if ($assignedToReviewer > 0 && $completedByReviewer >= $assignedToReviewer) {
-                $order = ReviewerOrder::where('round_id', $round->id)
-                    ->where('reviewer_id', Auth::id())
-                    ->first();
-
-                if ($order && $order->work_status === 'in_progress') {
-                    $order->update([
-                        'work_status'  => 'delivered',
-                        'delivered_at' => now(),
-                    ]);
-
-                    // Notify program owner
-                    $this->programNotification->send('reviewer.scoring_complete', [
-                        $round->program->owner
-                    ], [
-                        'program_title' => $round->program->program_title,
-                        'round_name'    => $round->round_name,
-                        'reviewer_name' => Auth::user()->first_name . ' ' . Auth::user()->last_name,
-                        'order_id'      => $order->id,
-                        'program_id'    => $round->program_id,
-                        'round_id'      => $round->id,
-                    ]);
-                }
-            }
+            $this->updateReviewerOrderAfterScore($round);
 
             DB::commit();
 
@@ -187,6 +171,47 @@ class ApplicationScoreController extends Controller
     }
 
     // ─── Score Calculation Methods ──────────────────────────────────────────────
+
+    private function updateReviewerOrderAfterScore($round): void
+    {
+        // Update work_status to 'in_progress' on first score submission
+        ReviewerOrder::where('round_id', $round->id)
+            ->where('reviewer_id', Auth::id())
+            ->where('work_status', 'assigned')
+            ->update(['work_status' => 'in_progress']);
+
+        // Meeting the agreed minimum paid workload automatically submits the order for owner review.
+        $order = ReviewerOrder::where('round_id', $round->id)
+            ->where('reviewer_id', Auth::id())
+            ->where('order_type', 'round_review')
+            ->latest('id')->first();
+
+        $order?->refreshCompletedRoundReviewFee();
+
+        $assignedToReviewer = $order?->applicationAssignments()->count() ?? 0;
+        $completedByReviewer = $order?->applicationAssignments()->where('status', 'completed')->count() ?? 0;
+        $minimumPaidApps = $order?->minimumPaidApplications() ?? 0;
+        $paidThresholdReached = (float) ($order?->fee_amount ?? 0) > 0
+            && $minimumPaidApps > 0
+            && $completedByReviewer >= $minimumPaidApps;
+        $unpaidWorkCompleted = (float) ($order?->fee_amount ?? 0) <= 0
+            && $assignedToReviewer > 0
+            && $completedByReviewer >= $assignedToReviewer;
+
+        if ($order && ($paidThresholdReached || $unpaidWorkCompleted)
+            && in_array($order->work_status, ['assigned', 'in_progress'], true)) {
+            $order->update(['work_status' => 'delivered', 'delivered_at' => now()]);
+
+            $this->programNotification->send('reviewer.scoring_complete', [$round->program->owner], [
+                'program_title' => $round->program->program_title,
+                'round_name' => $round->round_name,
+                'reviewer_name' => Auth::user()->first_name . ' ' . Auth::user()->last_name,
+                'order_id' => $order->id,
+                'program_id' => $round->program_id,
+                'round_id' => $round->id,
+            ]);
+        }
+    }
 
     private function calculateScore(array $criterionScores, array $scoringCriteria, string $rubricMode): float
     {

@@ -34,7 +34,7 @@ class RoundReviewerController extends Controller
         }
 
         $reviewers = $round->reviewers()
-            ->withPivot(['reviewer_type', 'max_apps_assigned', 'expertise_tags', 'reviewer_fee', 'fee_type', 'fee_currency', 'acceptance_status'])
+            ->withPivot(['reviewer_type', 'max_apps_assigned', 'minimum_apps_to_get_paid', 'expertise_tags', 'reviewer_fee', 'fee_type', 'fee_currency', 'acceptance_status'])
             ->get()
             ->map(function ($user) {
                 return [
@@ -45,6 +45,7 @@ class RoundReviewerController extends Controller
                     // A service provider is stored as an external reviewer but shown as what they are
                     'reviewer_type' => (int) $user->user_type_id === 3 ? 'third_party' : $user->pivot->reviewer_type,
                     'max_apps_assigned' => $user->pivot->max_apps_assigned,
+                    'minimum_apps_to_get_paid' => $user->pivot->minimum_apps_to_get_paid,
                     // How this reviewer is paid, as the round setup form names it
                     'reviewer_fee' => $user->pivot->reviewer_fee,
                     'fee_type' => $user->pivot->fee_type,
@@ -122,7 +123,30 @@ class RoundReviewerController extends Controller
                 'fee_currency'        => 'nullable|string|max:10',
                 // What the round setup form sends ("Per application reviewed" / "Flat round fee")
                 'reviewer_payment_basis' => 'nullable|in:per_application,flat_round_fee',
+                'minimum_apps_to_get_paid' => 'nullable|integer|min:1',
+                'reviewer_payment_max_applications' => 'nullable|integer|min:1',
             ]);
+
+            $minimumPaidApps = $validated['minimum_apps_to_get_paid']
+                ?? $validated['reviewer_payment_max_applications']
+                ?? null;
+
+            $fundingEnabled = filter_var($request->input('reviewer_payment_enabled', false), FILTER_VALIDATE_BOOLEAN)
+                || (float) ($validated['reviewer_fee'] ?? 0) > 0;
+            if (($fundingEnabled || $request->reviewer_type === 'third_party')
+                && empty($minimumPaidApps)) {
+                throw ValidationException::withMessages([
+                    'minimum_apps_to_get_paid' => ['Set the minimum number of applications the reviewer must score to qualify for payment.'],
+                ]);
+            }
+
+            if (!empty($validated['max_apps_assigned'])
+                && !empty($minimumPaidApps)
+                && $minimumPaidApps > $validated['max_apps_assigned']) {
+                throw ValidationException::withMessages([
+                    'minimum_apps_to_get_paid' => ['The minimum paid application count cannot exceed the reviewer assignment limit.'],
+                ]);
+            }
 
             // The form's payment basis decides the fee type; before this it was ignored and every reviewer became "flat"
             $feeType = match ($validated['reviewer_payment_basis'] ?? null) {
@@ -201,6 +225,7 @@ class RoundReviewerController extends Controller
                 $round->reviewers()->attach($userId, [
                     'reviewer_type'       => 'internal',
                     'max_apps_assigned'   => $validated['max_apps_assigned'] ?? null,
+                    'minimum_apps_to_get_paid' => $minimumPaidApps,
                     'assigned_percentage' => $validated['assigned_percentage'] ?? null,
                     'expertise_tags'      => isset($validated['expertise_tags']) ? json_encode($validated['expertise_tags']) : null,
                     'reviewer_fee'        => 0,
@@ -215,6 +240,7 @@ class RoundReviewerController extends Controller
                 $round->reviewers()->attach($user->id, [
                     'reviewer_type'       => 'external',
                     'max_apps_assigned'   => $validated['max_apps_assigned'] ?? null,
+                    'minimum_apps_to_get_paid' => $minimumPaidApps,
                     'assigned_percentage' => $validated['assigned_percentage'] ?? null,
                     'expertise_tags'      => isset($validated['expertise_tags'])
                         ? json_encode($validated['expertise_tags']) : null,
@@ -241,6 +267,7 @@ class RoundReviewerController extends Controller
                 'fee_amount' => $orderFee,
 
                 'fee_type'        => $roundReviewer->fee_type,
+                'minimum_apps_to_get_paid' => $minimumPaidApps,
                 'work_status'     => 'assigned',
                 'acceptance_status' => 'pending',
                 'payment_status'  => 'unpaid',
@@ -567,6 +594,7 @@ class RoundReviewerController extends Controller
                         'round_reviewer_id' => $roundReviewer->id,
                         'fee_amount' => $feeType === 'per_application' ? 0 : $reviewerFee,
                         'fee_type' => $feeType,
+                        'minimum_apps_to_get_paid' => $roundReviewer->minimum_apps_to_get_paid,
                         'work_status' => 'assigned',
                         'acceptance_status' => 'accepted',
                         'accepted_at' => $roundReviewer->accepted_at ?? now(),

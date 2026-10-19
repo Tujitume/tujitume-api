@@ -185,6 +185,7 @@ Route::prefix('/programs')->middleware(['program', 'program.response'])->group(f
     Route::post('reviewer-orders/{order}/deliver', [ReviewerOrderController::class, 'deliver']);
     Route::post('reviewer-orders/{order}/request-modification', [ReviewerOrderController::class, 'requestModification']);
     Route::post('reviewer-orders/{order}/approve', [ReviewerOrderController::class, 'approve']);
+    Route::post('reviewer-orders/{order}/reject', [ReviewerOrderController::class, 'reject']);
     Route::get('reviewer-orders/{order}/payment-status', [ReviewerOrderController::class, 'paymentStatus']);
 
     Route::get('reviewer/orders', [ReviewerOrderController::class, 'myOrders']);

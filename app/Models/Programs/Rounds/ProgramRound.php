@@ -57,7 +57,7 @@ class ProgramRound extends Model
     {
         return $this->belongsToMany(User::class, 'round_reviewers', 'round_id', 'user_id')
             ->select('users.id', 'users.first_name', 'users.last_name', 'users.email', 'users.image')
-            ->withPivot(['reviewer_type', 'max_apps_assigned', 'expertise_tags', 'reviewer_fee', 'fee_type', 'fee_currency'])
+            ->withPivot(['reviewer_type', 'max_apps_assigned', 'minimum_apps_to_get_paid', 'expertise_tags', 'reviewer_fee', 'fee_type', 'fee_currency'])
             ->withTimestamps();
     }
 

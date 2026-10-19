@@ -42,6 +42,12 @@ class ReviewerOrderController extends Controller
             ->get()
             ->map(fn($order) => [
                 ...$order->toArray(),
+                'fee_usd' => $order->fee_amount,
+                'completed_application_count' => $order->applicationAssignments->where('status', 'completed')->count(),
+                'minimum_apps_to_get_paid' => $order->minimumPaidApplications() ?: null,
+                'paid_threshold_met' => $order->minimumPaidApplications()
+                    ? $order->applicationAssignments->where('status', 'completed')->count() >= $order->minimumPaidApplications()
+                    : false,
                 'work_status' => [
                     'value' => $order->work_status,
                     'color' => config('status.reviewer_order.' . $order->work_status, 'gray'),
@@ -66,11 +72,18 @@ class ReviewerOrderController extends Controller
         $orders = ReviewerOrder::where('round_id', $round->id)
             ->with([
                 'applicationAssignments.application',
-                'reviewer'
+                'reviewer',
+                'round:id,review_period_end,close_date',
             ])
             ->get()
             ->map(fn($order) => [
                 ...$order->toArray(),
+                'fee_usd' => $order->fee_amount,
+                'completed_application_count' => $order->applicationAssignments->where('status', 'completed')->count(),
+                'minimum_apps_to_get_paid' => $order->minimumPaidApplications() ?: null,
+                'paid_threshold_met' => $order->minimumPaidApplications()
+                    ? $order->applicationAssignments->where('status', 'completed')->count() >= $order->minimumPaidApplications()
+                    : false,
                 'work_status' => [
                     'value' => $order->work_status,
                     'color' => config('status.reviewer_order.' . $order->work_status, 'gray'),
@@ -88,38 +101,12 @@ class ReviewerOrderController extends Controller
     // POST /api/v1/programs/reviewer-orders/{order}/deliver
     public function deliver(Request $request, ReviewerOrder $order)
     {
+        // if ($order->order_type === 'round_review') {
+        //     return response()->json(['error' => 'Round review orders are submitted automatically when the minimum paid application count is reached.'], 422);
+        // }
+
         if ($order->reviewer_id !== Auth::id()) {
             return response()->json(['error' => 'Unauthorized'], 403);
-        }
-
-        if ($order->order_type === 'round_review' && $order->acceptance_status !== 'accepted') {
-            return response()->json(['error' => 'Accept the reviewer assignment before delivering work.'], 422);
-        }
-
-        if ($order->order_type === 'round_review') {
-            $assignments = $order->applicationAssignments();
-
-            if (!$assignments->exists()) {
-                return response()->json([
-                    'error' => 'Cannot deliver a round review order with no assigned applications.',
-                ], 422);
-            }
-
-            $incompleteCount = $order->applicationAssignments()
-                ->where(function ($query) {
-                    $query->where('status', '!=', 'completed')
-                        ->orWhereDoesntHave('application', function ($applicationQuery) {
-                            $applicationQuery->where('round_status', 'scored');
-                        });
-                })
-                ->count();
-
-            if ($incompleteCount > 0) {
-                return response()->json([
-                    'error' => 'All assigned applications must be scored before delivering this order.',
-                    'incomplete_assignments' => $incompleteCount,
-                ], 422);
-            }
         }
 
         if (!in_array($order->work_status, ['in_progress', 'modification_requested'])) {
@@ -168,6 +155,10 @@ class ReviewerOrderController extends Controller
         if ($order->program->user_id !== Auth::id()) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
+
+        // if ($order->order_type === 'round_review') {
+        //     return response()->json(['error' => 'Round review work is scored in the application workflow; modification requests are not supported for these orders.'], 422);
+        // }
 
         if ($order->work_status !== 'delivered') {
             return response()->json([
@@ -221,8 +212,19 @@ class ReviewerOrderController extends Controller
             ], 422);
         }
 
+        if ($order->order_type === 'round_review') {
+            if (!$this->reviewPeriodHasEnded($order)) {
+                return response()->json(['error' => 'Reviewer work can only be approved after the review period ends.'], 422);
+            }
+
+            $completed = $order->applicationAssignments()->where('status', 'completed')->count();
+            if ((float) $order->fee_amount > 0 && (!$order->minimumPaidApplications() || $completed < $order->minimumPaidApplications())) {
+                return response()->json(['error' => 'The reviewer has not reached the minimum paid application count.'], 422);
+            }
+        }
+
         if ($order->isPaid()) {
-            //return response()->json(['error' => 'Already paid'], 422);
+            return response()->json(['error' => 'Already paid'], 422);
         }
 
         try {
@@ -306,6 +308,38 @@ class ReviewerOrderController extends Controller
         }
     }
 
+    /** Owner rejects submitted reviewer work after the review period has closed. */
+    public function reject(Request $request, ReviewerOrder $order)
+    {
+        if ($order->program->user_id !== Auth::id()) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
+        if ($order->order_type !== 'round_review' || !in_array($order->work_status, ['delivered', 'in_progress', 'assigned'], true)) {
+            return response()->json(['error' => 'This reviewer order cannot be rejected from its current status.'], 422);
+        }
+
+        if (!$this->reviewPeriodHasEnded($order)) {
+            return response()->json(['error' => 'Reviewer work can only be rejected after the review period ends.'], 422);
+        }
+
+        $validated = $request->validate(['rejection_reason' => 'required|string|max:1000']);
+        $order->update([
+            'work_status' => 'rejected',
+            'rejection_reason' => $validated['rejection_reason'],
+        ]);
+
+        return response()->json(['message' => 'Reviewer work rejected.', 'data' => $order->fresh()], 200);
+    }
+
+    private function reviewPeriodHasEnded(ReviewerOrder $order): bool
+    {
+        $reviewPeriodEnd = $order->round?->review_period_end ?? $order->round?->close_date;
+
+        return $reviewPeriodEnd !== null
+            && now()->startOfDay()->gt($reviewPeriodEnd->copy()->startOfDay());
+    }
+
     // ─── Payment initiate & status polling ───────────────────────────────────
 
     public function initiateReviewerPayment(ReviewerOrder $order)
@@ -314,7 +348,7 @@ class ReviewerOrderController extends Controller
             $order = ReviewerOrder::whereKey($order->id)->lockForUpdate()->firstOrFail();
 
             if ($order->payment_status === 'completed') {
-                //throw ValidationException::withMessages(['payment' => 'Already paid']);
+                throw ValidationException::withMessages(['payment' => 'Already paid']);
             }
 
             $program = $order->program()->with('owner')->firstOrFail();

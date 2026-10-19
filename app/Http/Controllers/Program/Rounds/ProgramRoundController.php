@@ -264,10 +264,9 @@ class ProgramRoundController extends Controller
             'reviewer_payments_to_start' => $round->status === 'finalized'
                 ? ReviewerOrder::where('round_id', $round->id)
                     ->where('order_type', 'round_review')
+                    ->where('work_status', 'approved')
                     ->whereIn('payment_status', ['unpaid', 'pending', 'failed'])
                     ->where('fee_amount', '>', 0)
-                    ->get()
-                    ->filter(fn ($o) => in_array($o->work_status, ['delivered', 'approved'], true) || $this->reviewerFinishedScoring($round, $o->reviewer_id))
                     ->count()
                 : 0,
         ];
@@ -721,21 +720,12 @@ class ProgramRoundController extends Controller
             return response()->json(['message' => $message, 'error' => $message], 422);
         }
 
-        $incompleteReviewerOrders = ReviewerOrder::where('round_id', $round->id)
-            ->where('order_type', 'round_review')
-            ->whereNotIn('work_status', ['approved', 'completed'])
-            ->count();
-
-        if ($incompleteReviewerOrders > 0) {
-            $message = $incompleteReviewerOrders === 1
-                ? '1 reviewer order is still awaiting approval. Approve all reviewer orders before finalizing this round.'
-                : "{$incompleteReviewerOrders} reviewer orders are still awaiting approval. Approve all reviewer orders before finalizing this round.";
-
-            return response()->json([
-                'message' => $message,
-                'error' => $message,
-                'incomplete_reviewer_orders' => $incompleteReviewerOrders,
-            ], 422);
+        $reviewPeriodEnd = $round->review_period_end ?? $round->close_date;
+        if (!$reviewPeriodEnd || now()->startOfDay()->lte($reviewPeriodEnd->copy()->startOfDay())) {
+            $message = $reviewPeriodEnd
+                ? 'This round can only be finalized after the review period ends on ' . $reviewPeriodEnd->format('j M Y') . '.'
+                : 'Set a review period end date before finalizing this round.';
+            return response()->json(['message' => $message, 'error' => $message], 422);
         }
 
         // A manual round has no scores to total up: the owner accepts or rejects each application, and the round is
@@ -757,6 +747,8 @@ class ProgramRoundController extends Controller
                 $message = 'Create round ' . ($round->round_number + 1) . ' before finalizing this round, so the applicants who advance have somewhere to go.';
                 return response()->json(['message' => $message, 'error' => $message], 422);
             }
+
+            $this->rejectUnderCapReviewerOrders($round);
 
             $isFinal = $this->isFinalRound($round);
             $advancedCount = ApplicationRoundHistory::where('round_id', $round->id)->whereIn('outcome', ['advanced', 'awarded'])->count();
@@ -787,18 +779,6 @@ class ProgramRoundController extends Controller
             ]);
         }
 
-        $unscoredCount = ProgramApplication::where('current_round_id', $round->id)
-            ->where(function ($query) {
-                $query->whereNull('round_status')->orWhere('round_status', '!=', 'scored');
-            })->count();
-
-        if ($unscoredCount > 0) {
-            return response()->json([
-                'error' => 'All applications in this round must be scored before the round can be finalized.',
-                'unscored_applications' => $unscoredCount,
-            ], 422);
-        }
-
         return $this->finalizeScoredRound($round);
     }
 
@@ -809,6 +789,18 @@ class ProgramRoundController extends Controller
         try {
             $knockoutService = new KnockoutEvaluator();
 
+            // The review window has ended; applications without a completed review cannot advance.
+            $unreviewedApplications = ProgramApplication::where('current_round_id', $round->id)
+                ->where(function ($query) {
+                    $query->whereNull('round_status')->orWhereIn('round_status', ['draft', 'submitted', 'assigned', 'under_review']);
+                })->get();
+            $unreviewedApplications->each(function ($app) {
+                    $app->round_status = 'not_selected';
+                    $app->save();
+                    $this->roundHistory->update($app, 'not_selected', 'Review period ended without a completed score');
+                });
+            $unreviewedApplicationIds = $unreviewedApplications->pluck('id')->all();
+
             $applications = ProgramApplication::where('current_round_id', $round->id)
                 ->where('round_status', 'scored')->get();
 
@@ -818,7 +810,7 @@ class ProgramRoundController extends Controller
             $failedKoApps = $applications->where('knockout_status', 'failed');
             $applications = $applications->where('knockout_status', '!=', 'failed');
 
-            $advanced = []; $notSelected = [];
+            $advanced = []; $notSelected = $unreviewedApplications->all();
 
             // 3. Immediately handle failed apps
             foreach ($failedKoApps as $app) {
@@ -932,6 +924,10 @@ class ProgramRoundController extends Controller
                     continue; // already handled
                 }
 
+                if (in_array($app->id, $unreviewedApplicationIds, true)) {
+                    continue; // already marked not selected with the review period reason
+                }
+
                 $app->round_status = 'not_selected';
 
                 // not_selected on a round
@@ -956,6 +952,7 @@ class ProgramRoundController extends Controller
             // Update round status
             $round->status = 'finalized';
             $round->save();
+            $this->rejectUnderCapReviewerOrders($round);
 
 
 
@@ -986,6 +983,25 @@ class ProgramRoundController extends Controller
         }
     }
 
+    /** Orders below their agreed paid workload are closed unpaid when the round is finalized. */
+    private function rejectUnderCapReviewerOrders(ProgramRound $round): void
+    {
+        ReviewerOrder::where('round_id', $round->id)
+            ->where('order_type', 'round_review')
+            ->whereNotIn('work_status', ['approved', 'rejected'])
+            ->get()
+            ->each(function (ReviewerOrder $order) {
+                $required = $order->minimumPaidApplications();
+                $completed = $order->applicationAssignments()->where('status', 'completed')->count();
+                if ((float) $order->fee_amount > 0 && ($required < 1 || $completed < $required)) {
+                    $order->update([
+                        'work_status' => 'rejected',
+                        'rejection_reason' => 'Minimum paid application threshold was not met before round finalization.',
+                    ]);
+                }
+            });
+    }
+
     /** Has this reviewer scored every application assigned to them in the round? */
     private function reviewerFinishedScoring(ProgramRound $round, $reviewerId): bool
     {
@@ -1003,9 +1019,7 @@ class ProgramRoundController extends Controller
     }
 
     /**
-     * Finalizing a round pays its reviewers. Each reviewer who finished their work has their fee marked started (and is
-     * told), then it is sent from the program wallet over LIPR. A reviewer who scored everything assigned to them counts
-     * as finished even if their order was never marked delivered.
+     * Finalization only retries payment for work the owner has approved.
      * Safe to run again: it only touches fees that are not paid or already on their way. A reviewer who cannot be paid
      * yet (no LIPR wallet, wallet too low) stays "started" and is listed in the result so the owner knows why.
      * @return array{started: int, sent: int, problems: array<int, string>}
@@ -1023,11 +1037,8 @@ class ProgramRoundController extends Controller
             ->get();
 
         foreach ($orders as $reviewerOrder) {
-            if (! in_array($reviewerOrder->work_status, ['delivered', 'approved'], true)) {
-                if (! $this->reviewerFinishedScoring($round, $reviewerOrder->reviewer_id)) {
-                    continue;
-                }
-                $reviewerOrder->update(['work_status' => 'delivered', 'delivered_at' => now()]);
+            if ($reviewerOrder->work_status !== 'approved') {
+                continue;
             }
 
             // First time: mark it started and tell the reviewer
@@ -1075,7 +1086,7 @@ class ProgramRoundController extends Controller
         $result = $this->startReviewerPayments($round);
 
         if ($result['sent'] === 0 && empty($result['problems'])) {
-            $message = 'Nothing to pay: every reviewer who finished is already paid or being paid, and the others have not finished scoring.';
+            $message = 'Nothing is ready to pay. Reviewers must meet their paid application threshold and have their work approved first.';
         } else {
             $message = ($result['sent'] > 0
                 ? ($result['sent'] === 1 ? '1 reviewer payment was sent over LIPR.' : "{$result['sent']} reviewer payments were sent over LIPR.")
@@ -1217,6 +1228,13 @@ class ProgramRoundController extends Controller
             $blockers[] = 'This round is still a draft. Publish it before it can be finalized.';
         }
 
+        $reviewPeriodEnd = $round->review_period_end ?? $round->close_date;
+        if (!$reviewPeriodEnd || now()->startOfDay()->lte($reviewPeriodEnd->copy()->startOfDay())) {
+            $blockers[] = $reviewPeriodEnd
+                ? 'This round can only be finalized after the review period ends on ' . $reviewPeriodEnd->format('j M Y') . '.'
+                : 'Set a review period end date before finalizing this round.';
+        }
+
         if (!$isFinal && !$this->nextRoundExists($round)) {
             $blockers[] = 'Create round ' . ($round->round_number + 1) . ' first, so the applicants who advance have somewhere to go.';
         }
@@ -1249,19 +1267,13 @@ class ProgramRoundController extends Controller
                     : "{$count} applications still need a decision. Accept or reject each one first.";
             }
         } else {
-            $unscored = $apps->filter(fn ($a) => $a->round_status !== 'scored' && $a->knockout_status !== 'failed')->values();
+            $unscored = $apps->filter(fn ($a) => in_array($a->round_status, ['draft', 'submitted', 'assigned', 'under_review'], true) || $a->round_status === null)->values();
             $failedKnockout = $apps->where('knockout_status', 'failed')->values();
-
-            if ($unscored->isNotEmpty()) {
-                $count = $unscored->count();
-                $blockers[] = ($count === 1 ? '1 application has' : "{$count} applications have") . ' not been scored yet. Every application must be scored before the round can be finalized.';
-                $undecided = $unscored->all();
-            }
 
             $scored = $apps->where('round_status', 'scored')->where('knockout_status', '!=', 'failed')->values();
             $selection = $this->selectByRule($round, $scored);
             $advanced = $selection['advanced'];
-            $notSelected = array_merge($failedKnockout->all(), $selection['not_selected']);
+            $notSelected = array_merge($unscored->all(), $failedKnockout->all(), $selection['not_selected']);
             $tie = $selection['tie'];
 
             if ($tie && empty($tie['resolved'])) {
@@ -1282,14 +1294,20 @@ class ProgramRoundController extends Controller
             $feeType = $assignment?->fee_type ?? $order->fee_type ?? 'per_application';
             $assigned = (int) $order->application_assignments_count;
             $scored = \App\Models\Programs\Rounds\ApplicationScore::where('round_id', $round->id)->where('reviewer_id', $order->reviewer_id)->count();
+            $completed = $order->applicationAssignments()->where('status', 'completed')->count();
+            $minimum = $order->minimumPaidApplications();
             $amount = (float) $order->fee_amount;
 
             if ($order->payment_status === 'completed') {
                 $state = 'paid';
             } elseif ($amount <= 0) {
                 $state = 'no_fee';
-            } elseif (in_array($order->work_status, ['delivered', 'approved'], true) || $this->reviewerFinishedScoring($round, $order->reviewer_id)) {
+            } elseif ($order->work_status === 'approved') {
                 $state = 'ready';
+            } elseif ($minimum > 0 && $completed >= $minimum) {
+                $state = 'awaiting_approval';
+            } elseif ($round->status === 'finalized' || now()->startOfDay()->gt(($round->review_period_end ?? $round->close_date)?->copy()->startOfDay())) {
+                $state = 'below_cap';
             } else {
                 $state = 'waiting';
             }
@@ -1300,6 +1318,7 @@ class ProgramRoundController extends Controller
                 'rate' => (float) ($assignment?->reviewer_fee ?? 0),
                 'assigned' => $assigned,
                 'scored' => $scored,
+                'minimum_apps_to_get_paid' => $minimum,
                 'amount' => $amount,
                 'state' => $state,
                 // Reviewers are paid into their own LIPR wallet, so one without it cannot be paid

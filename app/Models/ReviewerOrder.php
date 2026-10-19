@@ -17,7 +17,7 @@ class ReviewerOrder extends Model
     protected $fillable = [
         'organization_id', 'reviewer_id', 'program_id',
         'order_type', 'round_id', 'round_reviewer_id', 'site_visit_id',
-        'fee_amount', 'fee_type', 'fee_kes', 'currency',
+        'fee_amount', 'fee_type', 'fee_kes', 'currency', 'minimum_apps_to_get_paid',
         'work_status', 'acceptance_status', 'accepted_at', 'delivery_note', 'modification_note', 'rejection_reason',
         'deadline', 'delivered_at', 'approved_at',
         'payment_status', 'leg1_reference', 'leg2_reference', 'paid_at',
@@ -31,6 +31,7 @@ class ReviewerOrder extends Model
         'delivered_at' => 'datetime',
         'approved_at'  => 'datetime',
         'paid_at'      => 'datetime',
+        'minimum_apps_to_get_paid' => 'integer',
     ];
 
     public function organization()
@@ -85,6 +86,22 @@ class ReviewerOrder extends Model
         ]);
     }
 
+    /** Calculate per-application compensation from completed scoring work, not merely assigned work. */
+    public function refreshCompletedRoundReviewFee(): void
+    {
+        if ($this->order_type !== 'round_review' || $this->fee_type !== 'per_application' || $this->isPaid()) {
+            return;
+        }
+
+        $roundReviewer = $this->roundReviewer;
+        if (!$roundReviewer) {
+            return;
+        }
+
+        $completed = $this->applicationAssignments()->where('status', 'completed')->count();
+        $this->update(['fee_amount' => (float) ($roundReviewer->reviewer_fee ?? 0) * $completed]);
+    }
+
     public function siteVisit()
     {
         return $this->belongsTo(MESiteVisit::class, 'site_visit_id');
@@ -104,5 +121,17 @@ class ReviewerOrder extends Model
     public function isPaid(): bool
     {
         return $this->payment_status === 'completed';
+    }
+
+    /** Legacy paid round orders had no stored threshold; require all assigned applications for those orders. */
+    public function minimumPaidApplications(): int
+    {
+        $assignedCount = $this->relationLoaded('applicationAssignments')
+            ? $this->applicationAssignments->count()
+            : (isset($this->application_assignments_count)
+                ? (int) $this->application_assignments_count
+                : $this->applicationAssignments()->count());
+
+        return (int) ($this->minimum_apps_to_get_paid ?? $assignedCount);
     }
 }
