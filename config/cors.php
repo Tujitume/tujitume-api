@@ -33,6 +33,9 @@ return [
     'allowed_headers' => ['*'],
 
     'allowed_origins_patterns' => [
+        // Organisation workspaces: https://<workspace>.tujitume.com (and <workspace>.localhost while developing)
+        '/^https:\/\/[a-z0-9-]+\.tujitume\.com$/',
+        '/^http:\/\/[a-z0-9-]+\.localhost(:\d+)?$/',
         '/^https:\/\/.*\.ngrok-free\.dev(:\d+)?$/',
         '/^https:\/\/.*\.trycloudflare\.com(:\d+)?$/',
     ],
