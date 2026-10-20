@@ -239,6 +239,7 @@ class ReviewerOrderController extends Controller
                 }
             }
             else{
+                return response()->json(['error' => 'Reviewer fee amount is zero, cannot initiate payment.'], 422);
                 $order->update([
                     'work_status' => 'approved',
                     'approved_at' => now(),
