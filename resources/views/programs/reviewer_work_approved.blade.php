@@ -7,13 +7,7 @@
 
         <p>Your {{ $order_type }} work for <strong>{{ $program_title }}</strong> has been approved by the program owner.</p>
 
-<<<<<<< HEAD
-        <p>Payment of <strong>KES {{ $fee }}</strong> is now being processed and will be transferred to your wallet shortly.</p>
-=======
-        <p>Payment of <strong>{{ $currency ?? config('app.currency', 'KES') }} {{ number_format((float) $fee, 2) }}</strong> is now being processed and will be transferred to your wallet shortly.</p>
->>>>>>> 9612db9565bcc9813954b0be96afc8f129e0b9f1
-
-        <p>You can track the payment status from your dashboard.</p>
+        <p>The program owner will initiate payment when the round is finalized.</p>
 
         @include('programs.partials.brand_button', ['label' => 'View Order'])
 

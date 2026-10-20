@@ -223,7 +223,7 @@ class ProgramNotificationService
             'reviewer.accepted_insufficient_funds' => "A reviewer accepted {$round} of {$program}, but the wallet is short by " . ($this->money($d, 'shortfall') ?: 'the review fees') . ". Deposit that amount so reviews can start.",
             'reviewer.work_delivered' => "{$v('reviewer_name')} submitted their {$v('order_type')} work for {$program}. Open Orders to review and approve it.",
             'reviewer.modification_requested' => "{$actor} asked you to change your work on {$program}. Open Orders to see what to fix.",
-            'reviewer.work_approved' => "Your work on {$program} was approved. Your payment of " . ($this->money($d, 'fee') ?: 'the fee') . " is being processed.",
+            'reviewer.work_approved' => "Your work on {$program} was approved.",
             'reviewer.payment_initiated' => "Payment for your work on {$round} was started.",
             'reviewer.payment_completed' => ($this->money($d) ?: 'Your payment') . " for {$program} was sent to your wallet.",
             'reviewer.payment_failed' => "Paying {$v('reviewer_name')} for {$program} failed. Open Orders to retry.",
@@ -864,8 +864,8 @@ class ProgramNotificationService
 
             'reviewer.work_approved' => [
                 'title'         => 'Work Approved 🎉',
-                'message'       => "Your work on {$this->v($data, 'program_title')} has been approved. Payment of {$this->v($data, 'fee')} is being processed.",
-                'email_subject' => 'Work Approved — Payment Processing',
+                'message'       => "Your work on {$this->v($data, 'program_title')} has been approved.",
+                'email_subject' => 'Reviewer Work Approved',
                 'email_view'    => $this->view_base . 'reviewer_work_approved',
                 'link'          => $this->link('dashboard.reviewerGrantOrg.orders'),
             ],

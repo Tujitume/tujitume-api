@@ -1026,46 +1026,7 @@ class ProgramRoundController extends Controller
      */
     private function startReviewerPayments(ProgramRound $round): array
     {
-        $result = ['started' => 0, 'sent' => 0, 'problems' => []];
-        $payer = new \App\Service\Program\ReviewerPaymentService();
-
-        $orders = ReviewerOrder::with('reviewer')
-            ->where('round_id', $round->id)
-            ->where('order_type', 'round_review')
-            ->whereIn('payment_status', ['unpaid', 'pending', 'failed'])
-            ->where('fee_amount', '>', 0)
-            ->get();
-
-        foreach ($orders as $reviewerOrder) {
-            if ($reviewerOrder->work_status !== 'approved') {
-                continue;
-            }
-
-            // First time: mark it started and tell the reviewer
-            if ($reviewerOrder->payment_status === 'unpaid') {
-                $reviewerOrder->update(['payment_status' => 'pending']);
-                $result['started']++;
-
-                $this->programNotification->send('reviewer.payment_initiated', [
-                    $reviewerOrder->reviewer,
-                ], [
-                    'program_title' => $round->program->program_title,
-                    'round_name'    => $round->round_name,
-                    'fee'           => $reviewerOrder->fee_amount,
-                    'order_id'      => $reviewerOrder->id,
-                ]);
-            }
-
-            // Then send the money
-            $payment = $payer->pay($reviewerOrder);
-            if ($payment['ok']) {
-                $result['sent']++;
-            } else {
-                $result['problems'][] = $payment['message'];
-            }
-        }
-
-        return $result;
+        return app(\App\Service\Program\ReviewerPaymentService::class)->payApprovedRoundOrders($round);
     }
 
     /**

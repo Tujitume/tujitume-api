@@ -11,26 +11,14 @@ use App\Service\Misc\ErrorLogService;
 use App\Service\Notification\ProgramNotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
-use Stripe\StripeClient;
-use App\Service\Balance\BalanceService;
-use App\Service\LiprMpesa\LiprW2W;
 
 class ReviewerOrderController extends Controller
 {
 
-    private $Client;
-    private $balance;
-    private $liprW2W;
-
-    public function __construct(StripeClient $client)
+    public function __construct()
     {
         parent::__construct();
-        $this->Client = $client;
-        $this->balance = new BalanceService();
-        $this->liprW2W = new LiprW2W();
-
     }
 
     // ─── List reviewer's own orders ──────────────────────────────
@@ -226,51 +214,8 @@ class ReviewerOrderController extends Controller
             }
         }
 
-        if ($order->isPaid()) {
-            return response()->json(['error' => 'Already paid'], 422);
-        }
-
         try {
-
-            $transfer = null;
-            // Approving a round review only approves the work. The money is sent when the owner finalizes the round
-            // (see ProgramRoundController::startReviewerPayments, which pays approved work).
-            $paysOnFinalize = $order->order_type === 'round_review';
-
-            if ($paysOnFinalize) {
-                $order->update([
-                    'work_status' => 'approved',
-                    'approved_at' => $order->approved_at ?? now(),
-                ]);
-            }
-            elseif($order->fee_amount > 0) {
-                $transfer = $this->initiateReviewerPayment($order);
-
-                if (!$transfer || !($transfer['success'] ?? false)) {
-                    throw new \Exception($transfer['error'] ?? $transfer['message'] ?? 'Transfer failed', 422);
-                }
-            }
-            else{
-                return response()->json(['error' => 'Reviewer fee amount is zero, cannot initiate payment.'], 422);
-                $order->update([
-                    'work_status' => 'approved',
-                    'approved_at' => now(),
-                    'payment_status' => 'pending',
-                ]);
-            }
-            
-
-
-            if ($order->order_type === 'round_review') {
-                $order->applicationAssignments()
-                    ->with('application')->get()
-                    ->each(function ($assignment) use ($order) {
-                        if ($assignment->application) {
-                            $assignment->application->assigned_reviewer_id = $order->reviewer_id;
-                            $assignment->application->save();
-                        }
-                    });
-            }
+            $order->update(['work_status' => 'approved', 'approved_at' => now()]);
 
             $program = $order->program;
             $reviewer = $order->reviewer;
@@ -278,51 +223,16 @@ class ReviewerOrderController extends Controller
             $this->programNotification->send('reviewer.work_approved', [$reviewer], [
                 'program_title' => $program->program_title,
                 'order_type' => $order->order_type,
-                'fee' => $order->fee_amount,
                 'order_id' => $order->id,
             ]);
 
-            // The reviewer hears about the payment when it really starts: at once for other orders, at finalization for rounds
-            if (! $paysOnFinalize) {
-                $this->programNotification->send('reviewer.payment_initiated', [$reviewer], [
-                    'program_title' => $program->program_title,
-                    'round_name' => $order->round?->round_name ?? $program->program_title,
-                    'fee' => $order->fee_amount,
-                    'order_id' => $order->id,
-                ]);
-            }
-
-
-            $round = $order->round;
-            if (
-                $order->order_type === 'round_review'
-                && $round
-                && !$round->applications()->where(function ($query) {
-                    $query->whereNull('round_status')
-                        ->orWhere('round_status', '!=', 'scored');
-                })->exists()
-            ) {
-                $this->programNotification->send('round.all_applications_scored', [$program->owner], [
-                    'program_title' => $program->program_title,
-                    'round_name' => $round->round_name,
-                    'round_id' => $round->id,
-                    'program_id' => $program->id,
-                ]);
-            }
-
             return response()->json([
-                'message' => $paysOnFinalize
-                    ? 'Work approved. Payment starts when you finalize the round.'
-                    : 'Work approved and Payment initiated successfully.',
+                'message' => 'Work approved successfully.',
                 'data' => $order->fresh(),
-                'transfer' => $transfer,
             ], 200);
-        } catch (ValidationException $e) {
-            return response()->json(['message' => 'Already paid'], 422);
         } catch (\Throwable $e) {
             ErrorLogService::report($e, ['order_id' => $order->id]);
-            $status = in_array($e->getCode(), [404, 422]) ? $e->getCode() : 500;
-            return response()->json(['message' => $status === 500 ? 'Reviewer payment could not be completed.' : $e->getMessage()], $status);
+            return response()->json(['message' => 'Work approval could not be completed.'], 500);
         }
     }
 
@@ -392,47 +302,6 @@ class ReviewerOrderController extends Controller
     }
 
     // ─── Payment initiate & status polling ───────────────────────────────────
-
-    public function initiateReviewerPayment(ReviewerOrder $order)
-    {
-        return DB::transaction(function () use ($order) {
-            $order = ReviewerOrder::whereKey($order->id)->lockForUpdate()->firstOrFail();
-
-            if ($order->payment_status === 'completed') {
-                throw ValidationException::withMessages(['payment' => 'Already paid']);
-            }
-
-            $program = $order->program()->with('owner')->firstOrFail();
-            $owner = $program->owner;
-            $reviewer = $order->reviewer;
-            $wallet = $program->wallet()->lockForUpdate()->first();
-            $amount = round((float) $order->fee_amount, 2);
-
-
-            if (!$wallet || (float) $wallet->balance < $amount) {
-                throw new \RuntimeException('Insufficient program wallet balance.', 422);
-            }
-            if ($amount <= 0) {
-                throw new \RuntimeException('Reviewer payment amount must be greater than zero.', 422);
-            }
-
-            $order->update([
-                'work_status' => 'approved',
-                'approved_at' => now(),
-                'payment_status' => 'pending',
-            ]);
-
-            // Create the transfer in the program context.
-            $transfer = $this->liprW2W->sendReviewerPayment(
-                $amount,
-                $reviewer->lipr_wallet,
-                $owner->lipr_wallet,
-                $order
-            );
-
-            return $transfer;
-        });
-    }
 
     // GET /api/v1/programs/reviewer-orders/{order}/payment-status
     public function paymentStatus(ReviewerOrder $order)

@@ -452,8 +452,8 @@ class MpesaCallbackController extends Controller
 
 
             } else {
-                // W2W failed: the money held for it goes back to the program wallet, and the payment can be retried
-                //(new \App\Service\Program\ReviewerPaymentService())->release($order->id, null, 'failed');
+                // The transfer was refused, so the owner can retry it after finalization.
+                $order->update(['payment_status' => 'failed']);
 
                 $this->programNotification->send('reviewer.payment_failed', [
                     $order->program->owner
