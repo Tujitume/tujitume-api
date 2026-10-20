@@ -74,6 +74,13 @@ class ReviewerPaymentService
                 if ($amount <= 0) {
                     return ['error' => "{$name} has no fee to pay."];
                 }
+                $requiredApplications = $lockedOrder->minimumPaidApplications();
+                $completedApplications = $lockedOrder->applicationAssignments()
+                    ->where('status', 'completed')
+                    ->count();
+                if ($requiredApplications < 1 || $completedApplications < $requiredApplications) {
+                    return ['error' => "{$name} has not completed the minimum number of applications required for payment."];
+                }
                 if (! $reviewer?->lipr_wallet) {
                     return ['error' => "{$name} has no LIPR wallet set up yet, so they cannot be paid. Ask them to set one up."];
                 }
@@ -98,6 +105,7 @@ class ReviewerPaymentService
                 return ['ok' => false, 'message' => $payment['error']];
             }
 
+            // Actual lipr transfer
             $transfer = $this->liprW2W->sendReviewerPayment(
                 $payment['amount'],
                 $payment['reviewer_wallet'],
