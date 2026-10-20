@@ -16,6 +16,11 @@ use Laravel\Socialite\Facades\Socialite;
 
 Route::post('auth/verify-device', [AuthController::class, 'verifyDevice']);
 Route::post('login', [AuthController::class, 'login']);
+
+// Public: does this workspace (mastercard in mastercard.tujitume.com) exist, and how does its sign-in page look?
+Route::get('workspaces/{slug}', [\App\Http\Controllers\Organizations\WorkspaceController::class, 'resolve'])
+    ->where('slug', '[A-Za-z0-9-]+')
+    ->middleware('throttle:public');
 Route::post('register', [RegisterController::class, 'register']);
 
 Route::post('register/org-team-member', [RegisterController::class, 'registerOrgTeamMember'])

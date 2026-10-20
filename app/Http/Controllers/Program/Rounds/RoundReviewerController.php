@@ -140,11 +140,23 @@ class RoundReviewerController extends Controller
 
             $fundingEnabled = filter_var($request->input('reviewer_payment_enabled', false), FILTER_VALIDATE_BOOLEAN)
                 || (float) ($validated['reviewer_fee'] ?? 0) > 0;
-            if (($fundingEnabled || $request->reviewer_type === 'third_party')
-                && empty($minimumPaidApps)) {
-                throw ValidationException::withMessages([
-                    'minimum_apps_to_get_paid' => ['Set the minimum number of applications the reviewer must score to qualify for payment.'],
-                ]);
+
+            // The form's payment basis decides the fee type; before this it was ignored and every reviewer became "flat"
+            $feeType = match ($validated['reviewer_payment_basis'] ?? null) {
+                'per_application' => 'per_application',
+                'flat_round_fee'  => 'flat',
+                default           => $validated['fee_type'] ?? 'flat',
+            };
+
+            // A flat round fee is only earned by meeting the minimum, so it must be set. A per-application rate pays for
+            // every application the reviewer scores, so the minimum is optional and one scored application qualifies.
+            if (($fundingEnabled || $request->reviewer_type === 'third_party') && empty($minimumPaidApps)) {
+                if ($feeType === 'flat') {
+                    throw ValidationException::withMessages([
+                        'minimum_apps_to_get_paid' => ['Set the minimum number of applications the reviewer must score to qualify for the flat round fee.'],
+                    ]);
+                }
+                $minimumPaidApps = 1;
             }
 
             if (!empty($validated['max_apps_assigned'])
@@ -154,13 +166,6 @@ class RoundReviewerController extends Controller
                     'minimum_apps_to_get_paid' => ['The minimum paid application count cannot exceed the reviewer assignment limit.'],
                 ]);
             }
-
-            // The form's payment basis decides the fee type; before this it was ignored and every reviewer became "flat"
-            $feeType = match ($validated['reviewer_payment_basis'] ?? null) {
-                'per_application' => 'per_application',
-                'flat_round_fee'  => 'flat',
-                default           => $validated['fee_type'] ?? 'flat',
-            };
 
             $userId = $validated['user_id'];
 

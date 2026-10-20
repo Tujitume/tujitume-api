@@ -13,6 +13,7 @@ use App\Service\Account\DeviceVerificationService;
 use App\Service\Account\RegisterService;
 use App\Service\Misc\ErrorLogService;
 use App\Service\Notification\EmailBrand;
+use App\Service\Organization\WorkspaceDirectory;
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -121,6 +122,16 @@ class AuthController extends Controller
 
         // A team member whose access was deactivated cannot sign in; say so and who to ask
         if ($reason = $this->deactivatedMessage($user)) {
+            Auth::logout();
+
+            return response([
+                'message' => $reason, 'auth' => false
+            ], 200);
+        }
+
+        // Signing in through an organisation's workspace page (mastercard.tujitume.com): only people who work
+        // inside that organisation (owner, team members, external reviewers) may come in that way
+        if ($reason = WorkspaceDirectory::denialFor($user, $request->input('workspace'))) {
             Auth::logout();
 
             return response([

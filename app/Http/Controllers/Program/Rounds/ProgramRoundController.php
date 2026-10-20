@@ -1313,6 +1313,11 @@ class ProgramRoundController extends Controller
             }
 
             return [
+                // Which order this row is, so the finalize page can open it and approve or send it back
+                'order_id' => $order->id,
+                'reviewer_id' => $order->reviewer_id,
+                'work_status' => $order->work_status,
+                'payment_status' => $order->payment_status,
                 'name' => trim(($order->reviewer?->first_name ?? '') . ' ' . ($order->reviewer?->last_name ?? '')),
                 'fee_type' => $feeType,
                 'rate' => (float) ($assignment?->reviewer_fee ?? 0),

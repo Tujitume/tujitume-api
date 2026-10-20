@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Program;
 
 use App\Http\Controllers\Controller;
 use App\Models\ReviewerOrder;
+use App\Models\Programs\Rounds\ApplicationScore;
 use App\Models\Programs\Rounds\ProgramRound;
 use App\Models\Programs\Monitoring\MESiteVisit;
 use App\Service\Misc\ErrorLogService;
@@ -37,12 +38,13 @@ class ReviewerOrderController extends Controller
     public function myOrders()
     {
         $orders = ReviewerOrder::where('reviewer_id', Auth::id())
-            ->with(['program', 'round', 'siteVisit', 'applicationAssignments'])
+            ->with(['program', 'round', 'siteVisit', 'applicationAssignments.application.business:id,name'])
             ->latest()
             ->get()
             ->map(fn($order) => [
                 ...$order->toArray(),
-            'fee_amount' => $order->fee_amount,
+                'fee_amount' => $order->fee_amount,
+                'applications' => $this->applicationSummaries($order),
                 'completed_application_count' => $order->applicationAssignments->where('status', 'completed')->count(),
                 'minimum_apps_to_get_paid' => $order->minimumPaidApplications() ?: null,
                 'paid_threshold_met' => $order->minimumPaidApplications()
@@ -71,14 +73,15 @@ class ReviewerOrderController extends Controller
 
         $orders = ReviewerOrder::where('round_id', $round->id)
             ->with([
-                'applicationAssignments.application',
+                'applicationAssignments.application.business:id,name',
                 'reviewer',
                 'round:id,review_period_end,close_date',
             ])
             ->get()
             ->map(fn($order) => [
                 ...$order->toArray(),
-            'fee_amount' => $order->fee_amount,
+                'fee_amount' => $order->fee_amount,
+                'applications' => $this->applicationSummaries($order),
                 'completed_application_count' => $order->applicationAssignments->where('status', 'completed')->count(),
                 'minimum_apps_to_get_paid' => $order->minimumPaidApplications() ?: null,
                 'paid_threshold_met' => $order->minimumPaidApplications()
@@ -230,8 +233,17 @@ class ReviewerOrderController extends Controller
         try {
 
             $transfer = null;
+            // Approving a round review only approves the work. The money is sent when the owner finalizes the round
+            // (see ProgramRoundController::startReviewerPayments, which pays approved work).
+            $paysOnFinalize = $order->order_type === 'round_review';
 
-            if($order->fee_amount > 0) {
+            if ($paysOnFinalize) {
+                $order->update([
+                    'work_status' => 'approved',
+                    'approved_at' => $order->approved_at ?? now(),
+                ]);
+            }
+            elseif($order->fee_amount > 0) {
                 $transfer = $this->initiateReviewerPayment($order);
 
                 if (!$transfer || !($transfer['success'] ?? false)) {
@@ -270,12 +282,15 @@ class ReviewerOrderController extends Controller
                 'order_id' => $order->id,
             ]);
 
-            $this->programNotification->send('reviewer.payment_initiated', [$reviewer], [
-                'program_title' => $program->program_title,
-                'round_name' => $order->round?->round_name ?? $program->program_title,
-                'fee' => $order->fee_amount,
-                'order_id' => $order->id,
-            ]);
+            // The reviewer hears about the payment when it really starts: at once for other orders, at finalization for rounds
+            if (! $paysOnFinalize) {
+                $this->programNotification->send('reviewer.payment_initiated', [$reviewer], [
+                    'program_title' => $program->program_title,
+                    'round_name' => $order->round?->round_name ?? $program->program_title,
+                    'fee' => $order->fee_amount,
+                    'order_id' => $order->id,
+                ]);
+            }
 
 
             $round = $order->round;
@@ -296,7 +311,9 @@ class ReviewerOrderController extends Controller
             }
 
             return response()->json([
-                'message' => 'Work approved and Payment initiated successfully.',
+                'message' => $paysOnFinalize
+                    ? 'Work approved. Payment starts when you finalize the round.'
+                    : 'Work approved and Payment initiated successfully.',
                 'data' => $order->fresh(),
                 'transfer' => $transfer,
             ], 200);
@@ -331,6 +348,39 @@ class ReviewerOrderController extends Controller
         ]);
 
         return response()->json(['message' => 'Reviewer work rejected.', 'data' => $order->fresh()], 200);
+    }
+
+    /**
+     * What the order drawer lists: each application handed to the reviewer, where it stands, when it was assigned,
+     * started and finished, and the score the reviewer gave it.
+     */
+    private function applicationSummaries(ReviewerOrder $order): array
+    {
+        $assignments = $order->applicationAssignments;
+
+        if ($assignments->isEmpty()) {
+            return [];
+        }
+
+        $scores = ApplicationScore::query()
+            ->where('reviewer_id', $order->reviewer_id)
+            ->where('round_id', $order->round_id)
+            ->whereIn('application_id', $assignments->pluck('application_id'))
+            ->pluck('total_score', 'application_id');
+
+        return $assignments
+            ->sortBy('assigned_at')
+            ->map(fn ($assignment) => [
+                'application_id' => $assignment->application_id,
+                'business_name'  => $assignment->application?->business?->name,
+                'status'         => $assignment->status,
+                'assigned_at'    => $assignment->assigned_at,
+                'started_at'     => $assignment->started_at,
+                'completed_at'   => $assignment->completed_at,
+                'total_score'    => $scores[$assignment->application_id] ?? null,
+            ])
+            ->values()
+            ->all();
     }
 
     private function reviewPeriodHasEnded(ReviewerOrder $order): bool

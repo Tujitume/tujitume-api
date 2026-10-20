@@ -337,6 +337,28 @@ class ApplicationRoundProgressController extends Controller
                 $program->save();
             }
 
+            // Applicants who advanced into this round were told "you moved on" when the last round was finalized,
+            // which can be before this round existed. Tell them it is open now, so they can complete it.
+            // Best effort: the round is already published.
+            if ($opensNow && (int) $round->round_number > 1) {
+                try {
+                    $notifier = new \App\Service\Notification\ProgramNotificationService();
+                    $round->loadMissing('program');
+                    ProgramApplication::with('user')
+                        ->where('current_round_id', $round->id)
+                        ->get()
+                        ->each(fn ($app) => $app->user && $notifier->send('round.opened', [$app->user], [
+                            'program_title'  => $round->program->program_title,
+                            'round_name'     => $round->round_name,
+                            'program_id'     => $round->program_id,
+                            'application_id' => $app->id,
+                            'recipientName'  => $app->user->first_name,
+                        ]));
+                } catch (\Throwable $e) {
+                    \Log::warning('Round opened notification failed: ' . $e->getMessage());
+                }
+            }
+
             return response()->json([
                 'message' => $opensNow
                     ? 'Round published. It is open now.'

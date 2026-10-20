@@ -252,6 +252,10 @@ class MessageController extends Controller
                             default => 'reviewerGrantOrg',
                         };
                         $senderName = trim($sender->first_name . ' ' . $sender->last_name);
+                        // Sent by a team member on behalf of the owner: name the real writer too
+                        if ((int) $user->id !== (int) $from_id) {
+                            $senderName = trim($user->first_name . ' ' . $user->last_name) . ' · ' . $senderName;
+                        }
 
                         (new EmailService())->send(
                             'New message from ' . $senderName,

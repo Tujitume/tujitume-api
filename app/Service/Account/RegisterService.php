@@ -292,6 +292,8 @@ class RegisterService
                 'max:100',
                 'unique:workspaces,slug',
                 'regex:/^[a-z0-9\-]+$/',
+                // Names the platform uses for its own addresses (www, api, ...) cannot be taken
+                \Illuminate\Validation\Rule::notIn(\App\Service\Organization\WorkspaceDirectory::RESERVED_SLUGS),
             ],
             'image' => ['nullable', 'image', 'mimes:jpeg,png,jpg,gif,svg', 'max:2048'],
         ]);
