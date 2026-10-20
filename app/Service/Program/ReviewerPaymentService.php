@@ -79,7 +79,10 @@ class ReviewerPaymentService
                     ->where('status', 'completed')
                     ->count();
                 if ($requiredApplications < 1 || $completedApplications < $requiredApplications) {
-                    return ['error' => "{$name} has not completed the minimum number of applications required for payment."];
+                    return [
+                        'error' => "{$name} has not completed the minimum number of applications required for payment. 
+                        {$completedApplications} completed, {$requiredApplications} required."
+                        ];
                 }
                 if (! $reviewer?->lipr_wallet) {
                     return ['error' => "{$name} has no LIPR wallet set up yet, so they cannot be paid. Ask them to set one up."];
@@ -112,6 +115,8 @@ class ReviewerPaymentService
                 $payment['owner_wallet'],
                 $payment['order']
             );
+
+            LOG::info('Reviewer LIPR payment transfer result', ['order_id' => $order->id, 'transfer' => $transfer]);
 
             if (! ($transfer['success'] ?? false)) {
                 $payment['order']->update(['payment_status' => 'failed']);
