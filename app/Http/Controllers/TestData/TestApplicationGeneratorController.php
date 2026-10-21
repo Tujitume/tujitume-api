@@ -154,7 +154,6 @@ class TestApplicationGeneratorController extends Controller
                 (new KnockoutEvaluator())->evaluate($application);
 
                 $application->round_status = 'submitted';
-                $application->submitted_at = now();
                 $application->save();
 
                 ApplicationRoundHistory::where('application_id', $application->id)
@@ -236,7 +235,7 @@ class TestApplicationGeneratorController extends Controller
             'status' => 'pending',
             'round_status' => 'submitted',
             'knockout_status' => 'pending',
-            'submitted_at' => now(),
+            // No submitted_at here: that column is on application_round_history, not program_applications
         ];
 
         // Create application
