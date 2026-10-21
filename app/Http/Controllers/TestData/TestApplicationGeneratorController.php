@@ -66,13 +66,9 @@ class TestApplicationGeneratorController extends Controller
 
             $program = $round->program;
             
-            // Check if this is the first round
-            $isFirstRound = (int)$round->round_number === 1;
-
-            if (!$isFirstRound) {
-                return response()->json([
-                    'error' => 'Test data can only be generated for Round 1. For subsequent rounds, applications are advanced from previous rounds.'
-                ], 422);
+            // Round 1 creates new applicants. Later rounds submit the applications already advanced into them.
+            if ((int) $round->round_number !== 1) {
+                return $this->submitAdvancedApplications($round, $validated['num_applications']);
             }
 
             $numToGenerate = $validated['num_applications'];
@@ -125,6 +121,78 @@ class TestApplicationGeneratorController extends Controller
     }
 
     /**
+     * Rounds after the first. Real applicants cannot be created here: they are the applications the program
+     * owner advanced out of the previous round, now waiting in this round for their submission. This fills in
+     * this round for them (answers, documents, knockout check) and submits it, the way each applicant would.
+     * Only applications made by this generator (its test users) are touched, never a real applicant's.
+     */
+    private function submitAdvancedApplications(ProgramRound $round, int $limit)
+    {
+        $program = $round->program;
+
+        $waiting = ProgramApplication::where('current_round_id', $round->id)
+            ->where('round_status', 'draft')
+            ->whereHas('user', fn ($q) => $q->where('email', 'like', 'testuser%@example%.com'))
+            ->orderBy('id')
+            ->limit($limit)
+            ->get();
+
+        if ($waiting->isEmpty()) {
+            return response()->json([
+                'error' => 'No advanced test applications are waiting in this round. Generate round 1, review and finalize it so some advance, then run this again for the next round.',
+            ], 422);
+        }
+
+        $submitted = [];
+        $errors = [];
+
+        foreach ($waiting as $application) {
+            DB::beginTransaction();
+            try {
+                $this->handleRoundQuestions($application, $round);
+                $this->handleRoundDocuments($application, $round, $program);
+                (new KnockoutEvaluator())->evaluate($application);
+
+                $application->round_status = 'submitted';
+                $application->submitted_at = now();
+                $application->save();
+
+                ApplicationRoundHistory::where('application_id', $application->id)
+                    ->where('round_id', $round->id)
+                    ->update(['submitted_at' => now()]);
+
+                DB::commit();
+                $submitted[] = $application->fresh();
+            } catch (\Exception $e) {
+                DB::rollBack();
+                $errors[] = "Application {$application->id}: " . $e->getMessage();
+                ErrorLogService::report($e, ['application_id' => $application->id]);
+            }
+        }
+
+        return response()->json([
+            'message' => 'Submitted ' . count($submitted) . " advanced test applications for {$round->round_name}",
+            'data' => [
+                'round_id' => $round->id,
+                'round_name' => $round->round_name,
+                'program_id' => $program->id,
+                'program_title' => $program->program_title,
+                'requested' => $limit,
+                'waiting_for_submission' => $waiting->count(),
+                'applications_generated' => count($submitted),
+                'applications' => collect($submitted)->map(fn ($app) => [
+                    'id' => $app->id,
+                    'startup_name' => $app->startup_name,
+                    'round_status' => $app->round_status,
+                    'knockout_status' => $app->knockout_status,
+                    'match_score' => $app->match_score,
+                ]),
+                'errors' => $errors,
+            ],
+        ], 201);
+    }
+
+    /**
      * Create a single test application with all required data
      */
     private function createTestApplication(Program $program, ProgramRound $round, int $index): ProgramApplication
@@ -153,7 +221,7 @@ class TestApplicationGeneratorController extends Controller
             'stage' => $this->getRandomStage(),
             
             // Financials
-            'total_amount_requested' => min($program->funding_per_business, rand(50000, $program->funding_per_business)),
+            'total_amount_requested' => $this->randomRequestedAmount((float) $program->funding_per_business),
             'revenue_last_12_months' => rand(100000, 5000000),
             'team_experience_avg_years' => rand(2, 15),
             
@@ -228,20 +296,18 @@ class TestApplicationGeneratorController extends Controller
             ->first();
         
         if (!$business) {
+            // Only columns the listings table really has (see create_listings_table)
             $business = Listing::create([
                 'user_id' => $user->id,
                 'name' => $businessName,
-                'business_type' => $this->getRandomBusinessType(),
-                'industry' => $this->getRandomSector(),
-                'description' => $this->generateLoremIpsum(200),
+                'category' => $this->getRandomSector(),
+                'details' => $this->generateLoremIpsum(200),
                 'location' => $this->getRandomLocation(),
-                'status' => 'active',
-                'founded_year' => rand(2015, 2023),
-                'employees_count' => rand(5, 50),
-                'annual_revenue' => rand(500000, 5000000),
-                'phone' => '+254700' . str_pad(rand(100000, 999999), 6, '0', STR_PAD_LEFT),
-                'email' => $user->email,
-                'website' => 'https://www.' . Str::slug($businessName) . '.com',
+                'stage' => $this->getRandomStage(),
+                'y_turnover' => (string) rand(500000, 5000000),
+                'contact' => '+254700' . str_pad(rand(100000, 999999), 6, '0', STR_PAD_LEFT),
+                'contact_mail' => $user->email,
+                'active' => 1,
             ]);
         }
         
@@ -394,6 +460,17 @@ class TestApplicationGeneratorController extends Controller
         $suffixes = ['Solutions', 'Systems', 'Ventures', 'Enterprises', 'Group', 'Industries', 'Tech', 'Labs', 'Works', 'Dynamics'];
         
         return $prefixes[array_rand($prefixes)] . ' ' . $suffixes[array_rand($suffixes)] . ' ' . $index;
+    }
+
+    /**
+     * An amount a business asks for: up to what the program gives each business, and never an invalid range
+     * when that is small or not set.
+     */
+    private function randomRequestedAmount(float $fundingPerBusiness): float
+    {
+        $max = (int) max($fundingPerBusiness, 1);
+        $min = min(50000, $max);
+        return (float) rand($min, $max);
     }
 
     /**
