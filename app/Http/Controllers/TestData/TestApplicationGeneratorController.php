@@ -44,10 +44,11 @@ class TestApplicationGeneratorController extends Controller
      */
     public function generateApplications(Request $request)
     {
-        // Only allow in non-production environments
-        if (config('app.env') === 'production') {
-            return response()->json(['error' => 'Test data generation is not allowed in production'], 403);
-        }
+        // Production block disabled on purpose so test data can be generated there.
+        // Re-enable these lines to make the endpoint non-production only again.
+        // if (config('app.env') === 'production') {
+        //     return response()->json(['error' => 'Test data generation is not allowed in production'], 403);
+        // }
 
         set_time_limit(300); // 5 minutes for large batches
 
