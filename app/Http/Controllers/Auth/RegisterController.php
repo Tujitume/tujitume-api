@@ -40,6 +40,11 @@ class RegisterController extends Controller
         return $this->registerService->registerExternalReviewer($request);
     }
 
+    public function switchExternalReviewerToServiceProvider(Request $request)
+    {
+        return $this->registerService->switchExternalReviewerToServiceProvider($request);
+    }
+
     public function registerOrgTeamMember(Request $request)
     {
         $request->validate([

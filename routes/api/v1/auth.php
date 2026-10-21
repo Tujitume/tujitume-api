@@ -29,6 +29,9 @@ Route::post('register/org-team-member', [RegisterController::class, 'registerOrg
 Route::post('register/external-reviewer', [RegisterController::class, 'registerExternalReviewer'])
     ->middleware('auth:sanctum');
 
+Route::post('account/upgrade-to-service-provider', [RegisterController::class, 'switchExternalReviewerToServiceProvider'])
+    ->middleware('auth:sanctum');
+
 Route::post('organization-invitations/accept', [UserController::class, 'acceptOrgTeamInvitation']);
 Route::post('resetPassword', [UserController::class, 'resetPassword']);
 Route::get('logout', [AuthController::class, 'logout']);

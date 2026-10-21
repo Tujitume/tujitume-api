@@ -894,7 +894,7 @@ class RoundReviewerController extends Controller
         }
 
         $apps = ProgramApplication::where('current_round_id', $round->id)
-            ->whereIn('round_status', ['submitted', 'under_review'])
+            ->whereIn('round_status', ['draft', 'submitted', 'under_review'])
             ->get();
 
         if ($apps->isEmpty()) return;

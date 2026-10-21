@@ -84,7 +84,7 @@ class ReviewerPaymentService
                         {$completedApplications} completed, {$requiredApplications} required."
                         ];
                 }
-                if (! $reviewer?->lipr_wallet) {
+                if (! $reviewer?->lipr_wallet || !$reviewer->lipr_wallet) {
                     return ['error' => "{$name} has no LIPR wallet set up yet, so they cannot be paid. Ask them to set one up."];
                 }
                 if (! $owner?->lipr_wallet) {

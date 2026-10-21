@@ -614,4 +614,98 @@ class RegisterService
             return response()->json(['message' => 'Something went wrong, please try again later.'], 500);
         }
     }
+
+    /** Convert the authenticated external reviewer account into an independent service provider account. */
+    public function switchExternalReviewerToServiceProvider(Request $request)
+    {
+        $data = $request->validate([
+            // External reviewer invitations do not collect these provider registration details.
+            'gender' => ['required', 'in:Male,Female,Other'],
+            'dob' => ['required', 'date'],
+            'display_name' => ['nullable', 'string', 'max:255'],
+            'phone' => ['nullable', 'string', 'max:50'],
+            'website' => ['nullable', 'url', 'max:255'],
+            'country' => ['nullable', 'string', 'max:10'],
+            'city' => ['nullable', 'string', 'max:100'],
+            'image' => ['nullable', 'image', 'mimes:jpeg,png,jpg,gif,svg', 'max:2048'],
+
+            // Service provider profile
+            'supplier_type' => ['required', 'in:material_goods,business_service,labor'],
+            'bio' => ['nullable', 'string', 'max:1000'],
+            'region' => ['nullable', 'string', 'max:100'],
+            'service_areas' => ['nullable', 'array'],
+            'work_mode' => ['nullable', 'in:remote,onsite,hybrid'],
+            'available_days' => ['nullable', 'array'],
+            'available_from' => ['nullable', 'string', 'max:10'],
+            'available_to' => ['nullable', 'string', 'max:10'],
+        ]);
+
+        $uploadedImage = null;
+
+        try {
+            $user = DB::transaction(function () use ($request, $data, &$uploadedImage) {
+                $user = User::query()->lockForUpdate()->findOrFail($request->user()->id);
+
+                if ((int) $user->user_type_id !== 6) {
+                    abort(422, 'Only an external reviewer can switch to a service provider account.');
+                }
+
+                if ($user->service_provider_profile()->exists()) {
+                    abort(422, 'A service provider profile already exists for this account.');
+                }
+
+                if (!empty($data['image'])) {
+                    $uploadedImage = $this->imageUpload->save($data['image'], 'images/users');
+                }
+
+                $userUpdates = [
+                    'user_type_id' => 3,
+                    'gender' => $data['gender'],
+                    'dob' => $data['dob'],
+                    // Service providers are independent accounts, not members of the inviting organization.
+                    'organization_id' => null,
+                    'invited_at' => null,
+                    'invitation_token_hash' => null,
+                    'invitation_expires_at' => null,
+                ];
+
+                foreach (['display_name', 'phone', 'website', 'country', 'city'] as $field) {
+                    if (array_key_exists($field, $data)) {
+                        $userUpdates[$field] = $data[$field];
+                    }
+                }
+
+                if ($uploadedImage) {
+                    $userUpdates['image'] = $uploadedImage;
+                }
+
+                $user->update($userUpdates);
+
+                $user->service_provider_profile()->create([
+                    'supplier_type' => $data['supplier_type'],
+                    'bio' => $data['bio'] ?? null,
+                    'region' => $data['region'] ?? null,
+                    'service_areas' => $data['service_areas'] ?? null,
+                    'work_mode' => $data['work_mode'] ?? 'hybrid',
+                    'available_days' => $data['available_days'] ?? null,
+                    'available_from' => $data['available_from'] ?? null,
+                    'available_to' => $data['available_to'] ?? null,
+                ]);
+
+                return $user->fresh()->load('service_provider_profile');
+            });
+
+            return response()->json([
+                'message' => 'Your account is now registered as a service provider.',
+                'user' => new UserResource($user),
+            ], 200);
+        } catch (\Symfony\Component\HttpKernel\Exception\HttpException $e) {
+            $this->deleteUploadedImage($uploadedImage);
+            return response()->json(['message' => $e->getMessage()], $e->getStatusCode());
+        } catch (\Throwable $e) {
+            $this->deleteUploadedImage($uploadedImage);
+            ErrorLogService::report($e, ['user_id' => $request->user()?->id]);
+            return response()->json(['message' => 'Something went wrong, please try again later.'], 500);
+        }
+    }
 }
