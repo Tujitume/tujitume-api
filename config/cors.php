@@ -36,6 +36,7 @@ return [
         // Organisation workspaces: https://<workspace>.tujitume.com (and <workspace>.localhost while developing)
         '/^https:\/\/[a-z0-9-]+\.tujitume\.com$/',
         '/^http:\/\/[a-z0-9-]+\.localhost(:\d+)?$/',
+        '/^http:\/\/[a-z0-9-]+\.tujitume\.com$/',
         '/^https:\/\/.*\.ngrok-free\.dev(:\d+)?$/',
         '/^https:\/\/.*\.trycloudflare\.com(:\d+)?$/',
     ],

@@ -382,9 +382,9 @@ class ProgramApplicationController extends Controller
             }
 
             $exists = ProgramApplication::where('program_id', $program->id)->where('user_id', Auth::id())->exists();
-            if($exists) {
-                return response()->json(['message' => 'You already have an active application for this program.'], 409);
-            }
+            // if($exists) {
+            //     return response()->json(['message' => 'You already have an active application for this program.'], 409);
+            // }
 
 
             //Upload Files
