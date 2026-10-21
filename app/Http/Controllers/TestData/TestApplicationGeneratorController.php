@@ -16,7 +16,6 @@ use App\Models\ApplicationRoundHistory;
 use App\Service\Program\KnockoutEvaluator;
 use App\Service\Program\RoundHistoryService;
 use App\Service\Misc\ErrorLogService;
-use App\Service\FileUpload;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -26,12 +25,10 @@ use Illuminate\Support\Str;
 class TestApplicationGeneratorController extends Controller
 {
     protected $roundHistory;
-    protected $fileUpload;
 
     public function __construct()
     {
         $this->roundHistory = new RoundHistoryService();
-        $this->fileUpload = new FileUpload();
         parent::__construct();
     }
 
