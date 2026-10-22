@@ -838,6 +838,7 @@ class RoundReviewerController extends Controller
             ->toArray();
 
         $rounds = ProgramRound::with([
+            'program:id,program_title,program_type',
             'questions',
             'applications' => function ($query) {
                 $query->whereIn('round_status', ['pending', 'assigned', 'submitted', 'under_review', 'scored']);
