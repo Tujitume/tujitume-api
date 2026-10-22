@@ -23,6 +23,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 
 class ProgramApplicationController extends Controller
@@ -808,8 +809,23 @@ class ProgramApplicationController extends Controller
 
     private function autoAssignNewApplication(ProgramApplication $application, ?ProgramRound $round): void
     {
-        if (!$round || $round->assignment_type === 'owner_only'
+        $context = [
+            'application_id' => $application->id,
+            'application_current_round_id' => $application->current_round_id,
+            'round_id' => $round?->id,
+            'assignment_type' => $round?->assignment_type,
+            'assignment_method' => $round?->assignment_method,
+        ];
+        Log::info('Reviewer auto-assignment: evaluating new application.', $context);
+
+        if (!$round) {
+            Log::info('Reviewer auto-assignment: skipped because the application round was not found.', $context);
+            return;
+        }
+
+        if ($round->assignment_type === 'owner_only'
             || !in_array($round->assignment_method, ['round_robin', 'load_balanced'], true)) {
+            Log::info('Reviewer auto-assignment: skipped because round settings do not enable automatic assignment.', $context);
             return;
         }
 
@@ -819,7 +835,15 @@ class ProgramApplicationController extends Controller
             ->orderBy('queue_position')
             ->get();
 
-        if ($acceptedReviewers->isEmpty()) return;
+        Log::info('Reviewer auto-assignment: accepted reviewers loaded.', $context + [
+            'accepted_reviewer_ids' => $acceptedReviewers->pluck('user_id')->all(),
+            'accepted_reviewer_count' => $acceptedReviewers->count(),
+        ]);
+
+        if ($acceptedReviewers->isEmpty()) {
+            Log::info('Reviewer auto-assignment: skipped because no reviewer has accepted.', $context);
+            return;
+        }
 
         // Route each new application to the currently least-loaded accepted reviewer.
         // Queue position breaks ties, keeping the result deterministic.
@@ -830,24 +854,56 @@ class ProgramApplicationController extends Controller
             ->groupBy('reviewer_id')
             ->pluck('assignment_count', 'reviewer_id');
 
+        $loads = $acceptedReviewers->mapWithKeys(fn ($candidate) => [
+            $candidate->user_id => (int) $reviewerLoads->get($candidate->user_id, 0),
+        ]);
+        Log::info('Reviewer auto-assignment: reviewer assignment counts loaded.', $context + [
+            'reviewer_loads' => $loads->all(),
+        ]);
+
         $reviewer = $acceptedReviewers->sortBy(
             fn ($candidate) => (int) $reviewerLoads->get($candidate->user_id, 0)
         )->first();
 
-        if (!$reviewer) return;
+        if (!$reviewer) {
+            Log::warning('Reviewer auto-assignment: no reviewer was selected.', $context);
+            return;
+        }
 
-        ReviewerApplicationAssignment::create([
-            'round_id'       => $round->id,
-            'reviewer_id'    => $reviewer->user_id,
-            'application_id' => $application->id,
-            'status'         => 'assigned',
-            'assigned_at'    => now(),
+        Log::info('Reviewer auto-assignment: reviewer selected.', $context + [
+            'selected_reviewer_id' => $reviewer->user_id,
+            'selected_reviewer_load' => $loads->get($reviewer->user_id),
+            'selected_reviewer_queue_position' => $reviewer->queue_position,
         ]);
 
-        $application->update([
-            'assigned_reviewer_id' => $reviewer->user_id,
-            'round_status' => 'assigned',
-        ]);
+        try {
+            $assignment = ReviewerApplicationAssignment::create([
+                'round_id'       => $round->id,
+                'reviewer_id'    => $reviewer->user_id,
+                'application_id' => $application->id,
+                'status'         => 'assigned',
+                'assigned_at'    => now(),
+            ]);
+
+            $application->update([
+                'assigned_reviewer_id' => $reviewer->user_id,
+                'round_status' => 'assigned',
+            ]);
+
+            Log::info('Reviewer auto-assignment: assignment created and application updated.', $context + [
+                'assignment_id' => $assignment->id,
+                'selected_reviewer_id' => $reviewer->user_id,
+                'application_round_status' => $application->fresh()->round_status,
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('Reviewer auto-assignment: assignment persistence failed.', $context + [
+                'selected_reviewer_id' => $reviewer->user_id,
+                'exception' => $e::class,
+                'error' => $e->getMessage(),
+            ]);
+
+            throw $e;
+        }
     }
 
 }
