@@ -33,6 +33,7 @@ use App\Http\Controllers\Program\Rounds\RoundQuestionController;
 use App\Http\Controllers\Program\Rounds\RoundReviewerController;
 use App\Http\Controllers\Program\ReviewerOrderController;
 use App\Http\Controllers\Program\SupplierDirectoryController;
+use App\Http\Controllers\TestData\TestApplicationGeneratorController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('/programs')->middleware(['program', 'program.response'])->group(function () {
@@ -279,6 +280,11 @@ Route::prefix('/programs')->middleware(['program', 'program.response'])->group(f
         Route::get('/applications/{app}/analytics/overview', [MEAnalyticsController::class, 'meOverview']);
         Route::get('/applications/{app}/analytics/impact', [MEAnalyticsController::class, 'applicationImpact']);
 
+    });
+
+    // ─── TEST DATA GENERATION (Non-Production Only) ─────────────────────────────────
+    Route::prefix('test-data')->group(function () {
+        Route::post('/generate-applications', [TestApplicationGeneratorController::class, 'generateApplications']);
     });
 
 });
