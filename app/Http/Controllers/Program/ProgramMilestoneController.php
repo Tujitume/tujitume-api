@@ -215,6 +215,9 @@ class ProgramMilestoneController extends Controller
                 'title' => 'required|string|max:255',
                 'description' => 'required|string',
                 'amount' => 'required|numeric|min:0',
+                'expected_outcomes' => 'nullable|string',
+                'purpose_type' => 'nullable|in:capex,opex,services,mixed',
+                'document' => 'nullable|file|mimes:pdf,doc,docx,ppt,pptx',
                 'sequence_order' => 'nullable|integer|min:1',
                 'target_completion_date' => 'nullable|date',
                 'mprv_required' => 'nullable|boolean',
@@ -266,6 +269,8 @@ class ProgramMilestoneController extends Controller
                 'title' => $validated['title'],
                 'description' => $validated['description'],
                 'amount' => $validated['amount'],
+                'expected_outcomes' => $validated['expected_outcomes'] ?? null,
+                'purpose_type' => $validated['purpose_type'] ?? null,
                 'sequence_order' => $validated['sequence_order'],
                 'estimated_completion_date' => $validated['target_completion_date'] ?? null,
                 'status' => 'pending',
@@ -276,12 +281,19 @@ class ProgramMilestoneController extends Controller
 
                 'mprv_required' => $validated['mprv_required'] ?? false,
                 'mid_milestone_required' => $validated['mid_milestone_required'] ?? false,
-                'final_approval_required' => $validated['mid_milestone_required'] ?? false,
+                'final_approval_required' => $validated['final_approval_required'] ?? false,
 
                 'mprv_notes' => $validated['mprv_notes'] ?? null,
                 'mid_milestone_notes' => $validated['mid_milestone_notes'] ?? null,
-                'final_approval_notes' => $validated['mid_milestone_notes'] ?? null,
+                'final_approval_notes' => $validated['final_approval_notes'] ?? null,
             ]);
+
+            // The supporting document is saved under the milestone, like when it is edited
+            if ($request->hasFile('document')) {
+                $milestone->update([
+                    'document' => $this->fileUpload->saveFile($request->file('document'), "files/program/milestones/{$milestone->id}"),
+                ]);
+            }
 
 
             // Assign supplier if provided
@@ -415,8 +427,12 @@ class ProgramMilestoneController extends Controller
 
             // Program owner can edit EVERYTHING
             if ($isProgramOwner) {
-                // Allow all fields
-                $rules = $baseRules;
+                // Allow all fields, including the ones only the owner controls
+                $rules = $baseRules + [
+                    'amount' => 'sometimes|numeric|min:0',
+                    'purpose_type' => 'nullable|in:capex,opex,services,mixed',
+                    'allowed_edits' => 'nullable|array',
+                ];
             }
             // Applicant can ONLY edit allowed fields (hybrid mode)
             elseif ($isApplicant && $application->planning_mode === 'hybrid') {
@@ -460,6 +476,27 @@ class ProgramMilestoneController extends Controller
             //$validated = $request->validate($rules);
             $validated = validator($requestData, $rules)->validate();
 
+            if ($isProgramOwner) {
+                // Same limits as when the milestone is created
+                $restrictedMatched = array_intersect($validated['allowed_edits'] ?? [], ['amount', 'planning_mode', 'allowed_edits']);
+                if (!empty($restrictedMatched)) {
+                    return response()->json([
+                        'error' => 'The following fields cannot be editable by applicant: ' . implode(', ', $restrictedMatched)
+                    ], 422);
+                }
+
+                if (isset($validated['amount'])) {
+                    $otherMilestones = ProgramMilestone::where('app_id', $application->id)
+                        ->where('id', '!=', $milestone->id)
+                        ->sum('amount');
+                    if ($otherMilestones + $validated['amount'] > $application->total_amount_requested) {
+                        return response()->json([
+                            'error' => 'Total milestone amounts cannot exceed awarded amount of ' . $application->total_amount_requested
+                        ], 422);
+                    }
+                }
+            }
+
             // Handle document upload
             if ($request->hasFile('document')) {
                 $doc_path          = "files/program/milestones/{$milestoneId}";
@@ -480,14 +517,14 @@ class ProgramMilestoneController extends Controller
                 $validated['mid_milestone_required']  = $request->mid_milestone_required;
 
                 if($request->has('mid_milestone_notes')){
-                    $validated['mid_milestone_notes']    = $request->mprv_notes;
+                    $validated['mid_milestone_notes']    = $request->mid_milestone_notes;
                 }
             }
 
             if($request->has('final_approval_required')){
                 $validated['final_approval_required']  = $request->final_approval_required;
 
-                if($request->has('mprv_notes')){
+                if($request->has('final_approval_notes')){
                     $validated['final_approval_notes']    = $request->final_approval_notes;
                 }
             }
