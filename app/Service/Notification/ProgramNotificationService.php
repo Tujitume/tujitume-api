@@ -19,6 +19,7 @@ class ProgramNotificationService
         'application.received', 'application.accepted', 'application.rejected', 'application.awarded',
         'round.opened', 'round.closing_soon', 'round.closed', 'round.advanced', 'round.not_selected',
         'round.score_received', 'milestones.created', 'budget.completed',
+        'supplier.added',
         'mprv.approved', 'mprv.rejected', 'completion.approved', 'completion.rejected',
         'milestone.unlocked', 'milestone.funds_released', 'dealroom.document_uploaded',
         'disbursement.created', 'disbursement.completed', 'disbursement.reversed',
@@ -190,7 +191,7 @@ class ProgramNotificationService
             'round.score_received' => "Your application to {$program} was reviewed. Open it to see the update.",
             'application.awarded' => "Congratulations! {$program} awarded you " . ($this->money($d) ?: 'funding') . ". Open your funding plan to set up your milestones.",
             'milestones.created' => "{$v('milestone_count')} milestones were created for your funding plan in {$program}. Open your plan to review them.",
-            'supplier.added' => "{$v('supplier_name')} was added to {$ms}. Open the funding plan to review it.",
+            'supplier.added' => "You have been added as a supplier to {$ms} for {$program}. Open your account to view the assignment.",
             'budget.completed' => "The budget for {$ms} is complete. You can now submit your MPRV.",
             'mprv.submitted' => "{$v('business_name')} submitted the MPRV for {$ms}. Review it, then approve it or ask for changes.",
             'mprv.approved' => "{$actor} approved your MPRV for {$ms}. The funds can now be released.",
@@ -582,11 +583,11 @@ class ProgramNotificationService
 
             // ── SUPPLIER & BUDGET ────────────────────────────────────────────
             'supplier.added' => [
-                'title'         => 'Supplier Added',
-                'message'       => "Supplier {$this->v($data, 'supplier_name')} added to Milestone {$this->v($data, 'milestone_number')}",
-                'email_subject' => 'Supplier Information Added',
+                'title'         => 'Milestone Supplier Assignment',
+                'message'       => "You have been added as a supplier to Milestone {$this->v($data, 'milestone_number')} for {$this->v($data, 'program_title')}.",
+                'email_subject' => 'You Have Been Added to a Milestone',
                 'email_view'    => $this->view_base . 'supplier_added',
-                'link'          => $this->link('dashboard.programOrg.programDealroomDetail', $data, 'funding-setup', [], [], $this->milestoneHash($data)),
+                'link'          => 'overview/account',
             ],
 
             'budget.completed' => [

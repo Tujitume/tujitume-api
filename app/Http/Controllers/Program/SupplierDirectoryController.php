@@ -11,6 +11,7 @@ use App\Service\Misc\ErrorLogService;
 use App\Service\Notification\EmailBrand;
 use App\Service\Notification\EmailService;
 use App\Service\Notification\NotificationService;
+use App\Service\Notification\ProgramNotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -692,10 +693,18 @@ class SupplierDirectoryController extends Controller
                 'supplier_id' => ['required', 'integer', 'exists:supplier_directories,id' ],
                 'payment_route' => ['required', Rule::in(['direct_to_supplier', 'split', 'direct_to_applicant'])
                 ],
-                'quoted_amount' => ['required', 'numeric'],
+                'quoted_amount' => ['required', 'numeric', 'min:0'],
 
                 'assignment_type' => ['nullable', Rule::in(['primary', 'approved', 'preferred']) ],
             ]);
+
+            if ((float) $validated['quoted_amount'] > (float) $milestone->amount) {
+                throw ValidationException::withMessages([
+                    'quoted_amount' => [
+                        'The quoted amount cannot exceed the milestone amount of ' . number_format((float) $milestone->amount, 2, '.', '') . '.',
+                    ],
+                ]);
+            }
 
             // A deactivated supplier is hidden from the deal room; their account is untouched
             $directoryEntry = SupplierDirectory::find($validated['supplier_id']);
@@ -728,6 +737,8 @@ class SupplierDirectoryController extends Controller
 
             DB::commit();
 
+            $this->notifyMilestoneSupplierAssigned($directoryEntry, $milestone, $supplier);
+
             return response()->json([
                 'success' => true,
                 'message' => 'Supplier assigned successfully',
@@ -750,6 +761,52 @@ class SupplierDirectoryController extends Controller
 
             ErrorLogService::report($e);
             return response()->json(['message' => 'Something went wrong'], 500);
+        }
+    }
+
+    /** Notify the supplier after the milestone assignment has been committed. */
+    private function notifyMilestoneSupplierAssigned(
+        SupplierDirectory $directoryEntry,
+        ProgramMilestone $milestone,
+        MilestoneSupplier $assignment
+    ): void {
+        try {
+            $application = $milestone->application;
+            $program = $application?->program;
+            $actor = auth()->user();
+            $data = [
+                'program_id' => $application?->program_id,
+                'application_id' => $application?->id,
+                'program_title' => $program?->program_title ?? 'the program',
+                'milestone_id' => $milestone->id,
+                'milestone_number' => $milestone->sequence_order,
+                'supplier_name' => $directoryEntry->legal_name,
+                'recipientName' => $directoryEntry->contact_person ?: $directoryEntry->legal_name,
+                'org_name' => $actor ? $this->orgName($actor) : 'The program team',
+                'quoted_amount' => $assignment->quoted_amount,
+            ];
+
+            $accountId = $this->supplierAccountId($directoryEntry);
+            $supplierUser = $accountId ? User::find($accountId) : null;
+            if ($supplierUser) {
+                (new ProgramNotificationService())->send('supplier.added', [$supplierUser], $data);
+                return;
+            }
+
+            if ($directoryEntry->email) {
+                (new EmailService())->send(
+                    'You Have Been Added to a Milestone',
+                    'programs.supplier_added',
+                    $data + ['brand' => EmailBrand::forData($data)],
+                    $directoryEntry->email
+                );
+            }
+        } catch (\Throwable $e) {
+            ErrorLogService::report($e, [
+                'milestone_id' => $milestone->id,
+                'milestone_supplier_id' => $assignment->id,
+                'supplier_id' => $directoryEntry->id,
+            ]);
         }
     }
 
