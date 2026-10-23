@@ -581,7 +581,7 @@ class ProgramMilestoneController extends Controller
                         ] : null,
                     ],
                 ],
-            ], 422);
+            ], 422, [], JSON_INVALID_UTF8_SUBSTITUTE);
         } catch (\Exception $e) {
             ErrorLogService::report($e);
             return response()->json(['message' => 'Something went wrong'], 500);
