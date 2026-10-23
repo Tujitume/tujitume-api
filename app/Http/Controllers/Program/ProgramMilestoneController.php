@@ -556,9 +556,31 @@ class ProgramMilestoneController extends Controller
                 'data' => $milestone->fresh()
             ], 200);
         } catch (ValidationException $e) {
+            $documentFile = $request->file('document');
+            $documentInput = $request->input('document');
+
             return response()->json([
                 'message' => 'Validation failed.',
                 'errors' => $e->errors(),
+                'request_debug' => [
+                    'method' => $request->method(),
+                    'content_type' => $request->header('Content-Type'),
+                    'document' => [
+                        'present_in_input' => $request->exists('document'),
+                        'input_type' => get_debug_type($documentInput),
+                        'input_value' => is_scalar($documentInput) ? $documentInput : null,
+                        'uploaded_file_received' => $documentFile !== null,
+                        'file' => $documentFile ? [
+                            'client_name' => $documentFile->getClientOriginalName(),
+                            'client_mime_type' => $documentFile->getClientMimeType(),
+                            'detected_mime_type' => $documentFile->getMimeType(),
+                            'extension' => $documentFile->getClientOriginalExtension(),
+                            'size_bytes' => $documentFile->getSize(),
+                            'is_valid' => $documentFile->isValid(),
+                            'upload_error' => $documentFile->getErrorMessage(),
+                        ] : null,
+                    ],
+                ],
             ], 422);
         } catch (\Exception $e) {
             ErrorLogService::report($e);
