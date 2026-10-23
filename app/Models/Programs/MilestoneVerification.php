@@ -29,6 +29,7 @@ class MilestoneVerification extends Model
         'decided_at' => 'datetime',
         'audit_started_at' => 'datetime',
         'audit_completed_at' => 'datetime',
+        'answers' => 'array',
     ];
 
 //    public function getDocumentUrlAttribute()

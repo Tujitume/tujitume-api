@@ -226,6 +226,12 @@ class ProgramMilestoneController extends Controller
                 'mid_milestone_notes' => 'nullable|string',
                 'mprv_notes' => 'nullable|string',
                 'final_approval_notes' => 'nullable|string',
+                'verification_questions' => 'nullable|array',
+                'verification_questions.*' => 'array:type,questions',
+                'verification_questions.*.type' => 'required|in:mprv,mid_milestone,final_approval',
+                'verification_questions.*.questions' => 'required|array',
+                'verification_questions.*.questions.*.question' => 'required|string|max:1000',
+                'verification_questions.*.questions.*.type' => 'required|in:short_answer,long_answer,text,file_upload',
                 //'planning_mode' => 'nullable|in:locked,hybrid',
                 'allowed_edits' => 'nullable|array',
 
@@ -286,6 +292,7 @@ class ProgramMilestoneController extends Controller
                 'mprv_notes' => $validated['mprv_notes'] ?? null,
                 'mid_milestone_notes' => $validated['mid_milestone_notes'] ?? null,
                 'final_approval_notes' => $validated['final_approval_notes'] ?? null,
+                'verification_questions' => $validated['verification_questions'] ?? null,
             ]);
 
             // The supporting document is saved under the milestone, like when it is edited
@@ -432,6 +439,12 @@ class ProgramMilestoneController extends Controller
                     'amount' => 'sometimes|numeric|min:0',
                     'purpose_type' => 'nullable|in:capex,opex,services,mixed',
                     'allowed_edits' => 'nullable|array',
+                    'verification_questions' => 'sometimes|nullable|array',
+                    'verification_questions.*' => 'array:type,questions',
+                    'verification_questions.*.type' => 'required|in:mprv,mid_milestone,final_approval',
+                    'verification_questions.*.questions' => 'required|array',
+                    'verification_questions.*.questions.*.question' => 'required|string|max:1000',
+                    'verification_questions.*.questions.*.type' => 'required|in:short_answer,long_answer,text,file_upload',
                 ];
             }
             // Applicant can ONLY edit allowed fields (hybrid mode)

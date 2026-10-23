@@ -29,6 +29,7 @@ class ProgramMilestone extends Model
     protected $casts = [
         'is_template' => 'boolean',
         'allowed_edits' => 'array',
+        'verification_questions' => 'array',
     ];
 
     public function application()

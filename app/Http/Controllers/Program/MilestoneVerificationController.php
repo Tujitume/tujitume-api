@@ -78,7 +78,36 @@ class MilestoneVerificationController extends Controller
                 'additional_declarations' => 'nullable|string',
                 'verification_type' => 'required|string|in:mprv,mid_milestone,final_approval',
                 'document' => 'nullable|file|mimes:pdf,doc,docx|max:5120',  // 5MB
+                'answers' => 'nullable|array',
             ]);
+
+            $questionsByType = collect($milestone->verification_questions ?? [])
+                ->firstWhere('type', $validated['verification_type'])['questions'] ?? [];
+            $answers = array_replace_recursive(
+                $request->input('answers', []),
+                $request->allFiles()['answers'] ?? []
+            );
+            $allowedIndexes = array_map('strval', array_keys($questionsByType));
+            if (array_diff(array_map('strval', array_keys($answers)), $allowedIndexes)) {
+                throw ValidationException::withMessages(['answers' => ['Answers may only be provided for configured questions.']]);
+            }
+            foreach ($questionsByType as $index => $question) {
+                $key = (string) $index;
+                if (($question['type'] ?? null) === 'file_upload') {
+                    if (!$request->hasFile("answers.$key")) {
+                        throw ValidationException::withMessages(["answers.$key" => ['A file is required for this question.']]);
+                    }
+                    $request->validate(["answers.$key" => 'file|max:5120']);
+                } elseif (!is_string(data_get($answers, $key)) || trim(data_get($answers, $key)) === '') {
+                    throw ValidationException::withMessages(["answers.$key" => ['An answer is required for this question.']]);
+                }
+            }
+            foreach ((array) $answers as $key => $answer) {
+                if ($answer instanceof \Illuminate\Http\UploadedFile) {
+                    $answers[$key] = $this->fileUpload->saveFile($answer, 'files/programMilestoneVerifications/' . $milestone->id);
+                }
+            }
+            $validated['answers'] = $answers;
 
             // Get attempt number (for resubmissions)
             $lastAttempt = MilestoneVerification::where('milestone_id', $milestone->id)
