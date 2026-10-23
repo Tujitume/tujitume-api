@@ -493,6 +493,77 @@ class SupplierDirectoryController extends Controller
         'other'         => 'Other',
     ];
 
+
+    /**
+     * Tujitume service providers anyone building a supplier directory can look through (entrepreneurs
+     * included). Nothing is listed until something is typed; searches by email, name or city, a page at a time.
+     * GET /programs/supplier-directory/providers?search=&page=&per_page=
+     */
+    public function providers(Request $request)
+    {
+        try {
+            $search = trim((string) $request->query('search', ''));
+            $perPage = min(max((int) $request->query('per_page', 10), 1), 50);
+            $page = max((int) $request->query('page', 1), 1);
+
+            if ($search === '') {
+                return response()->json([
+                    'data' => [],
+                    'meta' => ['page' => $page, 'per_page' => $perPage, 'has_more' => false],
+                ], 200);
+            }
+
+            $like = '%' . $search . '%';
+            $users = User::where('user_type_id', 3)
+                ->where('id', '!=', auth()->id())
+                ->where(function ($q) use ($like) {
+                    $q->where('email', 'like', $like)
+                        ->orWhere('display_name', 'like', $like)
+                        ->orWhere('first_name', 'like', $like)
+                        ->orWhere('last_name', 'like', $like)
+                        ->orWhereRaw("CONCAT(first_name, ' ', last_name) LIKE ?", [$like])
+                        ->orWhere('city', 'like', $like);
+                })
+                ->orderBy('first_name')
+                ->orderBy('id')
+                ->offset(($page - 1) * $perPage)
+                ->limit($perPage + 1) // one more than a page, to know whether there is a next page
+                ->get(['id', 'first_name', 'last_name', 'display_name', 'email', 'phone', 'image', 'city', 'country']);
+
+            $hasMore = $users->count() > $perPage;
+            $users = $users->take($perPage)->values();
+
+            // Already in this person's directory (matched by email)
+            $added = SupplierDirectory::where('added_by', auth()->id())
+                ->pluck('email')
+                ->map(fn($email) => strtolower((string) $email))
+                ->all();
+
+            $servicesByUser = \App\Models\Services\Services::whereIn('user_id', $users->pluck('id'))
+                ->get(['id', 'user_id', 'name', 'category'])
+                ->groupBy('user_id');
+
+            return response()->json([
+                'data' => $users->map(fn(User $user) => [
+                    'id' => $user->id,
+                    'name' => $user->display_name ?: trim($user->first_name . ' ' . $user->last_name),
+                    'email' => $user->email,
+                    'phone' => $user->phone,
+                    'image' => $user->image,
+                    'location' => collect([$user->city, $user->country])->filter()->implode(', '),
+                    'added' => in_array(strtolower((string) $user->email), $added, true),
+                    'services' => ($servicesByUser->get($user->id) ?? collect())
+                        ->map(fn($service) => ['id' => $service->id, 'name' => $service->name, 'category' => $service->category])
+                        ->values(),
+                ])->values(),
+                'meta' => ['page' => $page, 'per_page' => $perPage, 'has_more' => $hasMore],
+            ], 200);
+        } catch (\Throwable $e) {
+            ErrorLogService::report($e, ['search' => $request->query('search')]);
+            return response()->json(['message' => 'Something went wrong, please try again later.'], 500);
+        }
+    }
+    
     /**
      * Adds `status` to each supplier: "onboarded" once the supplier has a Tujitume
      * account (matched by email), otherwise "invited". One query for the whole page.

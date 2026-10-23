@@ -42,6 +42,8 @@ Route::prefix('/programs')->middleware(['program', 'program.response'])->group(f
     Route::get('public-programs', [ProgramController::class, 'public_programs']);
     Route::get('get_program/{id}', [ProgramController::class, 'get_program']);
 
+    Route::get('supplier-directory/providers', [SupplierDirectoryController::class, 'providers']);
+
     Route::get('{program_id}/applications', [ProgramApplicationController::class, 'index']);
     Route::get('{program_id}/applications/awarded', [ProgramApplicationController::class, 'awarded']);
     Route::get('applications/{id}', [ProgramApplicationController::class, 'show']);
