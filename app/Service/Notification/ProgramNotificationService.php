@@ -23,6 +23,7 @@ class ProgramNotificationService
         'mprv.approved', 'mprv.rejected', 'completion.approved', 'completion.rejected',
         'milestone.unlocked', 'milestone.funds_released', 'dealroom.document_uploaded',
         'disbursement.created', 'disbursement.completed', 'disbursement.reversed',
+        'funding_plan.revision_requested',
     ];
 
     public function __construct() {
@@ -191,6 +192,8 @@ class ProgramNotificationService
             'round.score_received' => "Your application to {$program} was reviewed. Open it to see the update.",
             'application.awarded' => "Congratulations! {$program} awarded you " . ($this->money($d) ?: 'funding') . ". Open your funding plan to set up your milestones.",
             'milestones.created' => "{$v('milestone_count')} milestones were created for your funding plan in {$program}. Open your plan to review them.",
+            'funding_plan.submitted' => "{$v('business_name')} submitted a funding plan for {$program}. Review the milestones and funding setup.",
+            'funding_plan.revision_requested' => "{$actor} sent your funding plan for {$program} back for revision. Open your deal room to review the plan.",
             'supplier.added' => "You have been added as a supplier to {$ms} for {$program}. Open your account to view the assignment.",
             'budget.completed' => "The budget for {$ms} is complete. You can now submit your MPRV.",
             'mprv.submitted' => "{$v('business_name')} submitted the MPRV for {$ms}. Review it, then approve it or ask for changes.",
@@ -578,6 +581,22 @@ class ProgramNotificationService
                 'message'       => "{$this->v($data, 'milestone_count')} milestones created for {$this->v($data, 'program_title')}",
                 'email_subject' => 'Your Program Milestones',
                 'email_view'    => $this->view_base . 'milestones_created',
+                'link'          => $this->applicantDealroomLink($data, 'plan'),
+            ],
+
+            'funding_plan.submitted' => [
+                'title'         => 'Funding Plan Submitted',
+                'message'       => "{$this->v($data, 'business_name')} submitted a funding plan for {$this->v($data, 'program_title')}",
+                'email_subject' => 'Funding Plan Ready for Review',
+                'email_view'    => $this->view_base . 'funding_plan_submitted',
+                'link'          => $this->orgDealroomLink($data['application_id'] ?? ''),
+            ],
+
+            'funding_plan.revision_requested' => [
+                'title'         => 'Funding Plan Returned for Revision',
+                'message'       => "Your funding plan for {$this->v($data, 'program_title')} was returned for revision",
+                'email_subject' => 'Please Revise Your Funding Plan',
+                'email_view'    => $this->view_base . 'funding_plan_revision_requested',
                 'link'          => $this->applicantDealroomLink($data, 'plan'),
             ],
 

@@ -796,7 +796,26 @@ class ProgramMilestoneController extends Controller
 
             DB::commit();
 
-            // notification on each submit needed
+            $notificationData = [
+                'application_id' => $application->id,
+                'program_id' => $application->program->id,
+                'program_title' => $application->program->program_title,
+                'business_name' => $application->startup_name,
+            ];
+
+            if ($status === 'awaiting_owner_review') {
+                $this->programNotification->send(
+                    'funding_plan.submitted',
+                    [$application->program->owner],
+                    $notificationData
+                );
+            } else {
+                $this->programNotification->send(
+                    'funding_plan.revision_requested',
+                    [$application->user],
+                    $notificationData
+                );
+            }
 
             return response()->json([
                 'message' => 'Plan submitted for review successfully'

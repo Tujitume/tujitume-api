@@ -230,7 +230,7 @@ Route::prefix('/programs')->middleware(['program', 'program.response'])->group(f
         Route::post('/request-changes', [ProgramMilestoneController::class, 'requestChanges']);
         Route::post('/revision-feedback', [ProgramMilestoneController::class, 'getRevisionFeedback']);
 
-        // Applicant submits plan for review (hybrid mode)
+        // Applicant / PO submits plan for review (hybrid mode)
         Route::post('/submit-plan', [ProgramMilestoneController::class, 'submitPlan']);
     });
 
