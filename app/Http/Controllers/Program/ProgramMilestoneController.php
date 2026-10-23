@@ -444,7 +444,7 @@ class ProgramMilestoneController extends Controller
                     'verification_questions.*.type' => 'required|in:mprv,mid_milestone,final_approval',
                     'verification_questions.*.questions' => 'required|array',
                     'verification_questions.*.questions.*.question' => 'required|string|max:1000',
-                    'verification_questions.*.questions.*.type' => 'required|in:short_answer,long_answer,text,file_upload',
+                    'verification_questions.*.questions.*.type' => 'required|string|max:50',
                 ];
             }
             // Applicant can ONLY edit allowed fields (hybrid mode)
@@ -555,6 +555,11 @@ class ProgramMilestoneController extends Controller
                 'message' => 'Milestone updated successfully',
                 'data' => $milestone->fresh()
             ], 200);
+        } catch (ValidationException $e) {
+            return response()->json([
+                'message' => 'Validation failed.',
+                'errors' => $e->errors(),
+            ], 422);
         } catch (\Exception $e) {
             ErrorLogService::report($e);
             return response()->json(['message' => 'Something went wrong'], 500);
