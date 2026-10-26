@@ -18,7 +18,6 @@ use Illuminate\Validation\ValidationException;
 
 class ProgramMilestoneController extends Controller
 {
-    protected ProgramNotificationService $programNotification;
 
     public function __construct(ProgramNotificationService $programNotification)
     {
