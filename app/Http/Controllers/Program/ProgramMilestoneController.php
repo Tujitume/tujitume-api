@@ -232,6 +232,7 @@ class ProgramMilestoneController extends Controller
                 'verification_questions.*.questions' => 'required|array',
                 'verification_questions.*.questions.*.question' => 'required|string|max:1000',
                 'verification_questions.*.questions.*.type' => 'required|in:short_answer,long_answer,text,file_upload',
+                'verification_questions.*.questions.*.required' => 'sometimes|boolean',
                 //'planning_mode' => 'nullable|in:locked,hybrid',
                 'allowed_edits' => 'nullable|array',
 
@@ -420,6 +421,14 @@ class ProgramMilestoneController extends Controller
             $isApplicant = $application->user_id === $userId;
 
             $requestData = $request->all();
+            $documentUpload = $request->file('document')
+                ?? $request->attributes->get('parsed_multipart_files', [])['document']
+                ?? null;
+            // PATCH multipart uploads are parsed by ParseMultipartFormData; explicitly
+            // add the UploadedFile to the validator payload as well as normal input.
+            if ($documentUpload instanceof \Illuminate\Http\UploadedFile) {
+                $requestData['document'] = $documentUpload;
+            }
 
             $baseRules = [
                 'title' => 'sometimes|required|string|max:255',
@@ -444,7 +453,8 @@ class ProgramMilestoneController extends Controller
                     'verification_questions.*.type' => 'required|in:mprv,mid_milestone,final_approval',
                     'verification_questions.*.questions' => 'required|array',
                     'verification_questions.*.questions.*.question' => 'required|string|max:1000',
-                    'verification_questions.*.questions.*.type' => 'required|string|max:50',
+                    'verification_questions.*.questions.*.type' => 'required|in:short_answer,long_answer,text,file_upload',
+                    'verification_questions.*.questions.*.required' => 'sometimes|boolean',
                 ];
             }
             // Applicant can ONLY edit allowed fields (hybrid mode)
@@ -511,9 +521,12 @@ class ProgramMilestoneController extends Controller
             }
 
             // Handle document upload
-            if ($request->hasFile('document')) {
+            if ($documentUpload instanceof \Illuminate\Http\UploadedFile && $documentUpload->isValid()) {
                 $doc_path          = "files/program/milestones/{$milestoneId}";
-                $validated['document'] = $this->fileUpload->saveFile($request->file('document'), $doc_path);
+                $validated['document'] = $this->fileUpload->saveFile($documentUpload, $doc_path);
+                if (!$validated['document']) {
+                    throw new \RuntimeException('Document upload failed; no storage path was returned.');
+                }
             } else {
                 $validated['document'] = $milestone->document; // keep existing
             }
@@ -556,7 +569,9 @@ class ProgramMilestoneController extends Controller
                 'data' => $milestone->fresh()
             ], 200);
         } catch (ValidationException $e) {
-            $documentFile = $request->file('document');
+            $documentFile = $request->file('document')
+                ?? $request->attributes->get('parsed_multipart_files', [])['document']
+                ?? null;
             $documentInput = $request->input('document');
 
             return response()->json([

@@ -105,6 +105,7 @@ Route::prefix('/programs')->middleware(['program', 'program.response'])->group(f
     // Program owner decision actions MPRV (approve / reject / audit)
     Route::patch('verifications/{verification}/approve', [MilestoneVerificationController::class, 'approve']);
     Route::patch('verifications/{verification}/reject', [MilestoneVerificationController::class, 'reject']);
+    Route::patch('verifications/{verification}/request-modification', [MilestoneVerificationController::class, 'requestModification']);
     Route::patch('verifications/{verification}/request-audit', [MilestoneVerificationController::class, 'requestAudit']);
 
     Route::get('milestones/{milestone}/disbursement-data', [ProgramDisbursementController::class, 'disbursementData']);

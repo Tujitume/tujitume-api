@@ -46,13 +46,6 @@ class MilestoneVerificationController extends Controller
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
-        // Check milestone status
-        if (!in_array($milestone->status, ['pending', 'submitted', 'rejected'])) {
-            return response()->json([
-                'error' => 'MPRV can only be submitted for pending or rejected milestones. Current status: ' . $milestone->status
-            ], 422);
-        }
-
         $suppliersCount = $milestone->suppliers()->count();
         // if ($suppliersCount === 0) {
         //     return response()->json(['error' => 'Cannot submit MPRV. Please add suppliers first.'], 422);
@@ -81,36 +74,108 @@ class MilestoneVerificationController extends Controller
                 'answers' => 'nullable|array',
             ]);
 
+            $verificationType = $validated['verification_type'];
+            $requiredFlag = match ($verificationType) {
+                'mprv' => 'mprv_required',
+                'mid_milestone' => 'mid_milestone_required',
+                'final_approval' => 'final_approval_required',
+            };
+            if (!$milestone->{$requiredFlag}) {
+                throw ValidationException::withMessages([
+                    'verification_type' => ['This verification is not required for the milestone.'],
+                ]);
+            }
+
+            if ($verificationType === 'mprv' && !in_array($milestone->status, ['pending', 'submitted', 'rejected'], true)) {
+                throw ValidationException::withMessages([
+                    'verification_type' => ['MPRV can only be submitted for pending or rejected milestones. Current status: ' . $milestone->status],
+                ]);
+            }
+
+            $lastTypeVerification = MilestoneVerification::where('milestone_id', $milestone->id)
+                ->where('verification_type', $verificationType)
+                ->latest('id')
+                ->first();
+            if ($lastTypeVerification && in_array($lastTypeVerification->decision, ['pending', 'approved', 'audit_requested'], true)) {
+                throw ValidationException::withMessages([
+                    'verification_type' => ['This verification already has a submission that is pending or approved.'],
+                ]);
+            }
+
             $questionsByType = collect($milestone->verification_questions ?? [])
-                ->firstWhere('type', $validated['verification_type'])['questions'] ?? [];
-            $answers = array_replace_recursive(
-                $request->input('answers', []),
-                $request->allFiles()['answers'] ?? []
-            );
+                ->firstWhere('type', $verificationType)['questions'] ?? [];
+            $submittedAnswers = $request->input('answers', []);
+            $uploadedAnswers = $request->allFiles()['answers'] ?? [];
+            $submittedIndexes = array_unique(array_merge(
+                array_map('strval', array_keys($submittedAnswers)),
+                array_map('strval', array_keys($uploadedAnswers))
+            ));
             $allowedIndexes = array_map('strval', array_keys($questionsByType));
-            if (array_diff(array_map('strval', array_keys($answers)), $allowedIndexes)) {
+            if (array_diff($submittedIndexes, $allowedIndexes)) {
                 throw ValidationException::withMessages(['answers' => ['Answers may only be provided for configured questions.']]);
             }
+
+            $answers = [];
             foreach ($questionsByType as $index => $question) {
                 $key = (string) $index;
-                if (($question['type'] ?? null) === 'file_upload') {
-                    if (!$request->hasFile("answers.$key")) {
-                        throw ValidationException::withMessages(["answers.$key" => ['A file is required for this question.']]);
+                $submitted = $submittedAnswers[$key] ?? $submittedAnswers[$index] ?? null;
+                // Continue accepting the original plain-string answer format.
+                if (!is_array($submitted)) {
+                    $submitted = ['answer' => $submitted];
+                }
+                $dontHave = filter_var($submitted['dont_have'] ?? false, FILTER_VALIDATE_BOOLEAN);
+                $note = $submitted['note'] ?? null;
+                $answer = $submitted['answer'] ?? null;
+                $fileEntry = $uploadedAnswers[$key] ?? $uploadedAnswers[$index] ?? null;
+                $file = is_array($fileEntry) ? ($fileEntry['file'] ?? null) : $fileEntry;
+                $required = array_key_exists('required', $question)
+                    ? filter_var($question['required'], FILTER_VALIDATE_BOOLEAN)
+                    : true;
+
+                if ($note !== null && (!is_string($note) || mb_strlen($note) > 1000)) {
+                    throw ValidationException::withMessages(["answers.$key.note" => ['The note must be 1000 characters or fewer.']]);
+                }
+                if ($dontHave && (!is_string($note) || trim($note) === '')) {
+                    throw ValidationException::withMessages(["answers.$key.note" => ['Please explain why you do not have this item.']]);
+                }
+
+                $questionType = $question['type'] ?? 'text';
+                if (!$dontHave && $questionType === 'file_upload') {
+                    if ($file instanceof \Illuminate\Http\UploadedFile) {
+                        if (!$file->isValid() || $file->getSize() > 5120 * 1024) {
+                            throw ValidationException::withMessages(["answers.$key.file" => ['The file must be valid and no larger than 5 MB.']]);
+                        }
+                    } elseif ($required) {
+                        throw ValidationException::withMessages(["answers.$key.file" => ['A file is required for this question.']]);
                     }
-                    $request->validate(["answers.$key" => 'file|max:5120']);
-                } elseif (!is_string(data_get($answers, $key)) || trim(data_get($answers, $key)) === '') {
-                    throw ValidationException::withMessages(["answers.$key" => ['An answer is required for this question.']]);
+                } elseif (!$dontHave && $questionType !== 'file_upload') {
+                    if ($answer !== null && (!is_string($answer) || mb_strlen($answer) > 10000)) {
+                        throw ValidationException::withMessages(["answers.$key.answer" => ['The answer must be text with no more than 10000 characters.']]);
+                    }
+                    if ($required && (!is_string($answer) || trim($answer) === '')) {
+                        throw ValidationException::withMessages(["answers.$key.answer" => ['An answer is required for this question.']]);
+                    }
                 }
-            }
-            foreach ((array) $answers as $key => $answer) {
-                if ($answer instanceof \Illuminate\Http\UploadedFile) {
-                    $answers[$key] = $this->fileUpload->saveFile($answer, 'files/programMilestoneVerifications/' . $milestone->id);
+
+                if ($file instanceof \Illuminate\Http\UploadedFile && !$dontHave) {
+                    if ($questionType !== 'file_upload') {
+                        throw ValidationException::withMessages(["answers.$key.file" => ['This question does not accept a file.']]);
+                    }
+                    $file = $this->fileUpload->saveFile($file, 'files/programMilestoneVerifications/' . $milestone->id);
                 }
+
+                $answers[$key] = [
+                    'answer' => $dontHave ? null : $answer,
+                    'file' => $dontHave ? null : ($file instanceof \Illuminate\Http\UploadedFile ? null : $file),
+                    'dont_have' => $dontHave,
+                    'note' => $note,
+                ];
             }
             $validated['answers'] = $answers;
 
             // Get attempt number (for resubmissions)
             $lastAttempt = MilestoneVerification::where('milestone_id', $milestone->id)
+                ->where('verification_type', $verificationType)
                 ->max('attempt_number');
             $validated['attempt_number'] = $lastAttempt ? $lastAttempt + 1 : 1;
 
@@ -135,9 +200,11 @@ class MilestoneVerificationController extends Controller
             $verification = MilestoneVerification::create($validated);
 
             // Update milestone status
-            $milestone->status = 'submitted';
-            $milestone->mprv_ready = false;
-            $milestone->save();
+            if ($verificationType === 'mprv') {
+                $milestone->status = 'submitted';
+                $milestone->mprv_ready = false;
+                $milestone->save();
+            }
 
             DB::commit();
 
@@ -220,21 +287,32 @@ class MilestoneVerificationController extends Controller
             $verification->decision_notes = $validated['decision_notes'] ?? null;
             $verification->save();
 
-            // Update milestone
-            $milestone->status = 'approved';
-            $milestone->fund_release_status = 'approved';
-            $milestone->approved_by = $owner_id;
-            $milestone->approved_at = now();
+            // Keep the program milestone's lifecycle tied to MPRV. Later checks
+            // only update their own ready flag so they cannot reset fund release state.
+            $readyField = $this->readyFieldFor($verification->verification_type);
+            if ($readyField) {
+                $milestone->{$readyField} = true;
+            }
+            if ($verification->verification_type === 'mprv') {
+                $milestone->status = 'approved';
+                $milestone->fund_release_status = 'approved';
+                $milestone->approved_by = $owner_id;
+                $milestone->approved_at = now();
+            }
             $milestone->save();
 
             DB::commit();
 
-            $this->programNotification->send('mprv.approved', [$verification->milestone->application->user], [
-                'milestone_number' => $verification->milestone->sequence_order, 'application_id' => $verification->milestone->app_id,
-            ]);
+            if ($verification->verification_type === 'mprv') {
+                $this->programNotification->send('mprv.approved', [$verification->milestone->application->user], [
+                    'milestone_number' => $verification->milestone->sequence_order, 'application_id' => $verification->milestone->app_id,
+                ]);
+            }
 
             return response()->json([
-                'message' => 'MPRV approved. Milestone ready for disbursement.',
+                'message' => $verification->verification_type === 'mprv'
+                    ? 'MPRV approved. Milestone ready for disbursement.'
+                    : ucfirst(str_replace('_', ' ', $verification->verification_type)) . ' approved.',
                 'data' => $verification,
             ]);
 
@@ -280,20 +358,29 @@ class MilestoneVerificationController extends Controller
             $verification->decision_notes = $validated['decision_notes'];
             $verification->save();
 
-            // Update milestone
-            $milestone->status = 'rejected';
-            $milestone->rejection_reason = $validated['decision_notes'];
+            $readyField = $this->readyFieldFor($verification->verification_type);
+            if ($readyField) {
+                $milestone->{$readyField} = false;
+            }
+            if ($verification->verification_type === 'mprv') {
+                $milestone->status = 'rejected';
+                $milestone->rejection_reason = $validated['decision_notes'];
+            }
             $milestone->save();
 
             DB::commit();
 
-            $this->programNotification->send('mprv.rejected', [$verification->milestone->application->user], [
-                'milestone_number' => $verification->milestone->sequence_order, 'reason' => $validated['decision_notes'],
-                'application_id' => $verification->milestone->app_id,
-            ]);
+            if ($verification->verification_type === 'mprv') {
+                $this->programNotification->send('mprv.rejected', [$verification->milestone->application->user], [
+                    'milestone_number' => $verification->milestone->sequence_order, 'reason' => $validated['decision_notes'],
+                    'application_id' => $verification->milestone->app_id,
+                ]);
+            }
 
             return response()->json([
-                'message' => 'MPRV rejected. Business owner can fix issues and resubmit.',
+                'message' => $verification->verification_type === 'mprv'
+                    ? 'MPRV rejected. Business owner can fix issues and resubmit.'
+                    : ucfirst(str_replace('_', ' ', $verification->verification_type)) . ' rejected.',
                 'data' => $verification,
             ]);
 
@@ -305,6 +392,63 @@ class MilestoneVerificationController extends Controller
             ErrorLogService::report($e, ['input' => request()->except(['password', 'token'])]);
             return response()->json(['message' => 'Something went wrong, please try again later.'], 500);
         }
+    }
+
+    /** Ask the applicant to update and resubmit this verification. */
+    public function requestModification(Request $request, MilestoneVerification $verification)
+    {
+        $milestone = $verification->milestone;
+        if ($milestone->application->program_owner_id !== auth()->id()) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+        if ($verification->decision !== 'pending') {
+            return response()->json(['error' => 'This verification has already been ' . $verification->decision], 422);
+        }
+
+        DB::beginTransaction();
+        try {
+            $validated = $request->validate([
+                'decision_notes' => 'required|string|max:2000',
+            ]);
+
+            $verification->update([
+                'decision' => 'modification_requested',
+                'decided_by' => auth()->id(),
+                'decided_at' => now(),
+                'decision_notes' => $validated['decision_notes'],
+            ]);
+
+            $readyField = $this->readyFieldFor($verification->verification_type);
+            if ($readyField) {
+                $milestone->update([$readyField => false]);
+            }
+            if ($verification->verification_type === 'mprv') {
+                $milestone->update(['status' => 'rejected', 'rejection_reason' => $validated['decision_notes']]);
+            }
+
+            DB::commit();
+            return response()->json([
+                'message' => 'Modification requested. The applicant can update and resubmit this verification.',
+                'data' => $verification->fresh(),
+            ]);
+        } catch (ValidationException $e) {
+            DB::rollBack();
+            return response()->json(['message' => 'Validation failed.', 'errors' => $e->errors()], 422);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            ErrorLogService::report($e, ['input' => $request->except(['password', 'token'])]);
+            return response()->json(['message' => 'Something went wrong, please try again later.'], 500);
+        }
+    }
+
+    private function readyFieldFor(string $verificationType): ?string
+    {
+        return match ($verificationType) {
+            'mprv' => 'mprv_ready',
+            'mid_milestone' => 'mid_milestone_ready',
+            'final_approval' => 'final_approval_ready',
+            default => null,
+        };
     }
 
     /**

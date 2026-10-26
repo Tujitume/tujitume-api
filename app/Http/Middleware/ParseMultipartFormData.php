@@ -73,6 +73,9 @@ class ParseMultipartFormData
 
                 $request->request->add($input);
                 $request->files->add($files);
+                // Keep a direct reference too, in case another middleware populated
+                // Laravel's converted-file cache before this PATCH body was parsed.
+                $request->attributes->set('parsed_multipart_files', $files);
             }
         }
 
