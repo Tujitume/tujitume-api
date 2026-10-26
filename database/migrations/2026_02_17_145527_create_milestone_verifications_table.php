@@ -31,7 +31,8 @@ return new class extends Migration
                 'pending',
                 'approved',
                 'rejected',
-                'audit_requested',      // triggers PM assignment
+                'audit_requested', // triggers PM assignment
+                'modification_requested'    
             ])->default('pending');
 
             $table->unsignedBigInteger('decided_by')->nullable();       // program owner

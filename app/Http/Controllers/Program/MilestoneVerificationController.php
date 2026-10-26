@@ -303,11 +303,7 @@ class MilestoneVerificationController extends Controller
 
             DB::commit();
 
-            if ($verification->verification_type === 'mprv') {
-                $this->programNotification->send('mprv.approved', [$verification->milestone->application->user], [
-                    'milestone_number' => $verification->milestone->sequence_order, 'application_id' => $verification->milestone->app_id,
-                ]);
-            }
+            $this->sendVerificationNotification($verification, 'milestone_verification.approved');
 
             return response()->json([
                 'message' => $verification->verification_type === 'mprv'
@@ -370,12 +366,11 @@ class MilestoneVerificationController extends Controller
 
             DB::commit();
 
-            if ($verification->verification_type === 'mprv') {
-                $this->programNotification->send('mprv.rejected', [$verification->milestone->application->user], [
-                    'milestone_number' => $verification->milestone->sequence_order, 'reason' => $validated['decision_notes'],
-                    'application_id' => $verification->milestone->app_id,
-                ]);
-            }
+            $this->sendVerificationNotification(
+                $verification,
+                'milestone_verification.rejected',
+                $validated['decision_notes']
+            );
 
             return response()->json([
                 'message' => $verification->verification_type === 'mprv'
@@ -427,6 +422,12 @@ class MilestoneVerificationController extends Controller
             }
 
             DB::commit();
+            $this->sendVerificationNotification(
+                $verification,
+                'milestone_verification.modification_requested',
+                $validated['decision_notes']
+            );
+
             return response()->json([
                 'message' => 'Modification requested. The applicant can update and resubmit this verification.',
                 'data' => $verification->fresh(),
@@ -449,6 +450,38 @@ class MilestoneVerificationController extends Controller
             'final_approval' => 'final_approval_ready',
             default => null,
         };
+    }
+
+    private function sendVerificationNotification(
+        MilestoneVerification $verification,
+        string $event,
+        ?string $notes = null
+    ): void {
+        $milestone = $verification->milestone;
+        $application = $milestone->application;
+        $typeLabel = match ($verification->verification_type) {
+            'mprv' => 'MPRV',
+            'mid_milestone' => 'Mid-milestone verification',
+            'final_approval' => 'Final approval',
+            default => ucfirst(str_replace('_', ' ', $verification->verification_type)),
+        };
+        $tab = match ($verification->verification_type) {
+            'mprv' => 'mprv',
+            'mid_milestone' => 'mid',
+            'final_approval' => 'final',
+            default => 'plan',
+        };
+
+        $this->programNotification->send($event, [$application->user], [
+            'application_id' => $application->id,
+            'program_id' => $application->program->id,
+            'program_title' => $application->program->program_title,
+            'business_name' => $application->startup_name,
+            'milestone_number' => $milestone->sequence_order,
+            'verification_label' => $typeLabel,
+            'verification_tab' => $tab,
+            'decision_notes' => $notes,
+        ]);
     }
 
     /**

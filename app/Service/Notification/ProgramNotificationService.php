@@ -24,6 +24,8 @@ class ProgramNotificationService
         'milestone.unlocked', 'milestone.funds_released', 'dealroom.document_uploaded',
         'disbursement.created', 'disbursement.completed', 'disbursement.reversed',
         'funding_plan.revision_requested',
+        'milestone_verification.approved', 'milestone_verification.rejected',
+        'milestone_verification.modification_requested',
     ];
 
     public function __construct() {
@@ -110,6 +112,8 @@ class ProgramNotificationService
         'reviewer_name' => 'A reviewer', 'supplier_name' => 'the supplier', 'uploader_name' => 'Someone',
         'actor_name' => 'The program team', 'milestone_number' => '', 'document_type' => 'a document',
         'reason' => 'no reason given', 'order_type' => 'review', 'days_left' => 'a few',
+        'verification_label' => 'verification',
+        'decision_notes' => 'no additional details were provided',
     ];
 
     public function v(array $data, string $key): string
@@ -194,6 +198,9 @@ class ProgramNotificationService
             'milestones.created' => "{$v('milestone_count')} milestones were created for your funding plan in {$program}. Open your plan to review them.",
             'funding_plan.submitted' => "{$v('business_name')} submitted a funding plan for {$program}. Review the milestones and funding setup.",
             'funding_plan.revision_requested' => "{$actor} sent your funding plan for {$program} back for revision. Open your deal room to review the plan.",
+            'milestone_verification.approved' => "{$actor} approved your {$v('verification_label')} for {$ms} in {$program}.",
+            'milestone_verification.rejected' => "{$actor} rejected your {$v('verification_label')} for {$ms} in {$program}: {$v('decision_notes')}.",
+            'milestone_verification.modification_requested' => "{$actor} requested changes to your {$v('verification_label')} for {$ms} in {$program}: {$v('decision_notes')}.",
             'supplier.added' => "You have been added as a supplier to {$ms} for {$program}. Open your account to view the assignment.",
             'budget.completed' => "The budget for {$ms} is complete. You can now submit your MPRV.",
             'mprv.submitted' => "{$v('business_name')} submitted the MPRV for {$ms}. Review it, then approve it or ask for changes.",
@@ -598,6 +605,30 @@ class ProgramNotificationService
                 'email_subject' => 'Please Revise Your Funding Plan',
                 'email_view'    => $this->view_base . 'funding_plan_revision_requested',
                 'link'          => $this->applicantDealroomLink($data, 'plan'),
+            ],
+
+            'milestone_verification.approved' => [
+                'title'         => 'Milestone Verification Approved',
+                'message'       => "Your {$this->v($data, 'verification_label')} for Milestone {$this->v($data, 'milestone_number')} was approved.",
+                'email_subject' => $this->v($data, 'verification_label') . ' Approved',
+                'email_view'    => $this->view_base . 'milestone_verification_approved',
+                'link'          => $this->applicantDealroomLink($data, $data['verification_tab'] ?? 'plan', true),
+            ],
+
+            'milestone_verification.rejected' => [
+                'title'         => 'Milestone Verification Rejected',
+                'message'       => "Your {$this->v($data, 'verification_label')} for Milestone {$this->v($data, 'milestone_number')} was rejected.",
+                'email_subject' => $this->v($data, 'verification_label') . ' Rejected',
+                'email_view'    => $this->view_base . 'milestone_verification_rejected',
+                'link'          => $this->applicantDealroomLink($data, $data['verification_tab'] ?? 'plan', true),
+            ],
+
+            'milestone_verification.modification_requested' => [
+                'title'         => 'Changes Requested on Milestone Verification',
+                'message'       => "Changes were requested to your {$this->v($data, 'verification_label')} for Milestone {$this->v($data, 'milestone_number')}.",
+                'email_subject' => 'Changes Requested: ' . $this->v($data, 'verification_label'),
+                'email_view'    => $this->view_base . 'milestone_verification_modification_requested',
+                'link'          => $this->applicantDealroomLink($data, $data['verification_tab'] ?? 'plan', true),
             ],
 
             // ── SUPPLIER & BUDGET ────────────────────────────────────────────
