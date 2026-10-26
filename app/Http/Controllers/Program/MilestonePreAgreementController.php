@@ -9,6 +9,7 @@ use App\Models\Programs\MilestonePreAgreement;
 use App\Service\Misc\ErrorLogService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Validation\ValidationException;
 
 class MilestonePreAgreementController extends Controller
@@ -18,8 +19,8 @@ class MilestonePreAgreementController extends Controller
         $userId = auth()->id();
         $application = $milestone->application;
 
-        $isApplicant  = $application->user_id === $userId;
-        $isProgramOwner = $application->program->user_id === $userId;
+        $isApplicant  = (int) $application->user_id === (int) $userId;
+        $isProgramOwner = \App\Service\Program\ProgramAccess::owns($application->program);
 
         if (!$isApplicant && !$isProgramOwner) {
             return response()->json(['error' => 'Unauthorized'], 403);
@@ -35,36 +36,29 @@ class MilestonePreAgreementController extends Controller
                 'comment' => 'required|string|max:1000',
             ]);
 
-            // Get or create agreement record
-            $agreement = MilestonePreAgreement::updateOrCreate(
-                [
-                    'milestone_id'      => $milestone->id,
-                    'verification_type' => $type,
-                ],
-                [
-                    'status'       => $isApplicant ? 'submitted' : 'pending',
-                    'submitted_by' => $userId,
-                ]
-            );
+            $agreement = MilestonePreAgreement::firstOrNew([
+                'milestone_id' => $milestone->id,
+                'verification_type' => $type,
+            ]);
 
-            // Block if final rejected
-//            if ($agreement->isFinalRejected()) {
-//                return response()->json([
-//                    'error' => 'This agreement has been finally rejected and cannot be reopened.'
-//                ], 422);
-//            }
-
-            // Block if already agreed
-            if ($agreement->isAgreed()) {
-                return response()->json([
-                    'error' => 'This agreement is already approved.'
-                ], 422);
+            if ($agreement->exists && $isApplicant && $agreement->isAgreed()
+                && $application->funding_setup_status !== 'awaiting_applicant_revision') {
+                DB::rollBack();
+                return response()->json(['error' => 'This agreement has already been approved.'], 422);
             }
 
-            // If owner rejected and applicant responds - reopen to pending
-            if ($agreement->status === 'rejected' && $isApplicant) {
-                $agreement->update(['status' => 'pending']);
+            if (!$agreement->exists) {
+                $agreement->status = $isApplicant ? 'submitted' : 'pending';
+                $agreement->submitted_by = $userId;
+            } elseif ($isApplicant) {
+                // An applicant response reopens a rejected agreement for owner review.
+                $agreement->status = 'submitted';
+                $agreement->submitted_by = $userId;
+                $agreement->reviewed_by = null;
+                $agreement->reviewed_at = null;
             }
+
+            $agreement->save();
 
             // Store comment
             MilestoneAgreementComment::create([
@@ -75,6 +69,8 @@ class MilestonePreAgreementController extends Controller
             ]);
 
             DB::commit();
+
+            $this->notifyAgreementAction($agreement, $milestone, $application, $isApplicant, $validated['comment']);
 
             return response()->json([
                 'message'   => 'Comment posted successfully',
@@ -88,6 +84,61 @@ class MilestonePreAgreementController extends Controller
             DB::rollBack();
             ErrorLogService::report($e, ['input' => request()->except(['password', 'token'])]);
             return response()->json(['message' => 'Something went wrong, please try again later.'], 500);
+        }
+    }
+
+    private function notifyAgreementAction(MilestonePreAgreement $agreement, ProgramMilestone $milestone, $application, bool $isApplicant, string $comment): void
+    {
+        $program = $application->program;
+        $number = $milestone->sequence_order ?? $milestone->id;
+        $milestoneHash = 'milestone-' . $number;
+        $applicant = $application->user;
+        $owner = $program->owner;
+        $commentData = json_decode($comment, true);
+        $isAgreement = is_array($commentData) && ($commentData['tj'] ?? null) === 'agree';
+
+        $notification = app(\App\Service\Notification\ProgramNotificationService::class);
+        $data = [
+            'application_id' => $application->id,
+            'program_id' => $program->id,
+            'program_title' => $program->program_title,
+            'business_name' => $application->startup_name,
+            'milestone_number' => $number,
+            'milestone_title' => $milestone->title,
+            'milestone_hash' => $milestoneHash,
+            'agreement_id' => $agreement->id,
+            'verification_type' => $agreement->verification_type,
+            'verification_label' => match ($agreement->verification_type) {
+                'mprv' => 'MPRV',
+                'mid_milestone' => 'mid-milestone review',
+                'final_approval' => 'final approval',
+                default => 'verification',
+            },
+        ];
+
+        if ($isApplicant && $isAgreement) {
+            $data['request_count'] = count($commentData['q'] ?? []);
+            try {
+                $notification->send('agreement.agreed', [$owner], $data);
+            } catch (\Throwable $e) {
+                ErrorLogService::report($e, ['notification_event' => 'agreement.agreed']);
+            }
+            return;
+        }
+
+        // Ordinary agreement messages are throttled per conversation and recipient.
+        $recipient = $isApplicant ? $owner : $applicant;
+        if (!$recipient || !Cache::add('agreement-message:' . $agreement->id . ':' . $recipient->id, true, now()->addMinutes(10))) {
+            return;
+        }
+        $data['actor_side'] = $isApplicant ? 'applicant' : 'owner';
+        $data['comment'] = is_array($commentData) && ($commentData['tj'] ?? null) === 'msg'
+            ? (string) ($commentData['m'] ?? '')
+            : $comment;
+        try {
+            $notification->send('agreement.message', [$recipient], $data);
+        } catch (\Throwable $e) {
+            ErrorLogService::report($e, ['notification_event' => 'agreement.message']);
         }
     }
 

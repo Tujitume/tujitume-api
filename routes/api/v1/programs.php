@@ -229,7 +229,7 @@ Route::prefix('/programs')->middleware(['program', 'program.response'])->group(f
         Route::post('/activate', [ProgramMilestoneController::class, 'activateTemplates']);
 
         Route::post('/request-changes', [ProgramMilestoneController::class, 'requestChanges']);
-        Route::post('/revision-feedback', [ProgramMilestoneController::class, 'getRevisionFeedback']);
+        Route::get('/revision-feedback', [ProgramMilestoneController::class, 'getRevisionFeedback']);
 
         // Applicant / PO submits plan for review (hybrid mode)
         Route::post('/submit-plan', [ProgramMilestoneController::class, 'submitPlan']);

@@ -24,6 +24,8 @@ class ProgramNotificationService
         'milestone.unlocked', 'milestone.funds_released', 'dealroom.document_uploaded',
         'disbursement.created', 'disbursement.completed', 'disbursement.reversed',
         'funding_plan.revision_requested',
+        'funding_plan.sent_to_applicant', 'funding_plan.changes_requested', 'funding_plan.activated',
+        'agreement.agreed', 'agreement.message', 'agreement.answered',
         'milestone_verification.approved', 'milestone_verification.rejected',
         'milestone_verification.modification_requested',
     ];
@@ -198,6 +200,12 @@ class ProgramNotificationService
             'milestones.created' => "{$v('milestone_count')} milestones were created for your funding plan in {$program}. Open your plan to review them.",
             'funding_plan.submitted' => "{$v('business_name')} submitted a funding plan for {$program}. Review the milestones and funding setup.",
             'funding_plan.revision_requested' => "{$actor} sent your funding plan for {$program} back for revision. Open your deal room to review the plan.",
+            'funding_plan.sent_to_applicant' => "{$actor} sent the funding plan for {$program}. Review it in your deal room.",
+            'funding_plan.changes_requested' => "{$actor} requested changes to your funding plan for {$program}: {$v('revision_notes')} ({$v('checklist_count')} checklist item(s)).",
+            'funding_plan.activated' => "Your funding plan for {$program} is active. You can start working on its milestones.",
+            'agreement.agreed' => "{$v('business_name')} agreed to {$v('verification_label')} for {$this->milestoneLabel($d)} with {$v('request_count')} request(s). Review the agreement.",
+            'agreement.message' => "{$actor} sent a message about {$v('verification_label')} for {$this->milestoneLabel($d)}.",
+            'agreement.answered' => "The program owner updated the {$v('verification_label')} instructions for {$this->milestoneLabel($d)}. Review the updated questions.",
             'milestone_verification.approved' => "{$actor} approved your {$v('verification_label')} for {$ms} in {$program}.",
             'milestone_verification.rejected' => "{$actor} rejected your {$v('verification_label')} for {$ms} in {$program}: {$v('decision_notes')}.",
             'milestone_verification.modification_requested' => "{$actor} requested changes to your {$v('verification_label')} for {$ms} in {$program}: {$v('decision_notes')}.",
@@ -605,6 +613,51 @@ class ProgramNotificationService
                 'email_subject' => 'Please Revise Your Funding Plan',
                 'email_view'    => $this->view_base . 'funding_plan_revision_requested',
                 'link'          => $this->applicantDealroomLink($data, 'plan'),
+            ],
+
+            'funding_plan.sent_to_applicant' => [
+                'title' => 'Funding Plan Sent for Your Review',
+                'message' => "The program owner sent the {$this->v($data, 'program_title')} funding plan for your review.",
+                'email_subject' => 'Funding Plan Ready for Your Review',
+                'email_view' => $this->view_base . 'funding_plan_sent_to_applicant',
+                'link' => $this->applicantDealroomLink($data, 'plan'),
+            ],
+            'funding_plan.changes_requested' => [
+                'title' => 'Changes Requested on Funding Plan',
+                'message' => "Changes were requested to your {$this->v($data, 'program_title')} funding plan.",
+                'email_subject' => 'Changes Requested on Your Funding Plan',
+                'email_view' => $this->view_base . 'funding_plan_changes_requested',
+                'link' => $this->applicantDealroomLink($data, 'plan'),
+            ],
+            'funding_plan.activated' => [
+                'title' => 'Funding Plan Activated',
+                'message' => "Your funding plan for {$this->v($data, 'program_title')} is active.",
+                'email_subject' => 'Your Funding Plan Is Active',
+                'email_view' => $this->view_base . 'funding_plan_activated',
+                'link' => $this->applicantDealroomLink($data, 'plan'),
+            ],
+            'agreement.agreed' => [
+                'title' => 'Applicant Agreed to Verification Requests',
+                'message' => "{$this->v($data, 'business_name')} agreed to {$this->v($data, 'verification_label')} with {$this->v($data, 'request_count')} request(s).",
+                'email_subject' => 'Applicant Agreed to Verification Requests',
+                'email_view' => $this->view_base . 'agreement_agreed',
+                'link' => $this->orgDealroomLink($data['application_id'] ?? '', 'funding-setup', $data['milestone_hash'] ?? ''),
+            ],
+            'agreement.message' => [
+                'title' => 'New Verification Agreement Message',
+                'message' => "{$this->v($data, 'actor_name')} sent a message about {$this->v($data, 'verification_label')}.",
+                'email_subject' => 'New Verification Agreement Message',
+                'email_view' => $this->view_base . 'agreement_message',
+                'link' => ($data['actor_side'] ?? '') === 'applicant'
+                    ? $this->orgDealroomLink($data['application_id'] ?? '', 'funding-setup', $data['milestone_hash'] ?? '')
+                    : $this->applicantDealroomLink($data, 'plan', true),
+            ],
+            'agreement.answered' => [
+                'title' => 'Verification Questions Updated',
+                'message' => "The program owner updated {$this->v($data, 'verification_label')} for Milestone {$this->v($data, 'milestone_number')}.",
+                'email_subject' => 'Updated Verification Questions',
+                'email_view' => $this->view_base . 'agreement_answered',
+                'link' => $this->applicantDealroomLink($data, 'plan', true),
             ],
 
             'milestone_verification.approved' => [

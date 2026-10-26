@@ -214,25 +214,35 @@ class ProgramSupplierController extends Controller
 
     public function budget_item_store(Request $request, ProgramMilestone $milestone)
     {
+        $application = $milestone->application;
+        if (!$application) {
+            return response()->json(['error' => 'Application not found for milestone.'], 404);
+        }
         if ($milestone->application->funding_setup_status === 'completed') {
             return response()->json([
                 'error' => 'Funding setup is completed. Budget items cannot be added.',
             ], 403);
         }
 
-        $applicantId = $milestone->application->user_id;
+        $applicantId = $application->user_id;
+        $isOwner = \App\Service\Program\ProgramAccess::owns($application->program);
+        $isApplicant = (int) $applicantId === (int) auth()->id();
+        if (!$isOwner && !$isApplicant) {
+            return response()->json(['message' => 'Unauthorized'], 403);
+        }
+        if ($isApplicant && $application->funding_setup_status !== 'awaiting_applicant_revision') {
+            return response()->json(['message' => 'Budget items can only be added while the plan is being prepared or revised.'], 403);
+        }
 
         $addedBy = 'program_owner';
         // 🔐 Authorization - only program owner or applicant can assign suppliers to a milestone
-        if ($applicantId == auth()->id()) {
-
-            $allowedEdits = $milestone->allowed_edits ?? [];
+        if ($isApplicant) {
 
             $addedBy = 'applicant';
 
-            if (!in_array('can_add_budget_items', $allowedEdits)) {
+            if (!$milestone->canApplicantEdit('can_add_budget_items')) {
                 return response()->json([
-                    'message' => 'You are not permitted to add suppliers to this milestone'
+                    'message' => 'You are not permitted to add budget items to this milestone'
                 ], 403);
             }
         }
@@ -285,6 +295,7 @@ class ProgramSupplierController extends Controller
             ], 201);
 
         } catch (ValidationException $e) {
+            DB::rollBack();
             return response()->json(['message' => 'Validation failed.', 'errors' => $e->errors()], 422);
         } catch (\Exception $e) {
             DB::rollBack();

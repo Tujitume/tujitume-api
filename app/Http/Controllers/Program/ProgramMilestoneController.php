@@ -10,6 +10,7 @@ use App\Models\Programs\MilestoneSupplier;
 use App\Models\Programs\MilestoneVerification;
 use App\Models\Programs\SupplierDirectory;
 use App\Service\Misc\ErrorLogService;
+use App\Service\Notification\ProgramNotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -17,6 +18,22 @@ use Illuminate\Validation\ValidationException;
 
 class ProgramMilestoneController extends Controller
 {
+    protected ProgramNotificationService $programNotification;
+
+    public function __construct(ProgramNotificationService $programNotification)
+    {
+        $this->programNotification = $programNotification;
+    }
+
+    private function sendProgramNotification(string $event, array $recipients, array $data): void
+    {
+        try {
+            $this->programNotification->send($event, $recipients, $data);
+        } catch (\Throwable $e) {
+            ErrorLogService::report($e, ['notification_event' => $event]);
+        }
+    }
+
     /**
      * Display a listing of the resource.
      */
@@ -562,40 +579,44 @@ class ProgramMilestoneController extends Controller
             unset($validated['can_add_budget_items']);
 
 
+            $verificationReviewsChanged = false;
+            if ($isProgramOwner) {
+                foreach (['mprv_notes', 'mid_milestone_notes', 'final_approval_notes'] as $field) {
+                    if (!array_key_exists($field, $validated)) continue;
+                    $oldNotes = is_array($milestone->{$field}) ? $milestone->{$field} : json_decode((string) $milestone->{$field}, true);
+                    $newNotes = is_array($validated[$field]) ? $validated[$field] : json_decode((string) $validated[$field], true);
+                    if (data_get($oldNotes, 'reviews', []) != data_get($newNotes, 'reviews', [])) {
+                        $verificationReviewsChanged = true;
+                        break;
+                    }
+                }
+            }
+
             $milestone->update($validated);
+
+            if ($verificationReviewsChanged) {
+                $program = $application->program;
+                $this->sendProgramNotification('agreement.answered', [$application->user], [
+                    'application_id' => $application->id,
+                    'program_id' => $program->id,
+                    'program_title' => $program->program_title,
+                    'business_name' => $application->startup_name,
+                    'milestone_number' => $milestone->sequence_order ?? $milestone->id,
+                    'milestone_title' => $milestone->title,
+                    'milestone_hash' => 'milestone-' . ($milestone->sequence_order ?? $milestone->id),
+                    'verification_type' => 'verification',
+                    'verification_label' => 'verification instructions',
+                ]);
+            }
 
             return response()->json([
                 'message' => 'Milestone updated successfully',
                 'data' => $milestone->fresh()
             ], 200);
         } catch (ValidationException $e) {
-            $documentFile = $request->file('document')
-                ?? $request->attributes->get('parsed_multipart_files', [])['document']
-                ?? null;
-            $documentInput = $request->input('document');
-
             return response()->json([
                 'message' => 'Validation failed.',
                 'errors' => $e->errors(),
-                'request_debug' => [
-                    'method' => $request->method(),
-                    'content_type' => $request->header('Content-Type'),
-                    'document' => [
-                        'present_in_input' => $request->exists('document'),
-                        'input_type' => get_debug_type($documentInput),
-                        'input_value' => is_scalar($documentInput) ? $documentInput : null,
-                        'uploaded_file_received' => $documentFile !== null,
-                        'file' => $documentFile ? [
-                            'client_name' => $documentFile->getClientOriginalName(),
-                            'client_mime_type' => $documentFile->getClientMimeType(),
-                            'detected_mime_type' => $documentFile->getMimeType(),
-                            'extension' => $documentFile->getClientOriginalExtension(),
-                            'size_bytes' => $documentFile->getSize(),
-                            'is_valid' => $documentFile->isValid(),
-                            'upload_error' => $documentFile->getErrorMessage(),
-                        ] : null,
-                    ],
-                ],
             ], 422, [], JSON_INVALID_UTF8_SUBSTITUTE);
         } catch (\Exception $e) {
             ErrorLogService::report($e);
@@ -609,23 +630,26 @@ class ProgramMilestoneController extends Controller
      */
     public function activateTemplates($applicationId)
     {
-        $userId = auth()->id();
-
-        DB::beginTransaction();
         try {
             $application = ProgramApplication::findOrFail($applicationId);
 
-            // Authorization: Only program owner can activate locked mode
-            if ( $application->planning_mode == 'locked' && !\App\Service\Program\ProgramAccess::owns($application->program)) {
+            // Activation changes the funded plan and is always restricted to the program owner.
+            if (!\App\Service\Program\ProgramAccess::owns($application->program)) {
                 return response()->json(['error' => 'Unauthorized'], 403);
             }
+            if ($application->funding_setup_status === 'completed') {
+                return response()->json(['error' => 'Funding setup is already completed.'], 409);
+            }
+
+            DB::beginTransaction();
 
             // Get all template milestones
             $templates = ProgramMilestone::where('app_id', $applicationId)
-                //->where('is_template', true)
+                ->where('is_template', true)
                 ->get();
 
             if ($templates->isEmpty()) {
+                DB::rollBack();
                 return response()->json(['error' => 'No template milestones found'], 400);
             }
 
@@ -649,7 +673,7 @@ class ProgramMilestoneController extends Controller
                     $required = array_filter([
                         $template->mprv_required         ? 'mprv'           : null,
                         $template->mid_milestone_required ? 'mid_milestone'  : null,
-                        //$template->final_approval_required? 'final_approval' : null,
+                        $template->final_approval_required ? 'final_approval' : null,
                     ]);
 
                     if (!empty($required)) {
@@ -658,6 +682,7 @@ class ProgramMilestoneController extends Controller
                             ->where('status', 'agreed')->count();
 
                         if ($agreedCount !== count($required)) {
+                            DB::rollBack();
                             return response()->json([
                                 'message' => "Milestone '{$template->title}' has pending pre-agreements.",
                             ], 422);
@@ -674,6 +699,14 @@ class ProgramMilestoneController extends Controller
             ]);
 
             DB::commit();
+
+            $this->sendProgramNotification('funding_plan.activated', [$application->user], [
+                'application_id' => $application->id,
+                'program_id' => $application->program->id,
+                'program_title' => $application->program->program_title,
+                'business_name' => $application->startup_name,
+                'milestone_count' => $templates->count(),
+            ]);
 
             return response()->json([
                 'message' => 'Funding setup completed successfully. Milestones activated.',
@@ -756,23 +789,26 @@ class ProgramMilestoneController extends Controller
     public function submitPlan($applicationId)
     {
         $userId = auth()->id();
-
-
-        $application = ProgramApplication::find($applicationId);
-        $isProgramOwner = $application->program->user_id === $userId;
-        $isApplicant = $application->user_id === $userId;
-
-        DB::beginTransaction();
         try {
             $application = ProgramApplication::with([
                 'program','program_milestones.suppliers','program_milestones.budgetItems',
             ])->findOrFail($applicationId);
+            $isProgramOwner = \App\Service\Program\ProgramAccess::owns($application->program);
+            $isApplicant = (int) $application->user_id === (int) $userId;
+
+            if ($application->funding_setup_status === 'completed') {
+                return response()->json(['error' => 'Funding setup is already completed.'], 409);
+            }
 
             // Authorization:
             if($isProgramOwner) {
                 $status = 'awaiting_applicant_revision';
             }
             elseif ($isApplicant && $application->planning_mode === 'hybrid') {
+
+                if ($application->funding_setup_status !== 'awaiting_applicant_revision') {
+                    return response()->json(['error' => 'The funding plan is not awaiting applicant submission.'], 400);
+                }
 
                 if ($application->program_milestones->isEmpty()) {
                     return response()->json(['message' => 'No milestones found.'], 422);
@@ -803,7 +839,7 @@ class ProgramMilestoneController extends Controller
                     if (!empty($required)) {
                         $submittedCount = MilestonePreAgreement::where('milestone_id', $template->id)
                             ->whereIn('verification_type', $required)
-                            ->where('status', 'submitted')->count();
+                            ->whereIn('status', ['submitted', 'agreed'])->count();
 
                         if ($submittedCount !== count($required)) {
                             return response()->json([
@@ -826,6 +862,7 @@ class ProgramMilestoneController extends Controller
                 return response()->json(['error' => 'Funding setup has not started.'], 400);
             }
 
+            DB::beginTransaction();
             // Update status to awaiting review
             $application->update([
                 'funding_setup_status' => $status
@@ -841,14 +878,14 @@ class ProgramMilestoneController extends Controller
             ];
 
             if ($status === 'awaiting_owner_review') {
-                $this->programNotification->send(
+                $this->sendProgramNotification(
                     'funding_plan.submitted',
                     [$application->program->owner],
                     $notificationData
                 );
             } else {
-                $this->programNotification->send(
-                    'funding_plan.revision_requested',
+                $this->sendProgramNotification(
+                    'funding_plan.sent_to_applicant',
                     [$application->user],
                     $notificationData
                 );
@@ -859,29 +896,23 @@ class ProgramMilestoneController extends Controller
             ], 200);
 
         } catch (\Exception $e) {
-            DB::rollBack();
+            if (DB::transactionLevel() > 0) DB::rollBack();
             ErrorLogService::report($e);
             return response()->json(['message' => 'Something went wrong'], 500);
         }
     }
 
 
-    /* Used by Program Owner to reject applicant's submitted plan and request revisions
-     * OR by Applicant to request changes from Program Owner's locked plan
-    */
+    /* Used by the program owner to request revisions to an applicant-submitted plan. */
     public function requestChanges(Request $request, $applicationId)
     {
-        $userId = auth()->id();
-
-        DB::beginTransaction();
         try {
             $application = ProgramApplication::findOrFail($applicationId);
 
-            // Authorization: Program owner OR applicant
-            $isProgramOwner = $application->program->user_id === $userId;
-            $isApplicant = $application->user_id === $userId;
+            // Only the program owner can return a submitted plan for revision.
+            $isProgramOwner = \App\Service\Program\ProgramAccess::owns($application->program);
 
-            if (!$isProgramOwner && !$isApplicant) {
+            if (!$isProgramOwner) {
                 return response()->json(['error' => 'Unauthorized'], 403);
             }
 
@@ -892,6 +923,7 @@ class ProgramMilestoneController extends Controller
                 ], 400);
             }
 
+            DB::beginTransaction();
             $validated = $request->validate([
                 'revision_notes' => 'required|string|max:2000',
                 'checklist' => 'nullable|array',
@@ -903,13 +935,22 @@ class ProgramMilestoneController extends Controller
             // Update application status back to in_progress
             $application->update([
                 'funding_setup_status' => 'awaiting_applicant_revision',
-                'revision_requested_by' => $isProgramOwner ? 'program_owner' : 'applicant',
+                'revision_requested_by' => 'program_owner',
                 'revision_notes' => $validated['revision_notes'],
                 'revision_checklist' => $validated['checklist'] ?? null,
                 'revision_requested_at' => now(),
             ]);
 
             DB::commit();
+
+            $this->sendProgramNotification('funding_plan.changes_requested', [$application->user], [
+                'application_id' => $application->id,
+                'program_id' => $application->program->id,
+                'program_title' => $application->program->program_title,
+                'business_name' => $application->startup_name,
+                'revision_notes' => $validated['revision_notes'],
+                'checklist_count' => count($validated['checklist'] ?? []),
+            ]);
 
             return response()->json([
                 'message' => 'Changes requested successfully. Plan sent back for revision.',
@@ -922,13 +963,14 @@ class ProgramMilestoneController extends Controller
             ], 200);
 
         } catch (ValidationException $e) {
+            if (DB::transactionLevel() > 0) DB::rollBack();
             return response()->json([
                 'message' => 'Validation failed.',
                 'errors' => $e->errors()
             ], 422);
 
         } catch (\Exception $e) {
-            DB::rollBack();
+            if (DB::transactionLevel() > 0) DB::rollBack();
             ErrorLogService::report($e);
             return response()->json(['message' => 'Something went wrong'], 500);
         }
@@ -946,8 +988,8 @@ class ProgramMilestoneController extends Controller
             $application = ProgramApplication::findOrFail($applicationId);
 
             // Authorization: Program owner OR applicant
-            $isProgramOwner = $application->program->user_id === $userId;
-            $isApplicant = $application->user_id === $userId;
+            $isProgramOwner = \App\Service\Program\ProgramAccess::owns($application->program);
+            $isApplicant = (int) $application->user_id === (int) $userId;
 
             if (!$isProgramOwner && !$isApplicant) {
                 return response()->json(['error' => 'Unauthorized'], 403);

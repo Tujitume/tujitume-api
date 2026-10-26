@@ -736,22 +736,35 @@ class SupplierDirectoryController extends Controller
 
         try {
             if(!$milestone->application){
+                DB::rollBack();
                 return response()->json([
                     'message' => 'No application found for this milestone.'
                 ], 404);
             }
             $applicantId = $milestone->application->user_id;
 
-            $addedBy = 'program_owner';
+            $application = $milestone->application;
+            $isOwner = \App\Service\Program\ProgramAccess::owns($application->program);
+            $isApplicant = (int) $applicantId === (int) auth()->id();
+            if (!$isOwner && !$isApplicant) {
+                DB::rollBack();
+                return response()->json(['message' => 'Unauthorized'], 403);
+            }
+            if ($application->funding_setup_status === 'completed') {
+                DB::rollBack();
+                return response()->json(['message' => 'Funding setup is completed. Suppliers cannot be added.'], 403);
+            }
+            if ($isApplicant && $application->funding_setup_status !== 'awaiting_applicant_revision') {
+                DB::rollBack();
+                return response()->json(['message' => 'Suppliers can only be added while the plan is being prepared or revised.'], 403);
+            }
+            $addedBy = $isOwner ? 'program_owner' : 'applicant';
 
             // 🔐 Authorization - only program owner or applicant can assign suppliers to a milestone
-            if ($applicantId === auth()->id()) {
+            if ($isApplicant) {
 
-                $allowedEdits = $milestone->allowed_edits ?? [];
-
-                $addedBy = 'applicant';
-
-                if (!in_array('can_add_suppliers', $allowedEdits)) {
+                if (!$milestone->canApplicantEdit('can_add_suppliers')) {
+                    DB::rollBack();
                     return response()->json([
                         'message' => 'You are not permitted to add suppliers to this milestone'
                     ], 403);
@@ -780,6 +793,7 @@ class SupplierDirectoryController extends Controller
             // A deactivated supplier is hidden from the deal room; their account is untouched
             $directoryEntry = SupplierDirectory::find($validated['supplier_id']);
             if ($directoryEntry && ! (bool) ($directoryEntry->is_active ?? true)) {
+                DB::rollBack();
                 return response()->json([
                     'success' => false,
                     'message' => 'This supplier is deactivated. Activate them in the supplier directory before assigning them to a milestone.'
@@ -790,6 +804,7 @@ class SupplierDirectoryController extends Controller
                 ->where('supplier_id', $validated['supplier_id'])->exists();
 
             if ($exists) {
+                DB::rollBack();
                 return response()->json([
                     'success' => false,
                     'message' => 'Supplier already assigned to this milestone'

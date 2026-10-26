@@ -710,7 +710,7 @@ class ProgramApplicationController extends Controller
         }
 
         $pitches = $user->myApplications()
-            ->with(['program:program_title'])
+            ->with(['program:id,program_title,currency,program_type'])
             ->where('status', 'awarded')
             ->paginate(20);
 
