@@ -70,7 +70,7 @@ class MilestoneVerificationController extends Controller
                 // Optional
                 'additional_declarations' => 'nullable|string',
                 'verification_type' => 'required|string|in:mprv,mid_milestone,final_approval',
-                'document' => 'nullable|file|mimes:pdf,doc,docx|max:5120',  // 5MB
+                'document' => 'nullable|file|mimes:pdf,doc,docx,jpg,png,gif,jpeg|max:5120',  // 5MB
                 'answers' => 'nullable|array',
             ]);
 
