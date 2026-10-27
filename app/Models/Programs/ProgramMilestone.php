@@ -64,8 +64,7 @@ class ProgramMilestone extends Model
             ->where('is_template', false)
             ->where('sequence_order', '<', $this->sequence_order)
             ->where(function ($query) {
-                $query->where('status', '!=', 'completion_approved')
-                    ->orWhere('fund_release_status', '!=', 'released');
+                $query->Where('fund_release_status', '!=', 'released');
             })
             ->exists();
     }
