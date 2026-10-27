@@ -95,7 +95,7 @@ class ServiceController extends Controller
             ]);
 
             // Spam checks
-            if (!$spam->check($validated['title'], $validated['details'])) {
+            if (!$spam->check($validated['name'], $validated['details'])) {
                 return response()->json(['message' => 'Inappropriate language detected.'], 422);
             }
 
@@ -115,7 +115,7 @@ class ServiceController extends Controller
 
             $listing = Services::create([
                 ...$validated,
-                'name'    => $validated['title'],
+                'name'    => $validated['name'],
                 'user_id' => Auth::id(),
             ]);
 
