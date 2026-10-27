@@ -1020,25 +1020,23 @@ class ProgramMilestoneController extends Controller
                 ->all();
             $pendingAgreements = array_values(array_diff($requiredTypes, $submittedAgreements));
 
-            $unsubmittedVerifications = [];
+            /* $unsubmittedVerifications = [];
             foreach ($requiredTypes as $type) {
                 $hasSubmission = MilestoneVerification::where('milestone_id', $milestone->id)
                     ->where('verification_type', $type)
                     ->exists();
 
-                // Verification rows are created on applicant submission; decision
-                // tracks the PO's review and does not determine whether it was submitted.
+                // Verification rows are created on applicant submission; decision // tracks the PO's review and does not determine whether it was submitted.
                 if (!$hasSubmission) {
                     $unsubmittedVerifications[] = $type;
                 }
-            }
+            } */
 
-            if (!empty($pendingAgreements) || !empty($unsubmittedVerifications)) {
+            if (!empty($pendingAgreements)) {
                 $issues[] = [
                     'milestone_id' => $milestone->id,
                     'milestone_title' => $milestone->title,
                     'pending_pre_agreements' => array_values(array_unique($pendingAgreements)),
-                    'verifications_requiring_submission' => $unsubmittedVerifications,
                 ];
             }
         }
