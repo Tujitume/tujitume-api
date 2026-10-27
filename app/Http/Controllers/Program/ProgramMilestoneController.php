@@ -436,7 +436,10 @@ class ProgramMilestoneController extends Controller
             $isProgramOwner = $application->program->user_id === $userId;
             $isApplicant = $application->user_id === $userId;
 
-            $requestData = $request->all();
+            // Laravel keeps the HTTP method override in the input payload for
+            // multipart PATCH requests. It is transport metadata, not a field
+            // the applicant is attempting to edit.
+            $requestData = $request->except('_method');
             $documentUpload = $request->file('document')
                 ?? $request->attributes->get('parsed_multipart_files', [])['document']
                 ?? null;
@@ -492,7 +495,7 @@ class ProgramMilestoneController extends Controller
                 $rules = array_intersect_key($baseRules, array_flip($allowedEdits));
 
                 // Check if request contains forbidden fields
-                $unauthorizedFields = array_diff(array_keys($request->all()), array_keys($rules));
+                $unauthorizedFields = array_diff(array_keys($requestData), array_keys($rules));
 
                 if (!empty($unauthorizedFields)) {
                     return response()->json([
