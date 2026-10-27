@@ -287,28 +287,45 @@ class MilestoneVerificationController extends Controller
             $verification->decision_notes = $validated['decision_notes'] ?? null;
             $verification->save();
 
-            // Keep the program milestone's lifecycle tied to MPRV. Later checks
-            // only update their own ready flag so they cannot reset fund release state.
+            // Mark this verification type ready, but only make the milestone
+            // release-ready after every verification required on it is approved.
             $readyField = $this->readyFieldFor($verification->verification_type);
             if ($readyField) {
                 $milestone->{$readyField} = true;
             }
-            if ($verification->verification_type === 'mprv') {
-                $milestone->status = 'approved';
-                $milestone->fund_release_status = 'approved';
-                $milestone->approved_by = $owner_id;
-                $milestone->approved_at = now();
+
+            $allRequiredApproved = $this->allRequiredVerificationsApproved($milestone);
+            if ($allRequiredApproved) {
+                if ($milestone->fund_release_status === 'locked') {
+                    $milestone->fund_release_status = 'approved';
+                }
+
+                // Do not move milestones backwards after disbursement/completion.
+                if (!in_array($milestone->status, [
+                    'disbursing', 'completed', 'completion_approved', 'completion_rejected',
+                ], true)) {
+                    $milestone->status = 'approved';
+                    $milestone->approved_by = $owner_id;
+                    $milestone->approved_at = now();
+                }
             }
+
             $milestone->save();
 
             DB::commit();
 
             $this->sendVerificationNotification($verification, 'milestone_verification.approved');
 
+            $verificationLabel = match ($verification->verification_type) {
+                'mprv' => 'MPRV',
+                'mid_milestone' => 'Mid-milestone verification',
+                'final_approval' => 'Final approval',
+                default => ucfirst(str_replace('_', ' ', $verification->verification_type)),
+            };
+
             return response()->json([
-                'message' => $verification->verification_type === 'mprv'
-                    ? 'MPRV approved. Milestone ready for disbursement.'
-                    : ucfirst(str_replace('_', ' ', $verification->verification_type)) . ' approved.',
+                'message' => $verificationLabel . ' approved.'
+                    . ($allRequiredApproved ? ' All required verifications are approved; milestone ready for disbursement.' : ''),
                 'data' => $verification,
             ]);
 
@@ -450,6 +467,33 @@ class MilestoneVerificationController extends Controller
             'final_approval' => 'final_approval_ready',
             default => null,
         };
+    }
+
+    private function allRequiredVerificationsApproved(ProgramMilestone $milestone): bool
+    {
+        $requiredTypes = array_filter([
+            $milestone->mprv_required ? 'mprv' : null,
+            $milestone->mid_milestone_required ? 'mid_milestone' : null,
+            $milestone->final_approval_required ? 'final_approval' : null,
+        ]);
+
+        if (empty($requiredTypes)) {
+            return false;
+        }
+
+        foreach ($requiredTypes as $type) {
+            $latestVerification = $milestone->verifications()
+                ->where('verification_type', $type)
+                ->orderByDesc('attempt_number')
+                ->orderByDesc('id')
+                ->first();
+
+            if (!$latestVerification || $latestVerification->decision !== 'approved') {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private function sendVerificationNotification(
