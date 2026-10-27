@@ -7,6 +7,7 @@ use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\Business\AssetBidsController;
 use App\Http\Controllers\Business\BidsController;
 use App\Http\Controllers\Business\BusinessController;
+use App\Http\Controllers\Service\ServiceController;
 use App\Http\Controllers\Business\MilestoneController;
 use App\Http\Controllers\Business\SubscriptionController;
 use App\Http\Controllers\DashboardController;
@@ -62,6 +63,8 @@ Route::prefix('/business')->middleware(['business'])->group(function () {
 
     Route::get('/notifications', [DashboardController::class, 'notifications']); //->middleware('throttle:120,1');
     Route::get('/notifSetRead', [DashboardController::class, 'notificationSetRead']);
+
+    Route::post('create-service', [ServiceController::class, 'storeService']); // remove
 });
 
 // Review & Rating
