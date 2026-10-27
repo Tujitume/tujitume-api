@@ -24,15 +24,6 @@ class ProgramMilestoneController extends Controller
         $this->programNotification = $programNotification;
     }
 
-    private function sendProgramNotification(string $event, array $recipients, array $data): void
-    {
-        try {
-            $this->programNotification->send($event, $recipients, $data);
-        } catch (\Throwable $e) {
-            ErrorLogService::report($e, ['notification_event' => $event]);
-        }
-    }
-
     /**
      * Display a listing of the resource.
      */
@@ -828,28 +819,12 @@ class ProgramMilestoneController extends Controller
                     }
                 }
 
-                $templates = ProgramMilestone::where('app_id', $applicationId)->get();
-
-                foreach ($templates as $template) {
-                    // pre-agreements check
-                    $required = array_filter([
-                        $template->mprv_required         ? 'mprv'           : null,
-                        $template->mid_milestone_required ? 'mid_milestone'  : null,
-                        $template->final_approval_required ? 'final_approval' : null,
-                    ]);
-
-                    if (!empty($required)) {
-                        $submittedCount = MilestonePreAgreement::where('milestone_id', $template->id)
-                            ->whereIn('verification_type', $required)
-                            ->whereIn('status', ['submitted', 'agreed'])->count();
-
-                        if ($submittedCount !== count($required)) {
-                            return response()->json([
-                                'message' => "Milestone '{$template->title}' has pending pre-agreements.(" .implode(',', $required). ")",
-                            ], 422);
-                        }
-                    }
-
+                $submissionIssues = $this->getMilestonePlanSubmissionIssues($application->program_milestones);
+                if (!empty($submissionIssues)) {
+                    return response()->json([
+                        'message' => 'Submit the outstanding required milestone verifications and pre-agreements before returning the plan.',
+                        'errors' => $submissionIssues,
+                    ], 422);
                 }
 
 
@@ -1017,6 +992,75 @@ class ProgramMilestoneController extends Controller
         } catch (\Exception $e) {
             ErrorLogService::report($e);
             return response()->json(['message' => 'Something went wrong'], 500);
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Private helpers only below this line.
+    // -------------------------------------------------------------------------
+
+    /**
+     * Collect required pre-agreements and verification submissions that block
+     * an applicant from returning a revised funding plan to the program owner.
+     */
+    private function getMilestonePlanSubmissionIssues($milestones): array
+    {
+        $issues = [];
+
+        foreach ($milestones as $milestone) {
+            $requiredTypes = $this->requiredVerificationTypes($milestone);
+            if (empty($requiredTypes)) {
+                continue;
+            }
+
+            $submittedAgreements = MilestonePreAgreement::where('milestone_id', $milestone->id)
+                ->whereIn('verification_type', $requiredTypes)
+                ->whereIn('status', ['submitted', 'agreed'])
+                ->pluck('verification_type')
+                ->all();
+            $pendingAgreements = array_values(array_diff($requiredTypes, $submittedAgreements));
+
+            $unsubmittedVerifications = [];
+            foreach ($requiredTypes as $type) {
+                $hasSubmission = MilestoneVerification::where('milestone_id', $milestone->id)
+                    ->where('verification_type', $type)
+                    ->exists();
+
+                // Verification rows are created on applicant submission; decision
+                // tracks the PO's review and does not determine whether it was submitted.
+                if (!$hasSubmission) {
+                    $unsubmittedVerifications[] = $type;
+                }
+            }
+
+            if (!empty($pendingAgreements) || !empty($unsubmittedVerifications)) {
+                $issues[] = [
+                    'milestone_id' => $milestone->id,
+                    'milestone_title' => $milestone->title,
+                    'pending_pre_agreements' => array_values(array_unique($pendingAgreements)),
+                    'verifications_requiring_submission' => $unsubmittedVerifications,
+                ];
+            }
+        }
+
+        return $issues;
+    }
+
+    private function requiredVerificationTypes(ProgramMilestone $milestone): array
+    {
+        return array_values(array_filter([
+            $milestone->mprv_required ? 'mprv' : null,
+            $milestone->mid_milestone_required ? 'mid_milestone' : null,
+            $milestone->final_approval_required ? 'final_approval' : null,
+        ]));
+    }
+
+    private function sendProgramNotification(string $event, array $recipients, array $data): void
+    {
+        try {
+            $this->programNotification->send($event, $recipients, $data);
+        } catch (\Throwable $e) {
+            ErrorLogService::report($e, ['notification_event' => $event]);
         }
     }
 
