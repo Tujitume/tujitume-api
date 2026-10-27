@@ -182,7 +182,10 @@ class MpesaCallbackController extends Controller
                 $this->transaction->create($pitch->user_id, 'program_milestone', 'lipr', $payment->amount, $referenceId, $pitch->user_id);
 
                 // Balance update for direct_to_applicant
-                if ($supplier->payment_route == 'direct_to_applicant') {
+                if($supplier->payment_route == 'direct_to_supplier' && $supplier->supplierDirectory->user_id) {
+                    $this->balance->updateBalance($supplier->supplierDirectory->user, $milestone->amount, 'lipr');
+                }
+                else if($supplier->payment_route == 'direct_to_applicant') {
                     $this->balance->updateBalance($pitch->user_id, $milestone->amount, 'lipr');
                 }
             });

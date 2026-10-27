@@ -102,7 +102,8 @@ class ProgramDisbursementService
             'mpesa_lipr' => $this->lipr->toLiprWallet(
                 $walletAccount,
                 $supplier->lipr_wallet,
-                $amountKes
+                $amountKes,
+                $milestoneId
             ),
 
             default => throw new \Exception("Unsupported payment method: {$supplier->payment_method}"),

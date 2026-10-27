@@ -126,14 +126,25 @@ class LiprPaymentService
         return $this->disburse('to_till',$fields);
     }
 
-    public function toLiprWallet(string $walletAccount, string $recipientWallet, float $amountKes): array
+    public function toLiprWallet(string $walletAccount, string $recipientWallet, float $amountKes, int $milestoneId): array
     {
-        return $this->disburse('to_wallet',$walletAccount, [
-            'amount'            => $amountKes,
-            'narration'         => 'Wallet Transfer',
-            'payment_type'      => 'M2M_LIPR',
-            'recipient_wallet'  => $recipientWallet,
-        ]);
+        $fields = [
+            "requestId" => 'stk-' . now()->format('YmdHis') . '-' . uniqid(),
+            "resultUrl" => rtrim(config('app.api_url'), '/') . '/lipr-callback/transfer-to-supplier', //leg 2 callback for direct disburse
+            "timeoutUrl" => rtrim(config('app.api_url'), '/') . '/lipr-callback/timeout',
+            "metadata" => ["listingId" => $milestoneId],
+
+            "recipients" => [
+                [
+                    "amount" => $amountKes,
+                    "account" => $recipientWallet // can be multiple with [],[]
+                ]
+            ],
+            "narration" => 'Disbursement wallet transfer',
+            "wallet" => $walletAccount, // source wallet (tujitume wallet)        
+        ];
+
+        return $this->disburse('to_wallet', $fields);
     }
 
     // ─── Core Disburse ──────────────────────────────────────────────────
@@ -145,16 +156,23 @@ class LiprPaymentService
         if($payment_type === 'to_mobile') {
             $url   = $this->basePath . '/partners/v1/payments/mobile-money/send';
         }
+
         elseif($payment_type === 'to_paybill') {
             $url   = $this->basePath . '/partners/v1/payments/mobile-money/paybill';
         }
+
         elseif($payment_type === 'to_till') {
             $url   = $this->basePath . '/partners/v1/payments/mobile-money/till';
+        }
+        
+        elseif ($payment_type === 'to_wallet') {
+            $url   = $this->basePath . '/partners/v1/payments/lipr';
         }
 
         elseif($payment_type === 'to_bank') {
             $url   = $this->basePath . '/partners/v1/payments/bank-transfer/send';
         }
+
         else {
             throw new \Exception('Invalid payment type specified');
         }

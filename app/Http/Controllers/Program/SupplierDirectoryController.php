@@ -135,6 +135,7 @@ class SupplierDirectoryController extends Controller
                 'phone' => 'required|string|max:30',
                 'email' => 'required|email|max:191',
                 'supplier_type' => 'nullable|string|max:100',
+                'user_id' => 'nullable|integer|exists:users,id',
                 // Payment Method
                 'payment_method' => 'required|in:mpesa_mobile,mpesa_lipr,mpesa_paybill,mpesa_till,bank_transfer,other',
 
