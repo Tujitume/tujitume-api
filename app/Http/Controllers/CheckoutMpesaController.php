@@ -246,6 +246,14 @@ class CheckoutMpesaController extends Controller
             if ($milestone->application->program_owner_id !== auth()->id()) {
                 throw new \Exception('Unauthorized', 403);
             }
+
+            if ($milestone->fund_release_status !== 'approved') {
+                throw new \Exception('Milestone is not ready for fund release.', 422);
+            }
+
+            if (!$milestone->canReleaseInSequence()) {
+                throw new \Exception('Earlier milestones must be completed and approved before paying this milestone.', 422);
+            }
         } elseif ($request->purpose === 'program_disbursement_escrow') {
             $milestone = ProgramMilestone::where('id', $request->listing_id)
                 ->with('application')

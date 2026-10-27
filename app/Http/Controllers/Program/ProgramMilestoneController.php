@@ -639,6 +639,7 @@ class ProgramMilestoneController extends Controller
             // Get all template milestones
             $templates = ProgramMilestone::where('app_id', $applicationId)
                 ->where('is_template', true)
+                ->orderBy('sequence_order')
                 ->get();
 
             if ($templates->isEmpty()) {
@@ -649,6 +650,8 @@ class ProgramMilestoneController extends Controller
             // Validate total allocation equals approved amount
             $totalAmount = $templates->sum('amount');
             $approvedAmount = $application->total_amount_requested;
+            $firstSequenceOrder = ProgramMilestone::where('app_id', $applicationId)
+                ->min('sequence_order');
 
             if ( abs($totalAmount) > abs($approvedAmount) ) {
                 throw ValidationException::withMessages([
@@ -683,7 +686,18 @@ class ProgramMilestoneController extends Controller
                     }
                 }
 
-                $template->update(['is_template' => false]);
+                // Only the first milestone can be released initially. Later
+                // milestones wait for the previous milestone's completion.
+                $isFirstMilestone = (int) $template->sequence_order === (int) $firstSequenceOrder;
+                $releaseStatus = $isFirstMilestone
+                    && (!$template->mprv_required || $template->mprv_ready)
+                        ? 'approved'
+                        : 'locked';
+
+                $template->update([
+                    'is_template' => false,
+                    'fund_release_status' => $releaseStatus,
+                ]);
             }
 
             // Update application status

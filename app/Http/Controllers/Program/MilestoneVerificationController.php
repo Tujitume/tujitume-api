@@ -287,45 +287,31 @@ class MilestoneVerificationController extends Controller
             $verification->decision_notes = $validated['decision_notes'] ?? null;
             $verification->save();
 
-            // Mark this verification type ready, but only make the milestone
-            // release-ready after every verification required on it is approved.
+            // Keep the program milestone's lifecycle tied to MPRV. Later checks
+            // only update their own ready flag so they cannot reset fund release state.
             $readyField = $this->readyFieldFor($verification->verification_type);
             if ($readyField) {
                 $milestone->{$readyField} = true;
             }
-
-            $allRequiredApproved = $this->allRequiredVerificationsApproved($milestone);
-            if ($allRequiredApproved) {
-                if ($milestone->fund_release_status === 'locked') {
-                    $milestone->fund_release_status = 'approved';
-                }
-
-                // Do not move milestones backwards after disbursement/completion.
-                if (!in_array($milestone->status, [
-                    'disbursing', 'completed', 'completion_approved', 'completion_rejected',
-                ], true)) {
-                    $milestone->status = 'approved';
-                    $milestone->approved_by = $owner_id;
-                    $milestone->approved_at = now();
-                }
+            $canReleaseInSequence = $milestone->canReleaseInSequence();
+            if ($verification->verification_type === 'mprv' && $canReleaseInSequence) {
+                $milestone->status = 'approved';
+                $milestone->fund_release_status = 'approved';
+                $milestone->approved_by = $owner_id;
+                $milestone->approved_at = now();
             }
-
             $milestone->save();
 
             DB::commit();
 
             $this->sendVerificationNotification($verification, 'milestone_verification.approved');
 
-            $verificationLabel = match ($verification->verification_type) {
-                'mprv' => 'MPRV',
-                'mid_milestone' => 'Mid-milestone verification',
-                'final_approval' => 'Final approval',
-                default => ucfirst(str_replace('_', ' ', $verification->verification_type)),
-            };
-
             return response()->json([
-                'message' => $verificationLabel . ' approved.'
-                    . ($allRequiredApproved ? ' All required verifications are approved; milestone ready for disbursement.' : ''),
+                'message' => $verification->verification_type === 'mprv'
+                    ? ($canReleaseInSequence
+                        ? 'MPRV approved. Milestone ready for disbursement.'
+                        : 'MPRV approved. Milestone remains locked until earlier milestones are completed.')
+                    : ucfirst(str_replace('_', ' ', $verification->verification_type)) . ' approved.',
                 'data' => $verification,
             ]);
 
@@ -467,33 +453,6 @@ class MilestoneVerificationController extends Controller
             'final_approval' => 'final_approval_ready',
             default => null,
         };
-    }
-
-    private function allRequiredVerificationsApproved(ProgramMilestone $milestone): bool
-    {
-        $requiredTypes = array_filter([
-            $milestone->mprv_required ? 'mprv' : null,
-            $milestone->mid_milestone_required ? 'mid_milestone' : null,
-            $milestone->final_approval_required ? 'final_approval' : null,
-        ]);
-
-        if (empty($requiredTypes)) {
-            return false;
-        }
-
-        foreach ($requiredTypes as $type) {
-            $latestVerification = $milestone->verifications()
-                ->where('verification_type', $type)
-                ->orderByDesc('attempt_number')
-                ->orderByDesc('id')
-                ->first();
-
-            if (!$latestVerification || $latestVerification->decision !== 'approved') {
-                return false;
-            }
-        }
-
-        return true;
     }
 
     private function sendVerificationNotification(
@@ -736,14 +695,28 @@ class MilestoneVerificationController extends Controller
             $milestone->completion_approved_at = now();
             $milestone->save();
 
-            // Unlock next milestone (if exists)
+            // The next milestone may start only after this milestone's completion
+            // is approved. It still needs MPRV approval if MPRV is required.
             $nextMilestone = ProgramMilestone::where('app_id', $milestone->app_id)
-                ->where('sequence_order', $milestone->sequence_order + 1)
+                ->where('is_template', false)
+                ->where('sequence_order', '>', $milestone->sequence_order)
+                ->orderBy('sequence_order')
                 ->first();
 
             if ($nextMilestone && $nextMilestone->status === 'pending') {
-                // Next milestone can now begin
                 $nextMilestone->notes = 'Unlocked: Previous milestone completed';
+            }
+
+            if ($nextMilestone
+                && $nextMilestone->fund_release_status === 'locked'
+                && (!$nextMilestone->mprv_required || $nextMilestone->mprv_ready)) {
+                $nextMilestone->fund_release_status = 'approved';
+                $nextMilestone->status = 'approved';
+                $nextMilestone->approved_by = $userId;
+                $nextMilestone->approved_at = now();
+            }
+
+            if ($nextMilestone) {
                 $nextMilestone->save();
             }
 
@@ -754,7 +727,7 @@ class MilestoneVerificationController extends Controller
                 'application_id' => $completion->milestone->app_id,
             ]);
 
-            // If next milestone exists
+            // The next milestone can begin its required MPRV step, if any.
             if ($nextMilestone) {
                 $this->programNotification->send('milestone.unlocked', [$completion->milestone->application->user], [
                     'milestone_number' => $nextMilestone->sequence_order, 'application_id' => $completion->milestone->app_id,
@@ -763,7 +736,11 @@ class MilestoneVerificationController extends Controller
 
             return response()->json([
                 'message' => 'Completion approved. Milestone complete! ' .
-                    ($nextMilestone ? 'Next milestone unlocked.' : 'All milestones complete!'),
+                    (!$nextMilestone
+                        ? 'All milestones complete!'
+                        : ($nextMilestone->fund_release_status === 'approved'
+                            ? 'Next milestone unlocked.'
+                            : 'Next milestone unlocked for MPRV; funds remain locked until MPRV is approved.')),
                 'data' => $completion,
             ]);
 

@@ -57,6 +57,19 @@ class ProgramMilestone extends Model
         return $this->hasOne(MilestoneVerification::class, 'milestone_id')->latestOfMany();
     }
 
+    /** True when every earlier active milestone has been completed and approved. */
+    public function canReleaseInSequence(): bool
+    {
+        return !static::where('app_id', $this->app_id)
+            ->where('is_template', false)
+            ->where('sequence_order', '<', $this->sequence_order)
+            ->where(function ($query) {
+                $query->where('status', '!=', 'completion_approved')
+                    ->orWhere('fund_release_status', '!=', 'released');
+            })
+            ->exists();
+    }
+
     public function disbursements()
     {
         return $this->hasMany(Disbursement::class, 'milestone_id');

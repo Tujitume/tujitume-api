@@ -223,9 +223,17 @@ class ProgramDisbursementService
         }
 
         if ($milestone->fund_release_status !== 'approved') {
-//            throw new \Exception(
-//                'Milestone must be approved for disbursement. Current status: ' . $milestone->fund_release_status,
-//                422);
+            throw new \Exception(
+                'Milestone must be approved for disbursement. Current status: ' . $milestone->fund_release_status,
+                422
+            );
+        }
+
+        if (!$milestone->canReleaseInSequence()) {
+            throw new \Exception(
+                'Earlier milestones must be completed and approved before releasing funds for this milestone.',
+                422
+            );
         }
 
 

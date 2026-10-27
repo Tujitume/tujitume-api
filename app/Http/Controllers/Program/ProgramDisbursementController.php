@@ -416,6 +416,12 @@ class ProgramDisbursementController extends Controller
             ], 422);
         }
 
+        if (!$milestone->canReleaseInSequence()) {
+            return response()->json([
+                'message' => 'Earlier milestones must be completed and approved before releasing funds for this milestone.',
+            ], 422);
+        }
+
 
         try {
             $supplier = $milestone->suppliers()->first();
