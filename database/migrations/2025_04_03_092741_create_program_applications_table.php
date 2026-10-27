@@ -96,6 +96,7 @@ return new class extends Migration
 
             $table->boolean('escrow_funded')->default(false);
             $table->timestamp('escrow_funded_at')->nullable();
+            $table->string('escrow_funded_reference')->nullable();
             $table->decimal('escrow_amount', 15, 2)->nullable(); // total amount held in escrow
 
             $table->index(['program_owner_id', 'status']);

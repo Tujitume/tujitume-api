@@ -253,17 +253,18 @@ class MpesaCallbackController extends Controller
 
             $application->update([
                 'escrow_funded'    => true,
+                'escrow_funded_reference' => $referenceId,
                 'escrow_funded_at' => now(),
                 'escrow_amount'    => $application->total_amount_requested,
             ]);
 
-            // Notify GO that funds are in escrow
-            //            $this->programNotification->send('disbursement.escrow_funded', [
-            //                $application->program->owner
-            //            ], [
-            //                'program_title' => $application->program->program_title,
-            //                'amount'      => $application->total_amount_requested,
-            //            ]);
+            //Notify GO that funds are in escrow
+                       $this->programNotification->send('disbursement.escrow_funded', [
+                           $application->program->owner
+                       ], [
+                           'program_title' => $application->program->program_title,
+                           'amount'      => $application->total_amount_requested,
+                       ]);
 
             return response()->json(['message' => 'Callback received'], 200);
         } catch (\Exception $e) {

@@ -404,10 +404,17 @@ class ProgramDisbursementController extends Controller
         }
 
         // applicant can fund the total application amount to escrow, then release milestone by milestone with type=pay_from_escrow
-        if ($request->type == 'pay_from_escrow' && !$application->escrow_funded) {
-            return response()->json([
-                'message' => 'Funds not yet in escrow. Please complete payment first.'
-            ], 422);
+        if ($request->type == 'pay_from_escrow') {
+
+            $escrowRecord = LiprPayment::where('reference_id', $application->escrow_funded_reference)
+                ->where('status', 'completed')->orWhere('status', 'SUCCESSFUL')
+                ->first();
+
+            if (!$application->escrow_funded || !$escrowRecord) {
+                return response()->json([
+                    'message' => 'Funds not yet in escrow. Please complete payment first.'
+                ], 422);
+            }
         }
 
         if ($milestone->fund_release_status !== 'approved') {
@@ -430,15 +437,17 @@ class ProgramDisbursementController extends Controller
                 return response()->json(['message' => 'Supplier not found.'], 422);
             }
             $pitch     = $milestone->application;
+            $owner     = $pitch->program->owner;
 
             $finalRecipientAmount = $this->checkoutCalculator->mpesaGC($milestone->amount, 'mpesa');
 
-            $amountKes = (int) round($finalRecipientAmount); //round($this->usdToKes * $finalRecipientAmount, 2);
+            $amountKes = (int) round($finalRecipientAmount); //
     
             $transfer = null;
 
             DB::transaction(function () use (
-                $milestone, $supplier, $pitch, $amountKes, &$transfer, $request, $finalRecipientAmount
+                $milestone, $supplier, $pitch, $amountKes, &$transfer, $request,
+                $owner
                 ) {
 
                 // Initiate supplier transfer
@@ -448,9 +457,23 @@ class ProgramDisbursementController extends Controller
                 
                 } elseif ($supplier->payment_route == 'direct_to_applicant') {
                    
-                    $transfer = $this->liprW2W->send(
-                        $amountKes, $pitch->sme->lipr_wallet, $this->tujitume_lipr, $milestone
-                    );
+                    if($request->type == 'pay_from_escrow') {
+                        $transfer = $this->liprW2W->send(
+                            $amountKes,
+                            $pitch->sme->lipr_wallet,
+                            $this->tujitume_lipr,
+                            $milestone
+                        );
+                    }
+                    elseif($request->type == 'pay_from_wallet') {
+                        $transfer = $this->liprW2W->send(
+                            $amountKes,
+                            $pitch->sme->lipr_wallet,
+                            $owner->lipr_wallet,
+                            $milestone
+                        );
+                    }
+                   
                 
                 } else {
                     throw new \Exception("Unsupported payment route: {$supplier->payment_route}", 422);

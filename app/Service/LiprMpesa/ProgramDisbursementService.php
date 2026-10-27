@@ -215,11 +215,14 @@ class ProgramDisbursementService
     // Initiate Disbursement
     public function disburse(ProgramMilestone $milestone, $amountKes, $type = 'checkout')
     {
-        if($type == 'checkout'){
+        if($type == 'checkout' || $type == 'pay_from_escrow'){
             $sourceWallet = Setting::where('key', 'platform_lipr_wallet')->value('value');
         }
         elseif ($type == 'pay_from_wallet'){
-            $sourceWallet = $wallet = $milestone->application->program->owner->lipr_wallet ?? null;
+            $sourceWallet = $milestone->application->program->owner->lipr_wallet ?? null;
+        }
+        else{
+            throw new \Exception('Invalid disbursement type', 422);
         }
 
         if ($milestone->fund_release_status !== 'approved') {
