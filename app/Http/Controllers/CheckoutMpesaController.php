@@ -102,7 +102,7 @@ class CheckoutMpesaController extends Controller
                 $payment['order']->update(['fee_kes' => $amountKes]);
             }
 
-            $amountKes = 100;
+            //$amountKes = 100;
 
             $fields = $this->buildInitiatePaymentPayload($request, $payment['callbackUrl'], $amountKes, $platform_wallet);
             $result = $this->sendInitiatePaymentRequest($fields, $token);
@@ -294,6 +294,9 @@ class CheckoutMpesaController extends Controller
             $amount = $order->fee_amount;
             $callbackUrl = rtrim(config('app.api_url'), '/') . '/lipr-callback/reviewer-payment';
         }
+        else {
+            throw new \Exception('Invalid purpose', 400);
+        }
 
         return compact('amount', 'amountKes', 'callbackUrl', 'order');
     }
@@ -309,8 +312,8 @@ class CheckoutMpesaController extends Controller
             ])) {
                 $amountKes = round($amount, 0);
             } else {
-                $amountPayable = $this->checkoutCalculator->mpesa($amount, 'mpesa');
-                $amountKes = round($amountPayable, 0);
+                //$amountPayable = $this->checkoutCalculator->mpesa($amount, 'mpesa');
+                $amountKes = round($amountKes, 0);
             }
         }
 

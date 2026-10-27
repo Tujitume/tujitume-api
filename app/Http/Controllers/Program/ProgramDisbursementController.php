@@ -427,7 +427,7 @@ class ProgramDisbursementController extends Controller
 
             $finalRecipientAmount = $this->checkoutCalculator->mpesaGC($milestone->amount, 'mpesa');
 
-            $amountKes = 20; //round($finalRecipientAmount, 2); //round($this->usdToKes * $finalRecipientAmount, 2);
+            $amountKes = round($finalRecipientAmount, 2); //round($this->usdToKes * $finalRecipientAmount, 2);
     
             $transfer = null;
 

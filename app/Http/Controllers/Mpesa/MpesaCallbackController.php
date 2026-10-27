@@ -134,7 +134,7 @@ class MpesaCallbackController extends Controller
             }
 
             $amountToTransfer = $this->checkoutCalculator->mpesaGC($milestone->amount, 'mpesa');
-            $amountKes = 20; //round($amountToTransfer, 0);
+            $amountKes = round($amountToTransfer, 0);
 
             DB::transaction(function () use ($milestone, $supplier, $pitch, $payment, $amountKes, $referenceId) {
 
