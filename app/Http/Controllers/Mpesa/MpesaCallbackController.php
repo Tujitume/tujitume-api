@@ -178,15 +178,15 @@ class MpesaCallbackController extends Controller
                 ]);
 
                 // Transactions
-                $this->transaction->create($pitch->program_owner_id, 'program_milestone', 'lipr', $payment->amount, $referenceId, $pitch->user_id);
-                $this->transaction->create($pitch->user_id, 'program_milestone', 'lipr', $payment->amount, $referenceId, $pitch->user_id);
+                $this->transaction->create($pitch->program_owner_id, 'program_milestone', 'lipr', $amountKes, $referenceId, $pitch->user_id);
+                $this->transaction->create($pitch->user_id, 'program_milestone', 'lipr', $amountKes, $referenceId, $pitch->user_id);
 
                 // Balance update for direct_to_applicant
                 if($supplier->payment_route == 'direct_to_supplier' && $supplier->supplierDirectory->user_id) {
-                    $this->balance->updateBalance($supplier->supplierDirectory->user_id, $milestone->amount, 'lipr');
+                    $this->balance->updateBalance($supplier->supplierDirectory->user_id, $amountKes, 'lipr');
                 }
                 else if($supplier->payment_route == 'direct_to_applicant') {
-                    $this->balance->updateBalance($pitch->user_id, $milestone->amount, 'lipr');
+                    $this->balance->updateBalance($pitch->user_id, $amountKes, 'lipr');
                 }
             });
 
@@ -194,6 +194,7 @@ class MpesaCallbackController extends Controller
             $this->programNotification->send('disbursement.created', [
                 $pitch->user,
                 $pitch->program->owner,
+                $supplier->supplierDirectory->user ?? null,
             ], [
                 'amount'         => $milestone->amount,
                 'supplier_name'  => $supplier->supplierDirectory->legal_name,
@@ -301,7 +302,9 @@ class MpesaCallbackController extends Controller
 
             $pitch       = $milestone->application;
             $supplier    = $milestone->suppliers()->first();
+            $supplierUser = $supplier?->supplierDirectory?->user;
             $disbursement = $milestone->disbursements()->latest()->first();
+        
 
             if (strtolower($status) === 'successful') {
                 DB::transaction(function () use ($milestone, $disbursement, $pitch, $supplier) {
@@ -338,13 +341,20 @@ class MpesaCallbackController extends Controller
                 // supplier invoice
                 $token = hash('sha256', $disbursement->id . $disbursement->created_at . config('app.key'));
 
-                $this->programNotification->send('disbursement.supplier_confirmed', [$supplier->supplierDirectory], [
-                    'program_title'       => $pitch->program->program_title,
-                    'amount'            => $milestone->amount,
-                    'payment_reference' => $disbursement->payment_reference,
-                    'disbursement_id'   => $disbursement->id,
-                    'confirmation_token'=> $token,
-                ]);
+                if( $supplierUser ) {
+                    $this->programNotification->send(
+                        'disbursement.supplier_confirmed',
+                        [$supplierUser],
+                        [
+                            'program_title'       => $pitch->program->program_title,
+                            'amount'            => $amount,
+                            'payment_reference' => $disbursement->payment_reference,
+                            'disbursement_id'   => $disbursement->id,
+                            'confirmation_token' => $token,
+                        ]
+                    );
+                }
+                
 
 
             } else {
@@ -356,7 +366,7 @@ class MpesaCallbackController extends Controller
                 $this->programNotification->send('disbursement.failed', [
                     $pitch->program->owner,
                 ], [
-                    'amount'        => $milestone->amount,
+                    'amount'        => $amount,
                     'supplier_name' => $supplier?->supplierDirectory->legal_name,
                     'reason'        => 'Supplier transfer failed',
                     'application_id'    => $milestone->app_id,

@@ -469,17 +469,17 @@ class ProgramDisbursementController extends Controller
                 ]);
 
                 // Transactions
-                $this->transaction->create($pitch->program_owner_id, 'program_milestone', 'lipr', $milestone->amount, $transfer['reference'], $pitch->user_id);
-                $this->transaction->create($pitch->user_id, 'program_milestone', 'lipr', $milestone->amount, $transfer['reference'], $pitch->user_id);
+                $this->transaction->create($pitch->program_owner_id, 'program_milestone', 'lipr', $amountKes, $transfer['reference'], $pitch->user_id);
+                $this->transaction->create($pitch->user_id, 'program_milestone', 'lipr', $amountKes, $transfer['reference'], $pitch->user_id);
 
                 // Balance update for direct_to_supplier if exists
                 if ($supplier->payment_route == 'direct_to_supplier' && $supplier->supplierDirectory->user) {
-                    $this->balance->updateBalance($supplier->supplierDirectory->user_id, $finalRecipientAmount, 'lipr');
+                    $this->balance->updateBalance($supplier->supplierDirectory->user_id, $amountKes, 'lipr');
 
                 }
                 else{
                     //update  balance directly to applicant
-                    $this->balance->updateBalance($pitch->user_id, $finalRecipientAmount, 'lipr');
+                    $this->balance->updateBalance($pitch->user_id, $amountKes, 'lipr');
                 }
             });
 
