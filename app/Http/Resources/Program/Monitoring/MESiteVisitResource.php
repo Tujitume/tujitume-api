@@ -34,6 +34,9 @@ class MESiteVisitResource extends JsonResource
             'assign_type' => $this->assign_type,
             'email' => $this->email,
             'reviewer' => $this->reviewer?->only(['id', 'first_name', 'last_name', 'email','image']),
+            'checkpoint' => $this->whenLoaded('checkpoint', fn () => $this->checkpoint->only([
+                'id', 'checkpoint_name', 'type', 'due_date', 'requirement', 'require_site_visit', 'status',
+            ])),
             'files' => MESiteVisitFileResource::collection($this->whenLoaded('files')),
             'order' => $this->whenLoaded('reviewerOrder', fn () => $this->reviewerOrder),
         ];

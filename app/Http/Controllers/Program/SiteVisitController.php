@@ -101,7 +101,7 @@ class SiteVisitController extends Controller
                 'currency' => $order->currency,
             ]);
 
-            return new ApiResponseResource('Site visit assigned successfully', new MESiteVisitResource($siteVisit->load(['files', 'reviewerOrder'])), 201);
+            return new ApiResponseResource('Site visit assigned successfully', new MESiteVisitResource($siteVisit->load(['checkpoint', 'files', 'reviewerOrder'])), 201);
 
         } catch (ValidationException $e) {
             DB::rollBack();
@@ -308,7 +308,7 @@ class SiteVisitController extends Controller
 
             DB::commit();
 
-            return new ApiResponseResource('Site visit report submitted successfully', new MESiteVisitResource($visit->load(['files', 'reviewerOrder'])), 200);
+            return new ApiResponseResource('Site visit report submitted successfully', new MESiteVisitResource($visit->load(['checkpoint', 'files', 'reviewerOrder'])), 200);
 
         } catch (ValidationException $e) {
             DB::rollBack();
@@ -334,7 +334,7 @@ class SiteVisitController extends Controller
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
-        return new ApiResponseResource('Site visit details fetched successfully', new MESiteVisitResource($visit->load(['files', 'reviewerOrder'])), 200);
+        return new ApiResponseResource('Site visit details fetched successfully', new MESiteVisitResource($visit->load(['checkpoint', 'files', 'reviewerOrder'])), 200);
     }
 
     public function SiteVisits(Request $request, $reviewer_id)
@@ -346,7 +346,7 @@ class SiteVisitController extends Controller
         }
 
         $siteVisits = MESiteVisit::where('reviewer_id', $reviewer_id)
-            ->with(['checkpoint', 'checkpoint.application', 'files', 'reviewerOrder'])
+            ->with(['checkpoint.application', 'checkpoint', 'files', 'reviewerOrder'])
             ->orderBy('start_date', 'desc')
             ->get();
 

@@ -26,7 +26,7 @@ class ReviewerOrderController extends Controller
     public function myOrders()
     {
         $orders = ReviewerOrder::where('reviewer_id', Auth::id())
-            ->with(['program', 'round', 'siteVisit', 'applicationAssignments.application.business:id,name'])
+            ->with(['program', 'round', 'siteVisit.checkpoint', 'applicationAssignments.application.business:id,name'])
             ->latest()
             ->get()
             ->map(fn($order) => [

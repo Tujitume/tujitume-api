@@ -15,7 +15,7 @@ class ProgramMonitoringAnalyticsService
     {
         $milestones = $app->program_milestones()->get();
         $checkpoints = MECheckpoint::where('app_id', $app->id)
-            ->with(['submission.files', 'siteVisit'])
+            ->with(['submission.files', 'siteVisit.checkpoint'])
             ->get();
         $submissions = MESubmission::where('app_id', $app->id)->get();
         $siteVisits = $checkpoints->pluck('siteVisit')->filter();
@@ -120,7 +120,7 @@ class ProgramMonitoringAnalyticsService
     {
         $milestones = $app->program_milestones()->get();
         $checkpoints = MECheckpoint::where('app_id', $app->id)
-            ->with(['submission.files', 'siteVisit'])
+            ->with(['submission.files', 'siteVisit.checkpoint'])
             ->get();
         $submissions = MESubmission::where('app_id', $app->id)->get();
         $disbursements = Disbursement::whereIn('milestone_id', $milestones->pluck('id'))->get();

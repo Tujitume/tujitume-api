@@ -37,7 +37,7 @@ class MEController extends Controller
         }
 
         $checkpoints = MECheckpoint::where('app_id', $app->id)
-            ->with(['submission.files', 'siteVisit.files',])
+            ->with(['submission.files', 'siteVisit.checkpoint', 'siteVisit.files'])
             ->orderBy('display_order')
             ->get();
 
