@@ -12,6 +12,7 @@ use App\Service\Misc\ErrorLogService;
 use App\Service\Notification\EmailBrand;
 use App\Service\Notification\EmailLink;
 use App\Service\Notification\EmailService;
+use App\Service\Validation\SpamWordChecker;
 use Exception;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -112,6 +113,22 @@ class MessageController extends Controller
         }
     }
 
+    public function protection(Request $request, SpamWordChecker $spam)
+    {
+        $validated = $request->validate(['text' => 'required|string|max:2000']);
+        $text = $validated['text'];
+        preg_match_all('/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}/', $text, $emailMatches);
+        preg_match_all('/(\\+\\d{1,3}[-.\\s]?)?\\(?\\d{3}\\)?[-.\\s]?\\d{3}[-.\\s]?\\d{4}/', $text, $phoneMatches);
+        $checkText = preg_replace('/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}|(\\+\\d{1,3}[-.\\s]?)?\\(?\\d{3}\\)?[-.\\s]?\\d{3}[-.\\s]?\\d{4}/', ' ', $text);
+        $censoredCheck = $spam->censorText($checkText);
+        return response()->json([
+            'emails' => $emailMatches[0],
+            'phones' => $phoneMatches[0],
+            'abusiveWordsFound' => $censoredCheck !== $checkText,
+            'abusiveCensored' => $spam->censorText($text),
+        ]);
+    }
+
     /**
      * Display a listing of the resource.
      */
@@ -172,7 +189,7 @@ class MessageController extends Controller
     /**
      * Store a newly created resource in storage.
      */
-    public function store(Request $request)
+    public function store(Request $request, SpamWordChecker $spam)
     {
         try{
             $validated = $request->validate([
@@ -223,7 +240,11 @@ class MessageController extends Controller
             $hadUnreadFromSender = Messages::where('from_id', $from_id)->where('to_id', $to_id)->where('is_new', 1)->exists();
 
             $message = Messages::create([
-                'msg' => $validated['msg'],
+                'msg' => $spam->censorText(preg_replace(
+                    '/(\\+?\\d[\\d().\\s-]{7,}\\d|[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,})/',
+                    '***',
+                    $validated['msg']
+                )),
                 'to_id' => $to_id,
                 'from_id' => $from_id,
             ] + (

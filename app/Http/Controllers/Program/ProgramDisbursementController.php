@@ -407,7 +407,7 @@ class ProgramDisbursementController extends Controller
         if ($request->type == 'pay_from_escrow') {
 
             $escrowRecord = LiprPayment::where('reference_id', $application->escrow_funded_reference)
-                ->where('status', 'completed')->orWhere('status', 'SUCCESSFUL')
+                ->whereIn('status', ['completed', 'SUCCESSFUL'])
                 ->first();
 
             if (!$application->escrow_funded || !$escrowRecord) {

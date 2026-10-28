@@ -36,6 +36,7 @@ class ProgramApplication extends Model
     protected $casts = [
 	'social_impact_areas' => 'array',
 	'score_breakdown' => 'array',
+        'revision_checklist' => 'array',
     ];
 
     protected $hidden = [

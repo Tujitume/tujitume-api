@@ -16,6 +16,7 @@ class MilestonePreAgreement extends Model
         'status',
         'rejection_count',
         'submitted_by',
+        'reviewed_by',
         'reviewed_at',
     ];
 
@@ -45,6 +46,11 @@ class MilestonePreAgreement extends Model
     public function latestComment()
     {
         return $this->hasOne(MilestoneAgreementComment::class, 'agreement_id')->latestOfMany();
+    }
+
+    public function reads()
+    {
+        return $this->hasMany(MilestoneAgreementRead::class, 'agreement_id');
     }
 
     // ─── Helpers ────────────────────────────────────────────────────────

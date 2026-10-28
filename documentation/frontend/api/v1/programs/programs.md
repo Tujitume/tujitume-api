@@ -19,11 +19,12 @@ Creates a draft program for the authenticated organization owner and provisions 
 | `application_round` | Yes | object | Initial round settings |
 | `total_rounds` | No | integer | 1–10; multi-round must be greater than 1 |
 | `currency` | No | string | Defaults to KES |
+| `match_score_limit` | No | integer/null | 1–100; bonus points count only when the base match score reaches this value |
 
 **Example Request**
 
 ```json
-{"program_title":"Green Enterprise Fund","total_program_amount":500000,"funding_per_business":50000,"program_type":"multi_round","total_rounds":2,"program_focus":["agriculture"],"startup_stage_focus":["growth"],"start_date":"2026-10-01","application_deadline":"2026-09-15","application_round":{"round_name":"Application","rubric_mode":"weighted","advancement_mode":"manual"}}
+{"program_title":"Green Enterprise Fund","total_program_amount":500000,"funding_per_business":50000,"program_type":"multi_round","total_rounds":2,"program_focus":["agriculture"],"startup_stage_focus":["growth"],"start_date":"2026-11-01","application_deadline":"2027-01-15","match_score_limit":70,"application_round":{"round_name":"Application","rubric_mode":"weighted","advancement_mode":"manual"}}
 ```
 
 **Example Response — 201 Created**
@@ -51,7 +52,16 @@ Creates a draft program for the authenticated organization owner and provisions 
 | GET | `/get_program/{id}` | Returns a program and first round; 404 if absent |
 | POST | `/programs/{program}` | Owner updates own program |
 | DELETE | `/delete-program/{id}` | Owner only; blocked by active applications or wallet history |
-| POST | `/programs/{program}/duplicate` | Owner only; creates a draft copy |
+| POST | `/{program}/duplicate` | Owner only; creates a draft copy (current path) |
+| POST | `/programs/{program}/duplicate` | Legacy duplicate path |
 | GET | `/visibility/{program_id}` | Owner toggles visibility |
 | GET | `/store-watchlist/{pitch_id}` | Toggles watchlist membership |
 | GET | `/get-watchlist` | Returns current user watchlist |
+
+## List response and application state
+
+`GET /programs` and `GET /public-programs` include `accepting_applications` and `applications_closed_reason` per program. Use those fields to control the Apply action. An unpublished program, absent first round, closed/finalized first round, later open round, future open date, or passed deadline can block new applications.
+
+Program list responses retain the top-level `programs` array and also return `{ "success":true,"message":"Programs fetched successfully.","data":{"items":[...]} }`. Supply `page` or `per_page` to paginate; then `data.pagination` contains `current_page`, `per_page`, `total`, `last_page`, `from`, and `to`. `per_page` defaults to 15 when paginating and is clamped to 1–100. Status metadata objects contain `value`, `label`, and `color`.
+
+`match_score_limit` only gates program bonus points; it is separate from the 50% minimum match score required to submit an application. `null` leaves bonuses unrestricted.

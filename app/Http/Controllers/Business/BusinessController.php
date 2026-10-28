@@ -692,7 +692,7 @@ class BusinessController extends Controller
             ->with([
             'owner:id,first_name,last_name,email,image'
             ])
-            ->where('category', '=', 'project_management')
+            ->whereIn('category', ['project_management', 'business_coaching'])
             ->having("distance", "<", $radius)
             ->orderBy("distance",'asc')
             ->offset(0)

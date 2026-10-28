@@ -52,4 +52,16 @@ class SpamWordChecker
 
         return true; // clean
     }
+
+    public function censorText(?string $text): string
+    {
+        $text = (string) $text;
+        foreach ($this->badWords as $word) {
+            if (in_array($word, ['ass', 'sex', 'xxx'], true)) continue;
+            $text = preg_replace_callback('/\\b' . preg_quote($word, '/') . '\\b/iu', function ($match) {
+                return str_repeat('*', mb_strlen($match[0]));
+            }, $text);
+        }
+        return $text;
+    }
 }

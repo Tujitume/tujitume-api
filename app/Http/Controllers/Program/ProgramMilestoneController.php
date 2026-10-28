@@ -21,6 +21,7 @@ class ProgramMilestoneController extends Controller
 
     public function __construct(ProgramNotificationService $programNotification)
     {
+        parent::__construct();
         $this->programNotification = $programNotification;
     }
 
@@ -469,9 +470,8 @@ class ProgramMilestoneController extends Controller
             }
             // Applicant can ONLY edit allowed fields (hybrid mode)
             elseif ($isApplicant && $application->planning_mode === 'hybrid') {
-                // Check if funding setup is still in progress (not submitted yet)
-                if ($application->funding_setup_status === 'awaiting_review') {
-                    return response()->json(['error' => 'Plan already submitted. Cannot edit.'], 403);
+                if ($application->funding_setup_status !== 'awaiting_applicant_revision') {
+                    return response()->json(['error' => 'Milestones can only be edited while the plan is being prepared or revised.'], 403);
                 }
 
                 $allowedEdits = $milestone->allowed_edits ?? [];
@@ -572,22 +572,29 @@ class ProgramMilestoneController extends Controller
             unset($validated['can_add_budget_items']);
 
 
-            $verificationReviewsChanged = false;
+            $changedReviewFields = [];
             if ($isProgramOwner) {
-                foreach (['mprv_notes', 'mid_milestone_notes', 'final_approval_notes'] as $field) {
+                foreach ([
+                    'mprv_notes' => 'mprv',
+                    'mid_milestone_notes' => 'mid_milestone',
+                    'final_approval_notes' => 'final_approval',
+                ] as $field => $type) {
                     if (!array_key_exists($field, $validated)) continue;
                     $oldNotes = is_array($milestone->{$field}) ? $milestone->{$field} : json_decode((string) $milestone->{$field}, true);
                     $newNotes = is_array($validated[$field]) ? $validated[$field] : json_decode((string) $validated[$field], true);
-                    if (data_get($oldNotes, 'reviews', []) != data_get($newNotes, 'reviews', [])) {
-                        $verificationReviewsChanged = true;
-                        break;
+                    $oldReviews = data_get($oldNotes, 'reviews', []);
+                    $newReviews = data_get($newNotes, 'reviews', []);
+                    foreach (array_unique(array_merge(array_keys($oldReviews), array_keys($newReviews))) as $fieldId) {
+                        if (($oldReviews[$fieldId] ?? null) != ($newReviews[$fieldId] ?? null)) {
+                            $changedReviewFields[$type][] = (string) $fieldId;
+                        }
                     }
                 }
             }
 
             $milestone->update($validated);
 
-            if ($verificationReviewsChanged) {
+            foreach ($changedReviewFields as $verificationType => $fieldIds) {
                 $program = $application->program;
                 $this->sendProgramNotification('agreement.answered', [$application->user], [
                     'application_id' => $application->id,
@@ -595,10 +602,16 @@ class ProgramMilestoneController extends Controller
                     'program_title' => $program->program_title,
                     'business_name' => $application->startup_name,
                     'milestone_number' => $milestone->sequence_order ?? $milestone->id,
+                    'milestone_id' => $milestone->id,
                     'milestone_title' => $milestone->title,
                     'milestone_hash' => 'milestone-' . ($milestone->sequence_order ?? $milestone->id),
-                    'verification_type' => 'verification',
-                    'verification_label' => 'verification instructions',
+                    'verification_type' => $verificationType,
+                    'chat_field_id' => $fieldIds[0] ?? null,
+                    'verification_label' => match ($verificationType) {
+                        'mprv' => 'MPRV',
+                        'mid_milestone' => 'mid-milestone review',
+                        'final_approval' => 'final approval',
+                    },
                 ]);
             }
 
@@ -690,7 +703,7 @@ class ProgramMilestoneController extends Controller
                 // milestones wait for the previous milestone's completion.
                 $isFirstMilestone = (int) $template->sequence_order === (int) $firstSequenceOrder;
                 $releaseStatus = $isFirstMilestone
-                    && (!$template->mprv_required || $template->mprv_ready)
+                    && !$template->mprv_required
                         ? 'approved'
                         : 'locked';
 

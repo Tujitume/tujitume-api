@@ -10,6 +10,7 @@ use App\Models\Programs\SupplierDirectory;
 use App\Service\Misc\ErrorLogService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
 class ProgramSupplierController extends Controller
@@ -115,6 +116,10 @@ class ProgramSupplierController extends Controller
                 ], 403);
             }
 
+            if ($isPermittedApplicant && $application->funding_setup_status !== 'awaiting_applicant_revision') {
+                return response()->json(['error' => 'Suppliers can only be deleted while the plan is being prepared or revised.'], 403);
+            }
+
             $supplier->delete();
 
             return response()->json(['message' => 'Supplier removed from milestone successfully.'], 200);
@@ -196,6 +201,10 @@ class ProgramSupplierController extends Controller
                 ], 403);
             }
 
+            if ($isPermittedApplicant && $application->funding_setup_status !== 'awaiting_applicant_revision') {
+                return response()->json(['error' => 'Budget items can only be deleted while the plan is being prepared or revised.'], 403);
+            }
+
             $budgetItem = $milestone->budgetItems()->findOrFail($budgetItemId);
             $budgetItem->delete();
 
@@ -256,7 +265,10 @@ class ProgramSupplierController extends Controller
                 'quantity' => 'required|numeric|min:0.01',
 
                 // Optional fields
-                'supplier_id' => 'nullable|exists:milestone_suppliers,id',
+                'supplier_id' => [
+                    'nullable',
+                    Rule::exists('milestone_suppliers', 'id')->where('milestone_id', $milestone->id),
+                ],
                 'purpose_type' => 'nullable|in:capex,opex,services,mixed',
             ]);
 

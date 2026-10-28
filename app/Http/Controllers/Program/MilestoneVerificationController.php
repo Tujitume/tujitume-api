@@ -75,6 +75,12 @@ class MilestoneVerificationController extends Controller
             ]);
 
             $verificationType = $validated['verification_type'];
+            $this->validateConfiguredStepAnswers(
+                $milestone,
+                $verificationType,
+                $request->input('additional_declarations'),
+                $request->hasFile('document') ? 1 : 0
+            );
             $requiredFlag = match ($verificationType) {
                 'mprv' => 'mprv_required',
                 'mid_milestone' => 'mid_milestone_required',
@@ -604,6 +610,13 @@ class MilestoneVerificationController extends Controller
                 'proof_files.*' => 'file|max:5120',  // 5MB per file
             ]);
 
+            $this->validateConfiguredStepAnswers(
+                $milestone,
+                'final_approval',
+                $request->input('delivery_notes'),
+                count($request->file('proof_files', []))
+            );
+
             // Get attempt number (for resubmissions)
             $lastAttempt = MilestoneCompletionSubmission::where('milestone_id', $milestone->id)
                 ->max('attempt_number');
@@ -652,6 +665,55 @@ class MilestoneVerificationController extends Controller
             DB::rollBack();
             ErrorLogService::report($e, ['input' => request()->except(['password', 'token'])]);
             return response()->json(['message' => 'Something went wrong, please try again later.'], 500);
+        }
+    }
+
+    /** Enforce required custom fields stored in the matching milestone *_notes column. */
+    private function validateConfiguredStepAnswers(ProgramMilestone $milestone, string $type, ?string $rawSubmission, int $uploadedFileCount): void
+    {
+        $notesField = match ($type) {
+            'mprv' => 'mprv_notes',
+            'mid_milestone' => 'mid_milestone_notes',
+            'final_approval' => 'final_approval_notes',
+        };
+        $notes = $milestone->{$notesField};
+        if (is_string($notes)) $notes = json_decode($notes, true);
+        $fields = is_array($notes) && ($notes['v'] ?? null) === 1 && is_array($notes['fields'] ?? null)
+            ? $notes['fields']
+            : [];
+        if (!$fields) return;
+
+        $submission = is_string($rawSubmission) ? json_decode($rawSubmission, true) : null;
+        $answers = is_array($submission) && ($submission['v'] ?? null) === 1 && is_array($submission['answers'] ?? null)
+            ? $submission['answers']
+            : [];
+        $requiredFileCount = 0;
+
+        foreach ($fields as $field) {
+            if (!is_array($field) || !filter_var($field['required'] ?? false, FILTER_VALIDATE_BOOLEAN)) continue;
+            $id = (string) ($field['id'] ?? '');
+            $answer = $id !== '' ? ($answers[$id] ?? null) : null;
+            $value = is_array($answer) && array_key_exists('value', $answer) ? $answer['value'] : null;
+            $isEmpty = $value === null
+                || (is_string($value) && trim($value) === '')
+                || (is_array($value) && count($value) === 0);
+
+            if (($field['type'] ?? null) === 'file_upload') {
+                $fileNames = is_array($value) ? count($value) : 0;
+                if ($id === '' || $fileNames === 0) {
+                    throw ValidationException::withMessages(["answers.$id" => ['A file is required for this question.']]);
+                }
+                $requiredFileCount++;
+                continue;
+            }
+
+            if ($id === '' || $isEmpty) {
+                throw ValidationException::withMessages(["answers.$id" => ['An answer is required for this question.']]);
+            }
+        }
+
+        if ($uploadedFileCount < $requiredFileCount) {
+            throw ValidationException::withMessages(['document' => ['Upload a file for each required file question.']]);
         }
     }
 

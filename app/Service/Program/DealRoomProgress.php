@@ -14,9 +14,6 @@ use Illuminate\Support\Collection;
  */
 class DealRoomProgress
 {
-    /** A milestone that has passed an approval gate. */
-    private const PASSED = ['approved', 'disbursing', 'completed', 'completion_approved'];
-
     public static function forApplication(ProgramApplication $application, Collection $milestones, float $allocated, float $approved): array
     {
         $fundingDone = $application->funding_setup_status === 'completed';
@@ -34,17 +31,35 @@ class DealRoomProgress
         $midRequired = $required('mid_milestone_required');
         $finalRequired = $required('final_approval_required');
 
-        $allPassed = fn (string $flag) => $milestones->where($flag, true)->isNotEmpty()
-            && $milestones->where($flag, true)->every(fn ($m) => in_array($statusOf($m), self::PASSED, true));
+        $allApprovedVerifications = function (string $type) use ($milestones): bool {
+            $requiredMilestones = $milestones->filter(fn ($m) => (bool) $m->{match ($type) {
+                'mprv' => 'mprv_required',
+                'mid_milestone' => 'mid_milestone_required',
+                default => 'final_approval_required',
+            }});
+
+            return $requiredMilestones->isNotEmpty() && $requiredMilestones->every(
+                fn ($m) => $m->verifications()
+                    ->where('verification_type', $type)
+                    ->where('decision', 'approved')
+                    ->exists()
+            );
+        };
+        $finalMilestones = $milestones->filter(fn ($m) => (bool) $m->final_approval_required);
+        $milestonesComplete = $milestones->isNotEmpty()
+            && $milestones->every(fn ($m) => $statusOf($m) === 'completion_approved');
+        $checkpoints = \App\Models\Programs\Monitoring\MECheckpoint::where('app_id', $application->id)->get();
+        $monitoringComplete = $milestonesComplete && $checkpoints->isNotEmpty()
+            && $checkpoints->every(fn ($checkpoint) => $checkpoint->status === 'verified');
 
         $steps = [
             ['id' => 'funding-setup', 'required' => true, 'done' => $fundingDone],
-            ['id' => 'mprv', 'required' => $mprvRequired, 'done' => $mprvRequired && $allPassed('mprv_required')],
-            ['id' => 'mid-milestone', 'required' => $midRequired, 'done' => $midRequired && $allPassed('mid_milestone_required')],
+            ['id' => 'mprv', 'required' => $mprvRequired, 'done' => $mprvRequired && $allApprovedVerifications('mprv')],
+            ['id' => 'mid-milestone', 'required' => $midRequired, 'done' => $midRequired && $allApprovedVerifications('mid_milestone')],
             ['id' => 'final-approval', 'required' => $finalRequired, 'done' => $finalRequired
-                && $milestones->isNotEmpty()
-                && $milestones->every(fn ($m) => $statusOf($m) === 'completion_approved')],
-            ['id' => 'monitoring-evaluation', 'required' => true, 'done' => $fundingDone],
+                && $finalMilestones->isNotEmpty()
+                && $finalMilestones->every(fn ($m) => $statusOf($m) === 'completion_approved')],
+            ['id' => 'monitoring-evaluation', 'required' => true, 'done' => $monitoringComplete],
         ];
 
         // The person's step is the first one that is required and not finished. Steps that do not apply

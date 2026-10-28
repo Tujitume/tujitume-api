@@ -248,6 +248,7 @@ Route::prefix('/programs')->middleware(['program', 'program.response'])->group(f
 
     // Milestone Pre-Agreements
     Route::get('milestones/{milestone}/agreements', [MilestonePreAgreementController::class, 'index']);
+    Route::post('milestones/{milestone}/agreements/{type}/read', [MilestonePreAgreementController::class, 'markRead']);
     Route::post('milestones/{milestone}/agreements/{type}/comment', [MilestonePreAgreementController::class, 'comment']);
     Route::post('milestones/{milestone}/agreements/{type}/approve', [MilestonePreAgreementController::class, 'approve']);
     Route::post('milestones/{milestone}/agreements/{type}/reject', [MilestonePreAgreementController::class, 'reject']);

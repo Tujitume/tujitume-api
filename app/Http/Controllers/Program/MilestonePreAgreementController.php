@@ -7,6 +7,7 @@ use App\Models\Programs\ProgramMilestone;
 use App\Models\Programs\MilestoneAgreementComment;
 use App\Models\Programs\MilestonePreAgreement;
 use App\Service\Misc\ErrorLogService;
+use App\Service\Validation\SpamWordChecker;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Cache;
@@ -14,7 +15,7 @@ use Illuminate\Validation\ValidationException;
 
 class MilestonePreAgreementController extends Controller
 {
-    public function comment(Request $request, ProgramMilestone $milestone, string $type)
+    public function comment(Request $request, ProgramMilestone $milestone, string $type, SpamWordChecker $spam)
     {
         $userId = auth()->id();
         $application = $milestone->application;
@@ -35,6 +36,7 @@ class MilestonePreAgreementController extends Controller
             $validated = $request->validate([
                 'comment' => 'required|string|max:1000',
             ]);
+            $validated['comment'] = $this->sanitizeAgreementText($validated['comment'], $spam);
 
             $agreement = MilestonePreAgreement::firstOrNew([
                 'milestone_id' => $milestone->id,
@@ -104,6 +106,7 @@ class MilestonePreAgreementController extends Controller
             'program_title' => $program->program_title,
             'business_name' => $application->startup_name,
             'milestone_number' => $number,
+            'milestone_id' => $milestone->id,
             'milestone_title' => $milestone->title,
             'milestone_hash' => $milestoneHash,
             'agreement_id' => $agreement->id,
@@ -132,8 +135,11 @@ class MilestonePreAgreementController extends Controller
             return;
         }
         $data['actor_side'] = $isApplicant ? 'applicant' : 'owner';
+        $data['chat_field_id'] = is_array($commentData) && ($commentData['tj'] ?? null) === 'msg'
+            ? ($commentData['f'] ?? null)
+            : null;
         $data['comment'] = is_array($commentData) && ($commentData['tj'] ?? null) === 'msg'
-            ? (string) ($commentData['m'] ?? '')
+            ? (string) ($commentData['t'] ?? $commentData['m'] ?? '')
             : $comment;
         try {
             $notification->send('agreement.message', [$recipient], $data);
@@ -144,7 +150,7 @@ class MilestonePreAgreementController extends Controller
 
     // POST /program/milestones/{milestone}/agreements/{type}/approve --- program owner
 
-    public function approve(Request $request, ProgramMilestone $milestone, string $type)
+    public function approve(Request $request, ProgramMilestone $milestone, string $type, SpamWordChecker $spam)
     {
         $userId      = auth()->id();
         $application = $milestone->application;
@@ -158,15 +164,18 @@ class MilestonePreAgreementController extends Controller
             $validated = $request->validate([
                 'comment' => 'nullable|string|max:1000',
             ]);
+            if (isset($validated['comment'])) $validated['comment'] = $this->sanitizeAgreementText($validated['comment'], $spam);
 
             $agreement = MilestonePreAgreement::where('milestone_id', $milestone->id)
                 ->where('verification_type', $type)->first();
 
             if (!$agreement) {
+                DB::rollBack();
                 return response()->json(['error' => 'No agreement found for this verification type'], 404);
             }
 
             if ($agreement->status !== 'submitted') {
+                DB::rollBack();
                 return response()->json([
                     'error' => 'Agreement cannot be reviewed. Current status: ' . $agreement->status
                 ], 422);
@@ -217,7 +226,7 @@ class MilestonePreAgreementController extends Controller
     // ─── Reject (program owner rejects) ───────────────────────────────────
     // POST /program/milestones/{milestone}/agreements/{type}/reject
 
-    public function reject(Request $request, ProgramMilestone $milestone, string $type)
+    public function reject(Request $request, ProgramMilestone $milestone, string $type, SpamWordChecker $spam)
     {
         $userId      = auth()->id();
         $application = $milestone->application;
@@ -231,6 +240,7 @@ class MilestonePreAgreementController extends Controller
             $validated = $request->validate([
                 'rejection_reason' => 'required|string|max:1000',
             ]);
+            $validated['rejection_reason'] = $this->sanitizeAgreementText($validated['rejection_reason'], $spam);
 
             $agreement = MilestonePreAgreement::where('milestone_id', $milestone->id)
                 ->where('verification_type', $type)->first();
@@ -282,6 +292,65 @@ class MilestonePreAgreementController extends Controller
         }
     }
 
+    public function markRead(Request $request, ProgramMilestone $milestone, string $type)
+    {
+        $application = $milestone->application;
+        $userId = auth()->id();
+        if ((int) $application->user_id !== (int) $userId
+            && !\App\Service\Program\ProgramAccess::owns($application->program)) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+        if (!in_array($type, ['mprv', 'mid_milestone', 'final_approval'], true)) {
+            return response()->json(['error' => 'Invalid verification type'], 422);
+        }
+
+        $validated = $request->validate(['last_read_comment_id' => 'required|integer|min:1']);
+        $agreement = MilestonePreAgreement::where('milestone_id', $milestone->id)
+            ->where('verification_type', $type)->first();
+        if (!$agreement) return response()->json(['error' => 'No agreement found for this verification type'], 404);
+
+        $commentId = (int) $validated['last_read_comment_id'];
+        if (!$agreement->comments()->whereKey($commentId)->exists()) {
+            return response()->json(['error' => 'Comment does not belong to this agreement'], 422);
+        }
+
+        DB::transaction(function () use ($agreement, $userId, $commentId) {
+            $read = $agreement->reads()->where('user_id', $userId)->lockForUpdate()->first();
+            if ($read && (int) $read->last_read_comment_id >= $commentId) return;
+
+            $values = ['last_read_comment_id' => $commentId, 'read_at' => now()];
+            if ($read) $read->update($values);
+            else $agreement->reads()->create(['user_id' => $userId] + $values);
+        });
+
+        return response()->noContent();
+    }
+
+    private function sanitizeAgreementText(string $text, SpamWordChecker $spam): string
+    {
+        $clean = function (string $value) use ($spam): string {
+            $value = preg_replace('/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}/', '***@***.***', $value);
+            $value = preg_replace('/(\\+\\d{1,3}[-.\\s]?)?\\(?\\d{3}\\)?[-.\\s]?\\d{3}[-.\\s]?\\d{4}/', '***-***-****', $value);
+            return $spam->censorText($value);
+        };
+
+        $data = json_decode($text, true);
+        if (is_array($data) && ($data['tj'] ?? null) === 'msg') {
+            $textKey = isset($data['t']) && is_string($data['t']) ? 't' : 'm';
+            if (isset($data[$textKey]) && is_string($data[$textKey])) $data[$textKey] = $clean($data[$textKey]);
+            return json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?: $text;
+        }
+        if (is_array($data) && ($data['tj'] ?? null) === 'agree') {
+            if (isset($data['m']) && is_string($data['m'])) $data['m'] = $clean($data['m']);
+            foreach (is_array($data['q'] ?? null) ? $data['q'] : [] as $index => $request) {
+                if (!is_array($request)) continue;
+                if (isset($request['n']) && is_string($request['n'])) $data['q'][$index]['n'] = $clean($request['n']);
+            }
+            return json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?: $text;
+        }
+        return $clean($text);
+    }
+
     // ─── Get all agreements for a milestone ─────────────────────────────
     // GET /program/milestones/{milestone}/agreements
 
@@ -298,7 +367,7 @@ class MilestonePreAgreementController extends Controller
         }
 
         $agreements = MilestonePreAgreement::where('milestone_id', $milestone->id)
-            ->with(['comments.user', 'applicant'])
+            ->with(['comments.user', 'applicant', 'reads'])
             ->get()
             ->map(function ($agreement) {
                 return [

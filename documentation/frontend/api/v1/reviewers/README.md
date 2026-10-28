@@ -342,20 +342,22 @@ Accept: application/json
 
 ---
 
-## Reviewer Payment Initiation (via existing endpoint)
+## Reviewer Payment Initiation
 
-Payment is initiated through the existing checkout endpoint, but now with a new `purpose`.
+The authenticated LIPR initiation endpoint is `POST /api/v1/lipr/initiate-payment`.
 
 **Request:**
 ```http
-POST /api/v1/checkout/initiate-payment
+POST /api/v1/lipr/initiate-payment
 Authorization: Bearer <token>
 Content-Type: application/json
 
 {
   "purpose": "reviewer_payment",
   "listing_id": 42,
-  "acc_number": "254712345678"
+  "acc_number": "254712345678",
+  "amount": 150,
+  "purpose_text": "Reviewer payment"
 }
 ```
 
@@ -365,13 +367,15 @@ Content-Type: application/json
 | `purpose` | string | Yes | Must be `reviewer_payment` |
 | `listing_id` | integer | Yes | ReviewerOrder ID |
 | `acc_number` | string | Yes | Program owner's M-Pesa phone (254-format) |
+| `amount` | number | Yes | Required by shared validation; the backend calculates the order fee instead |
+| `purpose_text` | string | Yes | Required by shared validation |
 
 **Validation:**
 - Order must exist and belong to the authenticated user's program
 - Order must have `work_status` in `['delivered', 'approved']`
 - Reviewer must have `lipr_wallet` set
 - Order must not already be `payment_status === 'completed'`
-- Fee must be > 0
+- Payment amount is resolved from the order; do not use the client `amount` as the source of truth.
 
 **Response (200 OK):**
 ```json
@@ -386,15 +390,9 @@ Content-Type: application/json
 
 ---
 
-## Round Finalization & Automatic Payment Trigger
+## Round Finalization & Round Reviewer Payments
 
-When a program owner finalizes a round via `PATCH /api/v1/programs/rounds/{round}/finalize`, the system automatically:
-
-1. Processes all applications (scoring, knockout, advancement)
-2. Marks all reviewer orders with `work_status` in `['delivered', 'approved']` as `payment_status === 'pending'`
-3. Sends payment-initiated notifications to all reviewers
-
-The program owner then initiates payment for each reviewer via the checkout endpoint.
+Round finalization uses `POST /api/v1/programs/rounds/{round}/finalize`. It processes advancement and automatically attempts LIPR wallet transfers only for round-review orders that are approved, have a positive fee, meet the paid-application minimum, and have both owner/reviewer wallets and enough program-wallet balance. Other orders are not marked pending just because the round finalized. Use `GET /api/v1/programs/rounds/{round}/finalize-preview` to see the blockers and payment readiness, then `POST /api/v1/programs/rounds/{round}/reviewer-payments` to retry eligible unpaid/failed round orders after finalization. `payment_status: pending` means the transfer is in progress, not settled.
 
 ---
 
@@ -404,79 +402,27 @@ The payment flow triggers two callbacks:
 
 ### Leg 1: STK Push Confirmation
 ```
-POST /api/v1/lipr-callback-reviewer-payment
+POST /api/lipr-callback/reviewer-payment
 ```
 Called after customer approves M-Pesa STK. Records the payment and initiates W2W transfer to reviewer's wallet.
 
 ### Leg 2: W2W Confirmation
 ```
-POST /api/v1/lipr-callback-reviewer-payment-leg2
+POST /api/lipr-callback/reviewer-payment-leg2
 ```
 Called after W2W transfer completes. Marks order as `payment_status === 'completed'` and sends success notification to reviewer.
 
 ---
 
-## Example Flow
+## Example Round Review Flow
 
-### 1. Assign Reviewer to Round
-```
-POST /api/v1/programs/rounds/8/reviewers
-{
-  "reviewer_type": "external",
-  "name": "Dr. Alice Mwangi",
-  "email": "alice@reviewfirm.co.ke",
-  "max_apps_assigned": 20,
-  "expertise_tags": ["agriculture", "fintech"],
-  "reviewer_fee": 150,
-  "fee_currency": "USD"
-}
-```
-→ ReviewerOrder created with `work_status = assigned`, `payment_status = unpaid`
+1. The owner creates an assignment with `POST /api/v1/programs/rounds/{round}/reviewers`, including `user_id`, `reviewer_type`, and fee terms. The reviewer accepts with `POST /api/v1/programs/rounds/{round}/reviewers/accept`.
+2. The owner assigns applications when the round uses manual assignment; reviewers submit scores through the scoring endpoints.
+3. Once the review period ends and paid application thresholds are met, the owner approves the reviewer order with `POST /api/v1/programs/reviewer-orders/{order}/approve`.
+4. The owner previews and finalizes the round. Finalization attempts eligible round-review payments directly from the program LIPR wallet to the reviewer's LIPR wallet. If needed, retry with `POST /api/v1/programs/rounds/{round}/reviewer-payments`.
+5. Both participants can poll `GET /api/v1/programs/reviewer-orders/{order}/payment-status`. `completed` confirms settlement; `pending` means processing.
 
-### 2. Reviewer Submits Scores
-```
-POST /api/v1/program/applications/{app}/scores
-{
-  "criterion_scores": [...],
-  "overall_comment": "..."
-}
-```
-→ After submitting first score: ReviewerOrder `work_status` → `in_progress`
-→ After submitting all scores: ReviewerOrder `work_status` → `delivered`, PO notified
-
-### 3. PO Reviews and Approves
-```
-POST /api/v1/programs/reviewer-orders/42/approve
-```
-→ ReviewerOrder `work_status` → `approved`, reviewer notified
-
-### 4. PO Initiates Payment
-```
-POST /api/v1/checkout/initiate-payment
-{
-  "purpose": "reviewer_payment",
-  "listing_id": 42,
-  "acc_number": "254712345678"
-}
-```
-→ M-Pesa STK sent to PO's phone
-→ ReviewerOrder `payment_status` → `pending`
-
-### 5. PO Approves M-Pesa STK
-→ Callback triggered
-→ ReviewerOrder `leg1_reference` saved, `payment_status` → `leg1_processing`
-→ W2W transfer initiated to reviewer's wallet
-
-### 6. W2W Transfer Confirmation
-→ Leg 2 callback triggered
-→ ReviewerOrder `payment_status` → `completed`, `paid_at` set
-→ Reviewer receives payment confirmation email
-
-### 7. Reviewer Polls Status
-```
-GET /api/v1/programs/reviewer-orders/42/payment-status
-```
-→ Returns `payment_status = completed`
+For site-visit reviewer orders, use the reviewer order approval/payment flow described above; do not assume round-review auto-payment rules apply to site visits.
 
 ---
 
@@ -558,3 +504,16 @@ All endpoints are rate-limited per authenticated user. Refer to the main API rat
 ## Testing
 
 See `/tests/Feature/ReviewerPaymentTest.php` for comprehensive test coverage of all endpoints and workflows.
+
+---
+
+## Current round assignment and payment notes
+
+This section records the current backend contract verified in `routes/api/v1/programs.php`, `RoundReviewerController`, `ReviewerOrderController`, and `ProgramRoundController` (the older examples above do not include all current routes).
+
+- Reviewer assignment supports `reviewer_type: internal|external|third_party`. `third_party` is a service provider already added under organization provider management, and requires `reviewer_fee > 0`.
+- Fee configuration accepts `fee_type: flat|per_application` or the UI field `reviewer_payment_basis: flat_round_fee|per_application`. A paid flat fee requires `minimum_apps_to_get_paid`; the legacy `reviewer_payment_max_applications` is accepted as its fallback alias. Per-application mode defaults its paid minimum to 1. The minimum cannot exceed `max_apps_assigned`.
+- Invitations begin as `acceptance_status: pending`; the reviewer must accept before the owner can manually assign applications. Current routes include `POST /rounds/{round}/reviewers/accept`, `POST /rounds/{round}/reviewers/decline`, `POST /rounds/{round}/reviewers/{reviewer}/assign-applications`, `DELETE /rounds/{round}/applications/{application}/assignment`, `POST /rounds/{round}/applications/{application}/start-review`, `GET /rounds/{round}/my-applications`, `GET /reviewer/assigned-requests`, and `GET /reviewer/assignment-counts`.
+- `GET /rounds/{round}/finalize-preview` reports blockers, advancement decisions and reviewer payment readiness. `POST /rounds/{round}/reviewer-payments` is owner-only and starts ready reviewer payments after round finalization.
+- Reviewer order rejection is available at `POST /reviewer-orders/{order}/reject`; round-review work can be rejected only after the review period ends and requires `rejection_reason` (max 1000).
+- Reviewer payment is initiated at `POST /api/v1/lipr/initiate-payment` with `purpose: reviewer_payment`, not `/checkout/initiate-payment`. `listing_id` is the ReviewerOrder ID. The order amount is calculated by the backend. Current public LIPR callback paths are `POST /api/lipr-callback/reviewer-payment` and `POST /api/lipr-callback/reviewer-payment-leg2` (no `/v1` prefix). Poll the authenticated `GET /api/v1/programs/reviewer-orders/{order}/payment-status` endpoint for status; an initiated request does not confirm settlement.

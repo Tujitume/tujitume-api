@@ -16,6 +16,7 @@ class MilestoneBudgetItem extends Model
         'quantity',
         'total_cost',
         'purpose_type',
+        'added_by',
     ];
 
     protected $casts = [

@@ -118,6 +118,8 @@ class ProgramNotificationService
         'decision_notes' => 'no additional details were provided',
     ];
 
+    // -------------------------- H E L P E R S ---------------------------------//
+
     public function v(array $data, string $key): string
     {
         $value = $data[$key] ?? null;
@@ -401,6 +403,22 @@ class ProgramNotificationService
         return $this->link('dashboard.programOrg.programDealroomDetail', ['application_id' => $applicationId], $step, [], [], $hash);
     }
 
+    private function agreementDealroomLink(array $data, bool $owner, bool $openChat = false): string
+    {
+        $milestoneId = $data['milestone_id'] ?? null;
+        $route = $owner
+            ? 'dashboard.programOrg.programDealroomDetail'
+            : 'dashboard.entrepreneur.programsDealroom.detail';
+        $step = $owner ? 'funding-setup' : 'plan';
+        $query = [];
+        if ($milestoneId) {
+            $query['expandedMilestone'] = '@' . $milestoneId . ':1';
+            $query['verify'] = '@' . $milestoneId . ':' . ($data['verification_type'] ?? 'mprv');
+            if ($openChat) $query['chat'] = $data['chat_field_id'] ?? '1';
+        }
+        return $this->link($route, $data, $step, [], $query, $this->milestoneHash($data));
+    }
+
     /**
      * Program awarded → with exactly one awardee, open that business's funding setup;
      * with several, the deal room list where the owner picks one.
@@ -627,7 +645,7 @@ class ProgramNotificationService
                 'message' => "Changes were requested to your {$this->v($data, 'program_title')} funding plan.",
                 'email_subject' => 'Changes Requested on Your Funding Plan',
                 'email_view' => $this->view_base . 'funding_plan_changes_requested',
-                'link' => $this->applicantDealroomLink($data, 'plan'),
+                'link' => $this->link('dashboard.entrepreneur.programsDealroom.detail', $data, 'plan', [], [], 'plan-change-requests'),
             ],
             'funding_plan.activated' => [
                 'title' => 'Funding Plan Activated',
@@ -641,23 +659,21 @@ class ProgramNotificationService
                 'message' => "{$this->v($data, 'business_name')} agreed to {$this->v($data, 'verification_label')} with {$this->v($data, 'request_count')} request(s).",
                 'email_subject' => 'Applicant Agreed to Verification Requests',
                 'email_view' => $this->view_base . 'agreement_agreed',
-                'link' => $this->orgDealroomLink($data['application_id'] ?? '', 'funding-setup', $data['milestone_hash'] ?? ''),
+                'link' => $this->agreementDealroomLink($data, true, true),
             ],
             'agreement.message' => [
                 'title' => 'New Verification Agreement Message',
                 'message' => "{$this->v($data, 'actor_name')} sent a message about {$this->v($data, 'verification_label')}.",
                 'email_subject' => 'New Verification Agreement Message',
                 'email_view' => $this->view_base . 'agreement_message',
-                'link' => ($data['actor_side'] ?? '') === 'applicant'
-                    ? $this->orgDealroomLink($data['application_id'] ?? '', 'funding-setup', $data['milestone_hash'] ?? '')
-                    : $this->applicantDealroomLink($data, 'plan', true),
+                'link' => $this->agreementDealroomLink($data, ($data['actor_side'] ?? '') === 'applicant', true),
             ],
             'agreement.answered' => [
                 'title' => 'Verification Questions Updated',
                 'message' => "The program owner updated {$this->v($data, 'verification_label')} for Milestone {$this->v($data, 'milestone_number')}.",
                 'email_subject' => 'Updated Verification Questions',
                 'email_view' => $this->view_base . 'agreement_answered',
-                'link' => $this->applicantDealroomLink($data, 'plan', true),
+                'link' => $this->agreementDealroomLink($data, false, true),
             ],
 
             'milestone_verification.approved' => [

@@ -358,7 +358,7 @@ Deletes a document owned by the current KYC record. The `document` path paramete
 
 ## POST `/kyc/submit`
 
-Validates required flow fields, people requirements, and required documents, then changes status to `submitted`. The request body is empty.
+Validates required flow fields, people requirements, and required documents, then changes status to `submitted`. The request body is empty. A business owner account (`user_type_id` 1) must already belong to an organization; otherwise submission returns `422` with `KYC cannot be submitted without an organization.`
 
 **Example JSON body:**
 
