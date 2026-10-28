@@ -4,19 +4,14 @@ namespace App\Http\Controllers\Program;
 
 use App\Http\Controllers\Controller;
 use App\Http\Resources\Program\Monitoring\MECheckpointResource;
-use App\Http\Resources\Program\Monitoring\MESiteVisitResource;
 use App\Http\Resources\Program\Monitoring\MESubmissionResource;
 use App\Http\Resources\ApiResponseResource;
 use App\Models\Programs\ProgramApplication;
 use App\Models\Programs\Monitoring\MECheckpoint;
-use App\Models\Programs\Monitoring\MESiteVisit;
-use App\Models\Programs\Monitoring\MESiteVisitFile;
 use App\Models\Programs\Monitoring\MESubmission;
 use App\Models\Programs\Monitoring\MESubmissionFile;
-use App\Models\ReviewerOrder;
 use App\Service\Misc\ErrorLogService;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
@@ -365,181 +360,5 @@ class MEController extends Controller
         }
     }
 
-    // ─── SITE VISIT ──────────────────────────────────────────────────────
 
-    // POST /program/me/checkpoints/{checkpoint}/site-visit/assign
-    public function assignSiteVisit(Request $request, MECheckpoint $checkpoint)
-    {
-        if (!\App\Service\Program\ProgramAccess::owns($checkpoint->application->program)) {
-            return response()->json(['error' => 'Unauthorized'], 403);
-        }
-
-        if (!$checkpoint->require_site_visit) {
-            return response()->json(['error' => 'This checkpoint does not require a site visit'], 422);
-        }
-
-        DB::beginTransaction();
-        try {
-            $validated = $request->validate([
-                'reviewer_id' => 'required|exists:users,id',
-                'start_date'  => 'required|date',
-                'assign_type' => 'required|in:internal,external,third_party_audit',
-                'email'       => 'nullable|email|required_if:assign_type,external',
-                'data_collection_fields' => 'nullable|array',
-                'location'    => 'nullable|string',
-                'gps_lat'    => 'nullable|numeric',
-                'gps_lng'    => 'nullable|numeric',
-                'inspector'   => 'nullable|string',
-                'objective'   => 'nullable|string',
-                'kpi_targets' => 'nullable|array',
-                'reviewer_fee' => 'nullable|numeric|min:0',
-            ]);
-
-            $validated['checkpoint_id'] = $checkpoint->id;
-            $validated['app_id']        = $checkpoint->app_id;
-
-            $siteVisit = MESiteVisit::updateOrCreate(
-                ['checkpoint_id' => $checkpoint->id],
-                $validated
-            );
-
-            // Create ReviewerOrder for site visit
-            ReviewerOrder::updateOrCreate(
-                ['site_visit_id' => $siteVisit->id],
-                [
-                    'organization_id' => $checkpoint->application->program->user->organization_id,
-                    'reviewer_id'     => $validated['reviewer_id'],
-                    'program_id'      => $checkpoint->application->program_id,
-                    'order_type'      => 'site_visit',
-                    'site_visit_id'   => $siteVisit->id,
-                    'fee_amount'      => $validated['reviewer_fee'] ?? 0,
-                    'currency'        => $checkpoint->application->program->currency ?: config('app.currency', 'KES'),
-                    'work_status'     => 'assigned',
-                    'payment_status'  => 'unpaid',
-                    'deadline'        => $validated['start_date'] ?? null,
-                ]
-            );
-
-            // commit the transaction
-            DB::commit();
-
-            return new ApiResponseResource('Site visit assigned successfully', new MESiteVisitResource($siteVisit->load('files')), 201);
-
-        } catch (ValidationException $e) {
-            DB::rollBack();
-            return response()->json(['message' => 'Validation failed.', 'errors' => $e->errors()], 422);
-        } catch (\Exception $e) {
-            DB::rollBack();
-            ErrorLogService::report($e, ['input' => request()->except(['password', 'token'])]);
-            return response()->json(['message' => 'Something went wrong, please try again later.'], 500);
-        }
-    }
-
-    // POST /program/me/site-visits/{visit}/submit
-    public function submitSiteVisit(Request $request, MESiteVisit $visit)
-    {
-        if ($visit->reviewer_id !== auth()->id()) {
-            return response()->json(['error' => 'Unauthorized'], 403);
-        }
-
-        DB::beginTransaction();
-        try {
-            $validated = $request->validate([
-                'objectives_assessment'  => 'nullable|string',
-                'observed_actions'       => 'nullable|string',
-                'evidence_found'         => 'nullable|string',
-                'risk_notes'             => 'nullable|string',
-                'recommendation_notes'   => 'nullable|string',
-                'visit_comments'         => 'nullable|string',
-                'kpi_targets'            => 'nullable|array',
-                'data_collection_fields' => 'nullable|array',
-                'gps_lat'                => 'nullable|numeric',
-                'gps_lng'                => 'nullable|numeric',
-                'files'                  => 'nullable|array',
-                'files.*'                => 'file|max:20480',
-            ]);
-
-            // Handle files
-            $files = $request->file('files', []);
-            foreach ($files as $file) {
-                $filePath = $this->fileUpload->saveFile($file, "files/program/me/site-visits/{$visit->id}");
-
-                MESiteVisitFile::create([
-                    'site_visit_id'     => $visit->id,
-                    'file_path'         => $filePath,
-                    'original_filename' => $file->getClientOriginalName(),
-                    'mime_type'         => $file->getMimeType(),
-                ]);
-            }
-
-            unset($validated['files']);
-
-            $visit->update(array_merge($validated, ['status' => 'completed']));
-
-            // Auto-mark reviewer order as delivered when site visit submitted
-            $order = ReviewerOrder::where('site_visit_id', $visit->id)->first();
-            if ($order) {
-                $order->update([
-                    'work_status'  => 'delivered',
-                    'delivered_at' => now(),
-                ]);
-
-                // Notify program owner
-                $this->programNotification->send('reviewer.work_delivered', [
-                    $visit->checkpoint->application->program->owner
-                ], [
-                    'program_title' => $visit->checkpoint->application->program->program_title,
-                    'reviewer_name' => Auth::user()->first_name . ' ' . Auth::user()->last_name,
-                    'order_type'    => 'site_visit',
-                    'round_name'    => null,
-                    'order_id'      => $order->id,
-                ]);
-            }
-
-            DB::commit();
-
-            return new ApiResponseResource('Site visit report submitted successfully', new MESiteVisitResource($visit->load('files')), 200);
-
-        } catch (ValidationException $e) {
-            DB::rollBack();
-            return response()->json(['message' => 'Validation failed.', 'errors' => $e->errors()], 422);
-        } catch (\Exception $e) {
-            DB::rollBack();
-            ErrorLogService::report($e, ['input' => request()->except(['password', 'token'])]);
-            return response()->json(['message' => 'Something went wrong, please try again later.'], 500);
-        }
-    }
-
-    // GET /program/me/site-visits/{visit}
-    public function showSiteVisit(MESiteVisit $visit)
-    {
-        $userId      = auth()->id();
-        $application = $visit->checkpoint->application;
-
-        $isProgramOwner = $application->program->user_id === $userId;
-        $isReviewer   = $visit->reviewer_id === $userId;
-        $isApplicant  = $application->user_id === $userId;
-
-        if (!$isProgramOwner && !$isReviewer && !$isApplicant) {
-            return response()->json(['error' => 'Unauthorized'], 403);
-        }
-
-        return new ApiResponseResource('Site visit details fetched successfully', new MESiteVisitResource($visit->load('files')), 200);
-    }
-
-    public function SiteVisits(Request $request, $reviewer_id)
-    {
-        $userId = auth()->id();
-
-        if ($userId != $reviewer_id) {
-            return response()->json(['error' => 'Unauthorized'], 403);
-        }
-
-        $siteVisits = MESiteVisit::where('reviewer_id', $reviewer_id)
-            ->with(['checkpoint', 'checkpoint.application', 'files'])
-            ->orderBy('start_date', 'desc')
-            ->get();
-
-        return new ApiResponseResource('Site visits fetched successfully', MESiteVisitResource::collection($siteVisits), 200);
-    }
 }

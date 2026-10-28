@@ -38,6 +38,7 @@ class RoundReviewerController extends Controller
             ->get();
 
         $orderThresholds = ReviewerOrder::where('round_id', $round->id)
+            ->where('order_type', 'round_review')
             ->whereIn('reviewer_id', $reviewers->pluck('id'))
             ->orderBy('id')
             ->get()
@@ -104,208 +105,42 @@ class RoundReviewerController extends Controller
      */
     public function store(Request $request, ProgramRound $round)
     {
-        $userId = auth()->id();
+        $addedBy = auth()->id();
 
         if (!\App\Service\Program\ProgramAccess::owns($round->program)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
-        // Block assignment_method if owner_only
         if ($round->assignment_type === 'owner_only') {
-            return response()->json([
-                'error' => 'Round is owner_only — no external reviewers can be assigned.'
-            ], 422);
+            return response()->json(['error' => 'Round is owner_only — no external reviewers can be assigned.'], 422);
         }
 
         DB::beginTransaction();
         try {
-            $validated = $request->validate([
-                'reviewer_type'       => 'required|in:internal,external,third_party',
-                'user_id'             => 'required|exists:users,id',
-                'max_apps_assigned'   => 'nullable|integer|min:1',
-                'assigned_percentage' => 'nullable|integer|min:1|max:100',
-                'expertise_tags'      => 'nullable|array',
-                'reviewer_fee'        => 'nullable|numeric|min:0',
-                'fee_type'            => 'nullable|in:flat,per_application',
-                'fee_currency'        => 'nullable|string|max:10',
-                // What the round setup form sends ("Per application reviewed" / "Flat round fee")
-                'reviewer_payment_basis' => 'nullable|in:per_application,flat_round_fee',
-                'minimum_apps_to_get_paid' => 'nullable|integer|min:1',
-                'reviewer_payment_max_applications' => 'nullable|integer|min:1',
-            ]);
-
-            $minimumPaidApps = $validated['minimum_apps_to_get_paid']
-                ?? $validated['reviewer_payment_max_applications']
-                ?? null;
-
-            $fundingEnabled = filter_var($request->input('reviewer_payment_enabled', false), FILTER_VALIDATE_BOOLEAN)
-                || (float) ($validated['reviewer_fee'] ?? 0) > 0;
-
-            // The form's payment basis decides the fee type; before this it was ignored and every reviewer became "flat"
-            $feeType = match ($validated['reviewer_payment_basis'] ?? null) {
-                'per_application' => 'per_application',
-                'flat_round_fee'  => 'flat',
-                default           => $validated['fee_type'] ?? 'flat',
-            };
-
-            // A flat round fee is only earned by meeting the minimum, so it must be set. A per-application rate pays for
-            // every application the reviewer scores, so the minimum is optional and one scored application qualifies.
-            if (($fundingEnabled || $request->reviewer_type === 'third_party') && empty($minimumPaidApps)) {
-                if ($feeType === 'flat') {
-                    throw ValidationException::withMessages([
-                        'minimum_apps_to_get_paid' => ['Set the minimum number of applications the reviewer must score to qualify for the flat round fee.'],
-                    ]);
-                }
-                $minimumPaidApps = 1;
+            $assignment = $this->validateReviewerAssignment($request, $addedBy);
+            $user = User::findOrFail($assignment['user_id']);
+            $this->validateReviewerEligibility($request, $round, $user, $assignment);
+            if ($percentageError = $this->validateReviewerPercentage($round, $assignment)) {
+                DB::rollBack();
+                return $percentageError;
             }
+            $this->attachReviewerToRound($round, $assignment);
 
-            if (!empty($validated['max_apps_assigned'])
-                && !empty($minimumPaidApps)
-                && $minimumPaidApps > $validated['max_apps_assigned']) {
-                throw ValidationException::withMessages([
-                    'minimum_apps_to_get_paid' => ['The minimum paid application count cannot exceed the reviewer assignment limit.'],
-                ]);
-            }
-
-            $userId = $validated['user_id'];
-
-            // Validate: manual mode requires percentage
-            if ($round->assignment_method === 'manual' && empty($validated['assigned_percentage'])) {
-                // return response()->json([
-                //     'error' => 'assigned_percentage is required for manual assignment method.'
-                // ], 422);
-            }
-
-            // Validate: total percentages don't exceed 100 for manual mode
-            if ($round->assignment_method === 'manual' && !empty($validated['assigned_percentage'])) {
-                $existingPct = DB::table('round_reviewers')
-                    ->where('round_id', $round->id)
-                    ->sum('assigned_percentage');
-
-                if ($existingPct + $validated['assigned_percentage'] > 100) {
-                    return response()->json([
-                        'error' => "Total assigned percentage would exceed 100%. Currently {$existingPct}% assigned."
-                    ], 422);
-                }
-            }
-
-            $user = User::find($validated['user_id']);
-
-            // A Tujitume service provider (third party) is paid for the work, so the fee is required, and they must
-            // be one the organization added in Reviewer Management.
-            if ($request->reviewer_type === 'third_party') {
-                if ((float) ($validated['reviewer_fee'] ?? 0) <= 0) {
-                    throw ValidationException::withMessages([
-                        'reviewer_fee' => ['A third-party provider is paid for their work. Set a fee greater than zero.'],
-                    ]);
-                }
-
-                if ((int) $user->user_type_id !== 3 || ! \App\Models\Organizations\OrganizationProvider::has((int) $round->program->organization_id, (int) $user->id)) {
-                    throw ValidationException::withMessages([
-                        'user_id' => ['Add this service provider to your list in Reviewer Management first.'],
-                    ]);
-                }
-
-                if ($round->reviewers()->where('user_id', $userId)->exists()) {
-                    throw ValidationException::withMessages([
-                        'user_id' => ['This provider is already assigned to this round'],
-                    ]);
-                }
-            }
-
-            if ($request->reviewer_type == 'internal') {
-                $feeType = 'flat';
-
-                $user->load('organizationRole');
-
-                // A deactivated reviewer cannot be given new work until they are activated again
-                if ($user->organizationRole?->status === 'revoked') {
-                    throw ValidationException::withMessages([
-                        'user_id' => ['This reviewer is deactivated. Activate them from Reviewer Management first.'],
-                    ]);
-                }
-
-                // Check if already assigned
-                $exists = $round->reviewers()->where('user_id', $userId)->exists();
-
-                if ($exists) {
-                    throw ValidationException::withMessages([
-                        'user_id' => ['Reviewer already assigned to this round'],
-                    ]);
-                }
-
-                $round->reviewers()->attach($userId, [
-                    'reviewer_type'       => 'internal',
-                    'max_apps_assigned'   => $validated['max_apps_assigned'] ?? null,
-                    'assigned_percentage' => $validated['assigned_percentage'] ?? null,
-                    'expertise_tags'      => isset($validated['expertise_tags']) ? json_encode($validated['expertise_tags']) : null,
-                    'reviewer_fee'        => 0,
-                    'fee_type'            => $feeType,
-                    'fee_currency'        => $validated['fee_currency'] ?? ($round->program->currency ?: config('app.currency', 'KES')),
-                    'acceptance_status'   => 'pending',
-                ]);
-
-            } elseif (in_array($request->reviewer_type, ['external', 'third_party'], true)) {
-
-                $user->load('organization');
-                $round->reviewers()->attach($user->id, [
-                    'reviewer_type'       => 'external',
-                    'max_apps_assigned'   => $validated['max_apps_assigned'] ?? null,
-                    'assigned_percentage' => $validated['assigned_percentage'] ?? null,
-                    'expertise_tags'      => isset($validated['expertise_tags'])
-                        ? json_encode($validated['expertise_tags']) : null,
-                    'reviewer_fee'        => $validated['reviewer_fee'] ?? null,
-                    'fee_type'            => $feeType,
-                    'fee_currency'        => $validated['fee_currency'] ?? ($round->program->currency ?: config('app.currency', 'KES')),
-                    'acceptance_status'   => 'pending',
-                ]);
-
-            }
-
-            $roundReviewer = RoundReviewer::where('round_id', $round->id)->where('user_id', $userId)->firstOrFail();
-            $orderFee = $roundReviewer->reviewer_type === 'internal'
-                ? 0
-                : ($roundReviewer->fee_type === 'per_application' ? 0 : ($roundReviewer->reviewer_fee ?? 0));
-            // One round order represents this reviewer's complete round workload.
-            ReviewerOrder::create([
-                'organization_id' => $round->program->organization_id,
-                'reviewer_id'     => $userId,
-                'program_id'      => $round->program_id,
-                'order_type'      => 'round_review',
-                'round_id'        => $round->id,
-                'round_reviewer_id' => $roundReviewer->id,
-                'fee_amount' => $orderFee,
-
-                'fee_type'        => $roundReviewer->fee_type,
-                'minimum_apps_to_get_paid' => $minimumPaidApps,
-                'work_status'     => 'assigned',
-                'acceptance_status' => 'pending',
-                'payment_status'  => 'unpaid',
-                'deadline'        => $round->close_date ?? null,
-                'currency'        => 'KES',
-            ]);
+            $roundReviewer = RoundReviewer::where('round_id', $round->id)
+                ->where('user_id', $user->id)
+                ->firstOrFail();
+            $this->createReviewerOrder($round, $roundReviewer, $assignment);
 
             DB::commit();
 
-            // Notify reviewer of assignment
-            $this->programNotification->send('round.scoring_assigned', [$user], [
-                'program_title' => $round->program->program_title,
-                'round_name' => $round->round_name,
-                'max_apps' => $validated['max_apps_assigned'] ?? null,
-                'expertise_tags' => $validated['expertise_tags'] ?? [],
-                'program_id' => $round->program_id,
-                'proposed_fee' => $roundReviewer->reviewer_type === 'internal' ? 0 : ($validated['reviewer_fee'] ?? null),
-                'fee_type' => $feeType,
-                'fee_currency' => $validated['fee_currency'] ?? null,
-                'recipientName' => $user->first_name ?? $user->display_name,
-            ]);
-
+            if (!$assignment['owner_self_assignment']) {
+                $this->notifyReviewerAssignment($round, $roundReviewer, $user, $assignment);
+            }
 
             return response()->json([
                 'message' => 'Reviewer assigned successfully',
-                'data'  => $user
+                'data' => $user,
             ], 201);
-
         } catch (ValidationException $e) {
             DB::rollBack();
 
@@ -313,7 +148,6 @@ class RoundReviewerController extends Controller
                 'message' => 'Validation failed.',
                 'errors' => $e->errors(),
             ], 422);
-
         } catch (\Exception $e) {
             DB::rollBack();
             ErrorLogService::report($e, ['input' => request()->except(['password', 'token'])]);
@@ -322,10 +156,6 @@ class RoundReviewerController extends Controller
         }
     }
 
-    /**
-     * Remove reviewer from round
-     * DELETE /api/v1/program/rounds/{round}/reviewers/{user}
-     */
     public function destroy(ProgramRound $round, User $user)
     {
         $userId = auth()->id();
@@ -978,6 +808,184 @@ class RoundReviewerController extends Controller
     }
 
     // ─── PRIVATE: Wallet funds check ──────────────────────────────
+    // ─── PRIVATE HELPERS: Reviewer assignment ─────────────────────────────────────────
+    private function validateReviewerAssignment(Request $request, int $addedBy): array
+    {
+        $assignment = $request->validate([
+            'order_type' => 'required|in:round_review',
+            'reviewer_type' => 'required|in:internal,external,third_party',
+            'user_id' => 'required|exists:users,id',
+            'max_apps_assigned' => 'nullable|integer|min:1',
+            'assigned_percentage' => 'nullable|integer|min:1|max:100',
+            'expertise_tags' => 'nullable|array',
+            'reviewer_fee' => 'nullable|numeric|min:0',
+            'fee_type' => 'nullable|in:flat,per_application',
+            'fee_currency' => 'nullable|string|max:10',
+            'reviewer_payment_basis' => 'nullable|in:per_application,flat_round_fee',
+            'minimum_apps_to_get_paid' => 'nullable|integer|min:1',
+            'reviewer_payment_max_applications' => 'nullable|integer|min:1',
+        ]);
+
+        $assignment['owner_self_assignment'] = (int) $assignment['user_id'] === $addedBy;
+        $assignment['minimum_paid_apps'] = $assignment['minimum_apps_to_get_paid']
+            ?? $assignment['reviewer_payment_max_applications']
+            ?? null;
+        $assignment['fee_type'] = match ($assignment['reviewer_payment_basis'] ?? null) {
+            'per_application' => 'per_application',
+            'flat_round_fee' => 'flat',
+            default => $assignment['fee_type'] ?? 'flat',
+        };
+
+        if ($assignment['owner_self_assignment']) {
+            $assignment['reviewer_fee'] = 0;
+            $assignment['minimum_paid_apps'] = null;
+        }
+
+        $fundingEnabled = filter_var($request->input('reviewer_payment_enabled', false), FILTER_VALIDATE_BOOLEAN)
+            || (float) ($assignment['reviewer_fee'] ?? 0) > 0;
+
+        if (!$assignment['owner_self_assignment']
+            && ($fundingEnabled || $assignment['reviewer_type'] === 'third_party')
+            && empty($assignment['minimum_paid_apps'])) {
+            if ($assignment['fee_type'] === 'flat') {
+                throw ValidationException::withMessages([
+                    'minimum_apps_to_get_paid' => ['Set the minimum number of applications the reviewer must score to qualify for the flat round fee.'],
+                ]);
+            }
+            $assignment['minimum_paid_apps'] = 1;
+        }
+
+        if (!empty($assignment['max_apps_assigned'])
+            && !empty($assignment['minimum_paid_apps'])
+            && $assignment['minimum_paid_apps'] > $assignment['max_apps_assigned']) {
+            throw ValidationException::withMessages([
+                'minimum_apps_to_get_paid' => ['The minimum paid application count cannot exceed the reviewer assignment limit.'],
+            ]);
+        }
+
+        return $assignment;
+    }
+
+    private function validateReviewerEligibility(Request $request, ProgramRound $round, User $user, array &$assignment): void
+    {
+        $userId = (int) $user->id;
+        $selfAssignment = $assignment['owner_self_assignment'];
+
+        if ($request->reviewer_type === 'third_party') {
+            if (!$selfAssignment && (float) ($assignment['reviewer_fee'] ?? 0) <= 0) {
+                throw ValidationException::withMessages([
+                    'reviewer_fee' => ['A third-party provider is paid for their work. Set a fee greater than zero.'],
+                ]);
+            }
+
+            if (!$selfAssignment && ((int) $user->user_type_id !== 3
+                || !\App\Models\Organizations\OrganizationProvider::has((int) $round->program->organization_id, $userId))) {
+                throw ValidationException::withMessages([
+                    'user_id' => ['Add this service provider to your list in Reviewer Management first.'],
+                ]);
+            }
+
+            if ($round->reviewers()->where('user_id', $userId)->exists()) {
+                throw ValidationException::withMessages([
+                    'user_id' => ['This provider is already assigned to this round'],
+                ]);
+            }
+        }
+
+        if ($request->reviewer_type === 'internal') {
+            $assignment['fee_type'] = 'flat';
+            $user->load('organizationRole');
+
+            if ($user->organizationRole?->status === 'revoked') {
+                throw ValidationException::withMessages([
+                    'user_id' => ['This reviewer is deactivated. Activate them from Reviewer Management first.'],
+                ]);
+            }
+
+            if ($round->reviewers()->where('user_id', $userId)->exists()) {
+                throw ValidationException::withMessages([
+                    'user_id' => ['Reviewer already assigned to this round'],
+                ]);
+            }
+        }
+    }
+
+    private function validateReviewerPercentage(ProgramRound $round, array $assignment): ?\Illuminate\Http\JsonResponse
+    {
+        if ($round->assignment_method !== 'manual' || empty($assignment['assigned_percentage'])) {
+            return null;
+        }
+
+        $existingPct = DB::table('round_reviewers')->where('round_id', $round->id)->sum('assigned_percentage');
+        if ($existingPct + $assignment['assigned_percentage'] <= 100) {
+            return null;
+        }
+
+        return response()->json([
+            'error' => "Total assigned percentage would exceed 100%. Currently {$existingPct}% assigned."
+        ], 422);
+    }
+
+    private function attachReviewerToRound(ProgramRound $round, array $assignment): void
+    {
+        $selfAssignment = $assignment['owner_self_assignment'];
+        $internal = $assignment['reviewer_type'] === 'internal';
+
+        $round->reviewers()->attach($assignment['user_id'], [
+            'reviewer_type' => $internal ? 'internal' : 'external',
+            'max_apps_assigned' => $assignment['max_apps_assigned'] ?? null,
+            'assigned_percentage' => $assignment['assigned_percentage'] ?? null,
+            'expertise_tags' => isset($assignment['expertise_tags']) ? json_encode($assignment['expertise_tags']) : null,
+            'reviewer_fee' => $internal || $selfAssignment ? 0 : ($assignment['reviewer_fee'] ?? null),
+            'fee_type' => $assignment['fee_type'],
+            'fee_currency' => $assignment['fee_currency'] ?? ($round->program->currency ?: config('app.currency', 'KES')),
+            'acceptance_status' => $selfAssignment ? 'accepted' : 'pending',
+            'accepted_at' => $selfAssignment ? now() : null,
+        ]);
+    }
+
+    private function createReviewerOrder(ProgramRound $round, RoundReviewer $roundReviewer, array $assignment): void
+    {
+        $fee = $assignment['owner_self_assignment'] || $roundReviewer->reviewer_type === 'internal'
+            || $roundReviewer->fee_type === 'per_application'
+            ? 0
+            : ($roundReviewer->reviewer_fee ?? 0);
+
+        ReviewerOrder::create([
+            'organization_id' => $round->program->organization_id,
+            'reviewer_id' => $roundReviewer->user_id,
+            'program_id' => $round->program_id,
+            'order_type' => 'round_review',
+            'round_id' => $round->id,
+            'round_reviewer_id' => $roundReviewer->id,
+            'fee_amount' => $fee,
+            'fee_type' => $roundReviewer->fee_type,
+            'minimum_apps_to_get_paid' => $assignment['minimum_paid_apps'],
+            'work_status' => 'assigned',
+            'acceptance_status' => $assignment['owner_self_assignment'] ? 'accepted' : 'pending',
+            'accepted_at' => $assignment['owner_self_assignment'] ? now() : null,
+            'payment_status' => 'unpaid',
+            'deadline' => $round->close_date ?? null,
+            'currency' => 'KES',
+        ]);
+    }
+
+    private function notifyReviewerAssignment(ProgramRound $round, RoundReviewer $roundReviewer, User $user, array $assignment): void
+    {
+        $this->programNotification->send('round.scoring_assigned', [$user], [
+            'program_title' => $round->program->program_title,
+            'round_name' => $round->round_name,
+            'max_apps' => $assignment['max_apps_assigned'] ?? null,
+            'expertise_tags' => $assignment['expertise_tags'] ?? [],
+            'program_id' => $round->program_id,
+            'proposed_fee' => $roundReviewer->reviewer_type === 'internal' ? 0 : ($assignment['reviewer_fee'] ?? null),
+            'fee_type' => $assignment['fee_type'],
+            'fee_currency' => $assignment['fee_currency'] ?? null,
+            'recipientName' => $user->first_name ?? $user->display_name,
+        ]);
+    }
+
+    // ─── PRIVATE: Wallet funds check ───────────────────────────────────────────────────
     private function checkWalletFundsForReviewers(ProgramRound $round): array
     {
         $totalReviewerFees = ReviewerOrder::where('round_id', $round->id)

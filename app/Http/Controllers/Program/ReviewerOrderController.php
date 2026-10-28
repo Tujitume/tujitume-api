@@ -60,6 +60,7 @@ class ReviewerOrderController extends Controller
         }
 
         $orders = ReviewerOrder::where('round_id', $round->id)
+            ->where('order_type', 'round_review')
             ->with([
                 'applicationAssignments.application.business:id,name',
                 'reviewer',
@@ -98,6 +99,10 @@ class ReviewerOrderController extends Controller
 
         if ($order->reviewer_id !== Auth::id()) {
             return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
+        if ($order->order_type === 'site_visit') {
+            return response()->json(['error' => 'Submit the site visit report to deliver this order.'], 422);
         }
 
         if (!in_array($order->work_status, ['in_progress', 'modification_requested'])) {
@@ -145,6 +150,9 @@ class ReviewerOrderController extends Controller
     {
         if ($order->program->user_id !== Auth::id()) {
             return response()->json(['error' => 'Unauthorized'], 403);
+        }
+        if ($order->order_type === 'site_visit') {
+            return response()->json(['error' => 'Use the site visit review action for this order.'], 422);
         }
 
         // if ($order->order_type === 'round_review') {
@@ -195,6 +203,9 @@ class ReviewerOrderController extends Controller
     {
         if ($order->program->user_id !== Auth::id()) {
             return response()->json(['error' => 'Unauthorized'], 403);
+        }
+        if ($order->order_type === 'site_visit') {
+            return response()->json(['error' => 'Use the site visit approval action so payment is started correctly.'], 422);
         }
 
         if ($order->work_status !== 'delivered') {

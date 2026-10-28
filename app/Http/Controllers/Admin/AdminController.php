@@ -164,6 +164,16 @@ class AdminController extends Controller
             'rejection_reason' => null,
         ]);
 
+        if ($user) {
+            $this->notification->create(
+                $user->id,
+                null,
+                'Your KYC verification was successful. You can now continue using your verified account.',
+                'dashboard',
+                'kyc'
+            );
+        }
+
         if ($user?->email) {
             $name = trim(($user->first_name ?? '') . ' ' . ($user->last_name ?? ''))
                 ?: ($user->display_name ?: 'there');

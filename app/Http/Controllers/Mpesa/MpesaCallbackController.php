@@ -466,7 +466,7 @@ class MpesaCallbackController extends Controller
 
 
             } else {
-                // The transfer was refused, so the owner can retry it after finalization.
+                // The transfer was refused; the owning order flow can retry after resolving the cause.
                 $order->update(['payment_status' => 'failed']);
 
                 $this->programNotification->send('reviewer.payment_failed', [

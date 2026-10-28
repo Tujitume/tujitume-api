@@ -245,6 +245,10 @@ class ProgramNotificationService
             'reviewer.work_delivered' => "{$v('reviewer_name')} submitted their {$v('order_type')} work for {$program}. Open Orders to review and approve it.",
             'reviewer.modification_requested' => "{$actor} asked you to change your work on {$program}. Open Orders to see what to fix.",
             'reviewer.work_approved' => "Your work on {$program} was approved.",
+            'reviewer.site_visit_assigned' => "You were assigned a site visit for {$program}. Accept or decline the assignment.",
+            'reviewer.site_visit_accepted' => "{$v('reviewer_name')} accepted the site visit assignment for {$program}.",
+            'reviewer.site_visit_declined' => "{$v('reviewer_name')} declined the site visit assignment for {$program}. {$v('reason')}",
+            'reviewer.work_rejected' => "Your site visit work for {$program} was rejected: {$v('reason')}.",
             'reviewer.payment_initiated' => "Payment for your work on {$round} was started.",
             'reviewer.payment_completed' => ($this->money($d) ?: 'Your payment') . " for {$program} was sent to your wallet.",
             'reviewer.payment_failed' => "Paying {$v('reviewer_name')} for {$program} failed. Open Orders to retry.",
@@ -987,6 +991,38 @@ class ProgramNotificationService
                 'message'       => "Your work on {$this->v($data, 'program_title')} has been approved.",
                 'email_subject' => 'Reviewer Work Approved',
                 'email_view'    => $this->view_base . 'reviewer_work_approved',
+                'link'          => $this->link('dashboard.reviewerGrantOrg.orders'),
+            ],
+
+            'reviewer.site_visit_assigned' => [
+                'title'         => 'Site Visit Assignment',
+                'message'       => "You have been assigned a site visit for {$this->v($data, 'program_title')}.",
+                'email_subject' => 'New Site Visit Assignment',
+                'email_view'    => $this->view_base . 'reviewer_site_visit_assigned',
+                'link'          => $this->link('dashboard.reviewerGrantOrg.orders'),
+            ],
+
+            'reviewer.site_visit_accepted' => [
+                'title'         => 'Site Visit Accepted',
+                'message'       => "{$this->v($data, 'reviewer_name')} accepted a site visit assignment for {$this->v($data, 'program_title')}.",
+                'email_subject' => 'Site Visit Assignment Accepted',
+                'email_view'    => $this->view_base . 'reviewer_site_visit_accepted',
+                'link'          => $this->orgOrdersLink('all', $data['order_id'] ?? null),
+            ],
+
+            'reviewer.site_visit_declined' => [
+                'title'         => 'Site Visit Declined',
+                'message'       => "{$this->v($data, 'reviewer_name')} declined a site visit assignment for {$this->v($data, 'program_title')}.",
+                'email_subject' => 'Site Visit Assignment Declined',
+                'email_view'    => $this->view_base . 'reviewer_site_visit_declined',
+                'link'          => $this->orgOrdersLink('all', $data['order_id'] ?? null),
+            ],
+
+            'reviewer.work_rejected' => [
+                'title'         => 'Site Visit Work Rejected',
+                'message'       => "Your site visit work for {$this->v($data, 'program_title')} was rejected.",
+                'email_subject' => 'Site Visit Work Rejected',
+                'email_view'    => $this->view_base . 'reviewer_site_visit_rejected',
                 'link'          => $this->link('dashboard.reviewerGrantOrg.orders'),
             ],
 

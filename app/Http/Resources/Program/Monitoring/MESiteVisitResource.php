@@ -35,6 +35,7 @@ class MESiteVisitResource extends JsonResource
             'email' => $this->email,
             'reviewer' => $this->reviewer?->only(['id', 'first_name', 'last_name', 'email','image']),
             'files' => MESiteVisitFileResource::collection($this->whenLoaded('files')),
+            'order' => $this->whenLoaded('reviewerOrder', fn () => $this->reviewerOrder),
         ];
     }
 }

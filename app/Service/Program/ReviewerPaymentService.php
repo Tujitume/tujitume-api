@@ -49,7 +49,7 @@ class ReviewerPaymentService
         return $result;
     }
 
-    /** Start one approved round payment through the original reviewer transfer endpoint. */
+    /** Start one approved reviewer-order payment through the existing LIPR transfer callback. */
     public function pay(ReviewerOrder $order): array
     {
         try {
@@ -68,21 +68,27 @@ class ReviewerPaymentService
                 if ($lockedOrder->payment_status === 'pending') {
                     return ['error' => "{$name}'s payment is already being processed."];
                 }
-                if ($lockedOrder->order_type !== 'round_review' || $lockedOrder->work_status !== 'approved') {
-                    return ['error' => "{$name}'s work is not approved for round payment."];
+                if (!in_array($lockedOrder->order_type, ['round_review', 'site_visit'], true)
+                    || $lockedOrder->work_status !== 'approved') {
+                    return ['error' => "{$name}'s work is not approved for payment."];
+                }
+                if ($lockedOrder->order_type === 'site_visit'
+                    && (!$lockedOrder->siteVisit || (int) $lockedOrder->siteVisit->reviewer_id !== (int) $lockedOrder->reviewer_id)) {
+                    return ['error' => 'This site visit order is not linked to the assigned reviewer.'];
                 }
                 if ($amount <= 0) {
                     return ['error' => "{$name} has no fee to pay."];
                 }
-                $requiredApplications = $lockedOrder->minimumPaidApplications();
-                $completedApplications = $lockedOrder->applicationAssignments()
-                    ->where('status', 'completed')
-                    ->count();
-                if ($requiredApplications < 1 || $completedApplications < $requiredApplications) {
-                    return [
-                        'error' => "{$name} has not completed the minimum number of applications required for payment. 
-                        {$completedApplications} completed, {$requiredApplications} required."
+                if ($lockedOrder->order_type === 'round_review') {
+                    $requiredApplications = $lockedOrder->minimumPaidApplications();
+                    $completedApplications = $lockedOrder->applicationAssignments()
+                        ->where('status', 'completed')
+                        ->count();
+                    if ($requiredApplications < 1 || $completedApplications < $requiredApplications) {
+                        return [
+                            'error' => "{$name} has not completed the minimum number of applications required for payment. {$completedApplications} completed, {$requiredApplications} required."
                         ];
+                    }
                 }
                 if (! $reviewer?->lipr_wallet || !$reviewer->lipr_wallet) {
                     return ['error' => "{$name} has no LIPR wallet set up yet, so they cannot be paid. Ask them to set one up."];

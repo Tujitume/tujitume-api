@@ -663,17 +663,17 @@ class MpesaPollingController extends Controller
 
             $milestone = ProgramMilestone::find($request->milestone_id);
 
-            if (!$milestone->application->escrow_funded) {
-                return response()->json(['status' => 'pending'], 200);
-            }
-
-            // Leg 2 completed
+            // A direct wallet-funded release completes without setting the application escrow flag.
             if ($milestone->fund_release_status === 'released' && $milestone->fund_released) {
                 return response()->json([
                     'status' => 'completed',
                     'message'        => 'Payment completed successfully.',
                     'updated_at'     => now(),
                 ], 200);
+            }
+
+            if (!$milestone->application->escrow_funded) {
+                return response()->json(['status' => 'pending'], 200);
             }
 
             // Leg 1 successful, Leg 2 processing

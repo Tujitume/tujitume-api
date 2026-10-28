@@ -486,3 +486,5 @@ Validation failures use Laravel's standard shape:
 3. `POST /kyc/documents` for every required document.
 4. `GET /kyc/status` to check state.
 5. `POST /kyc/submit` once complete.
+
+When an administrator verifies a submitted KYC record, the account receives a bell notification with type `kyc` and link `overview/account`. A verification email is also sent when the account has an email address. The notification is separate from the KYC endpoint response.

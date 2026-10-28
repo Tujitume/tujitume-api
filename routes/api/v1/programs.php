@@ -26,6 +26,7 @@ use App\Http\Controllers\Program\ProgramMilestoneController;
 use App\Http\Controllers\Program\ProgramServiceController;
 use App\Http\Controllers\Program\ProgramSupplierController;
 use App\Http\Controllers\Program\ProgramWalletController;
+use App\Http\Controllers\Program\SiteVisitController;
 use App\Http\Controllers\Program\Rounds\ApplicationScoreController;
 use App\Http\Controllers\Program\Rounds\ProgramRoundController;
 use App\Http\Controllers\Program\Rounds\RoundDocumentController;
@@ -275,10 +276,17 @@ Route::prefix('/programs')->middleware(['program', 'program.response'])->group(f
         Route::delete('/checkpoints/{checkpoint}/submissions', [MEController::class, 'deleteSubmissions']);
 
         // Site Visits
-        Route::post('/checkpoints/{checkpoint}/site-visit/assign', [MEController::class, 'assignSiteVisit']);
-        Route::post('/site-visits/{visit}/submit', [MEController::class, 'submitSiteVisit']);
-        Route::get('/site-visits/{visit}', [MEController::class, 'showSiteVisit']);
-        Route::get('/reviewer/{reviewer_id}/site-visits', [MEController::class, 'SiteVisits']);
+        Route::post('/checkpoints/{checkpoint}/site-visit/assign', [SiteVisitController::class, 'assignSiteVisit']);
+        Route::get('/programs/{program}/site-visit-orders', [SiteVisitController::class, 'ownerOrders']);
+        Route::post('/site-visits/{visit}/accept', [SiteVisitController::class, 'acceptSiteVisit']);
+        Route::post('/site-visits/{visit}/decline', [SiteVisitController::class, 'declineSiteVisit']);
+        Route::post('/site-visits/{visit}/submit', [SiteVisitController::class, 'submitSiteVisit']);
+        Route::get('/site-visits/{visit}', [SiteVisitController::class, 'showSiteVisit']);
+        Route::get('/reviewer/{reviewer_id}/site-visits', [SiteVisitController::class, 'SiteVisits']);
+        Route::post('/reviewer-orders/{order}/site-visit/request-changes', [SiteVisitController::class, 'requestChanges']);
+        Route::post('/reviewer-orders/{order}/site-visit/approve', [SiteVisitController::class, 'approveOrder']);
+        Route::post('/reviewer-orders/{order}/site-visit/reject', [SiteVisitController::class, 'rejectOrder']);
+        Route::post('/reviewer-orders/{order}/site-visit/retry-payment', [SiteVisitController::class, 'retryPayment']);
 
         // Analytics
         Route::get('/applications/{app}/analytics/overview', [MEAnalyticsController::class, 'meOverview']);
