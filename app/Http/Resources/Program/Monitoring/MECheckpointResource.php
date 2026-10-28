@@ -20,6 +20,7 @@ class MECheckpointResource extends JsonResource
             'type' => $this->whenHas('type', $this->type),
             'due_date' => $this->whenHas('due_date', $this->due_date?->toDateString()),
             'requirement' => $this->whenHas('requirement', $this->requirement),
+            'checkpoint_description' => $this->whenHas('checkpoint_description', $this->checkpoint_description),
             'require_site_visit' => $this->whenHas('require_site_visit', $this->require_site_visit),
             'meeting_required' => $this->whenHas('meeting_required', $this->meeting_required),
             'meeting_id' => $this->whenHas('meeting_id', $this->meeting_id),
