@@ -118,6 +118,7 @@ class MEController extends Controller
                 'type'                     => 'sometimes|in:monitoring,reporting',
                 'due_date'                 => 'nullable|date',
                 'requirement'              => 'nullable|string',
+                'checkpoint_description'  => 'sometimes|nullable|string|max:500',
                 'require_site_visit'       => 'sometimes|boolean',
                 'kpis_to_track'            => 'nullable|array',
                 'evidence_required'        => 'nullable|array',

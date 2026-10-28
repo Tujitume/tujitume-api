@@ -12,7 +12,7 @@ class MECheckpoint extends Model
     protected static function newFactory() { return \Database\Factories\MECheckpointFactory::new(); }
     protected $fillable = [
         'app_id', 'program_id', 'checkpoint_name', 'type', 'due_date',
-        'requirement', 'require_site_visit', 'kpis_to_track','meeting_required', 'meeting_id',
+        'requirement', 'checkpoint_description', 'require_site_visit', 'kpis_to_track','meeting_required', 'meeting_id',
         'evidence_required', 'submission_fields', 'custom_submission_fields',
         'status', 'display_order',
     ];
