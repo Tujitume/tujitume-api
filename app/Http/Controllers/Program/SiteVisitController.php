@@ -73,7 +73,7 @@ class SiteVisitController extends Controller
             $order = ReviewerOrder::updateOrCreate(
                 ['site_visit_id' => $siteVisit->id],
                 [
-                    'organization_id' => $checkpoint->application->program->user->organization_id,
+                    'organization_id' => $checkpoint->application->program->owner->organization_id ?? null,
                     'reviewer_id'     => $validated['reviewer_id'],
                     'program_id'      => $checkpoint->application->program_id,
                     'order_type'      => 'site_visit',
