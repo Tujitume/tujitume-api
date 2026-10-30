@@ -249,7 +249,9 @@ class ProviderWorkController extends Controller
 
             // Which of them this organization has already added (so the list can say so instead of offering them again)
             $addedIds = OrganizationProvider::available() && $me->organization_id
-                ? OrganizationProvider::where('organization_id', $me->organization_id)->pluck('user_id')->all()
+                ? OrganizationProvider::where('organization_id', $me->organization_id)
+                    ->whereIn('user_id', $users->pluck('id'))
+                    ->pluck('user_id')->all()
                 : [];
 
             $servicesByUser = Services::whereIn('user_id', $users->pluck('id'))
@@ -258,7 +260,7 @@ class ProviderWorkController extends Controller
                 ->groupBy('user_id');
 
             return response()->json([
-                'data' => $users->map(function (User $user) use ($servicesByUser) {
+                'data' => $users->map(function (User $user) use ($servicesByUser, $addedIds) {
                     $services = $servicesByUser->get($user->id) ?? collect();
                     $service = $services->first(fn ($s) => is_numeric($s->lat) && is_numeric($s->lng)) ?? $services->first();
                     return [
