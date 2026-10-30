@@ -152,7 +152,21 @@ class ReviewerOrderController extends Controller
             return response()->json(['error' => 'Unauthorized'], 403);
         }
         if ($order->order_type === 'site_visit') {
-            return response()->json(['error' => 'Use the site visit review action for this order.'], 422);
+            if ($order->work_status !== 'delivered') return response()->json(['error' => 'Can only request modification on delivered work'], 422);
+            $validated = $request->validate([
+                'modification_note' => 'required|string|max:1000',
+                'flagged_items' => 'nullable|array|max:100',
+                'flagged_items.*.field_id' => 'required|string|max:100',
+                'flagged_items.*.label' => 'required|string|max:500',
+                'flagged_items.*.note' => 'required|string|max:240',
+            ]);
+            $order->update(['work_status' => 'modification_requested', 'modification_note' => $validated['modification_note'], 'flagged_items' => $validated['flagged_items'] ?? null]);
+            $order->siteVisit?->update(['status' => 'scheduled']);
+            $this->programNotification->send('reviewer.modification_requested', [$order->reviewer], [
+                'program_title' => $order->program->program_title,
+                'modification_note' => $validated['modification_note'], 'order_id' => $order->id,
+            ]);
+            return response()->json(['message' => 'Changes requested.', 'data' => $order->fresh()], 200);
         }
 
         // if ($order->order_type === 'round_review') {
@@ -168,11 +182,16 @@ class ReviewerOrderController extends Controller
         try {
             $validated = $request->validate([
                 'modification_note' => 'required|string|max:1000',
+                'flagged_items' => 'nullable|array|max:100',
+                'flagged_items.*.field_id' => 'required|string|max:100',
+                'flagged_items.*.label' => 'required|string|max:500',
+                'flagged_items.*.note' => 'required|string|max:240',
             ]);
 
             $order->update([
                 'work_status'       => 'modification_requested',
                 'modification_note' => $validated['modification_note'],
+                'flagged_items' => $validated['flagged_items'] ?? null,
             ]);
 
             // Notify reviewer

@@ -54,6 +54,12 @@ class SiteVisitController extends Controller
 
             $validated['checkpoint_id'] = $checkpoint->id;
             $validated['app_id']        = $checkpoint->app_id;
+            $business = $checkpoint->application->business;
+            $validated['kpi_targets'] = $validated['kpi_targets'] ?? $checkpoint->kpis_to_track;
+            $validated['data_collection_fields'] = $validated['data_collection_fields'] ?? array_merge($checkpoint->submission_fields ?? [], $checkpoint->evidence_required ?? []);
+            $validated['location'] = $validated['location'] ?? $business?->location;
+            $validated['gps_lat'] = $validated['gps_lat'] ?? $business?->lat;
+            $validated['gps_lng'] = $validated['gps_lng'] ?? $business?->lng;
 
             $existingVisit = MESiteVisit::where('checkpoint_id', $checkpoint->id)->first();
             $order = $existingVisit ? ReviewerOrder::where('site_visit_id', $existingVisit->id)->first() : null;
@@ -85,6 +91,10 @@ class SiteVisitController extends Controller
                     'accepted_at'     => null,
                     'payment_status'  => 'unpaid',
                     'deadline'        => $validated['start_date'] ?? null,
+                    'proposed_fee' => null,
+                    'fee_status' => null,
+                    'fee_proposal_note' => null,
+                    'fee_proposed_at' => null,
                 ]
             );
 
@@ -123,6 +133,31 @@ class SiteVisitController extends Controller
         if (!$order || $order->order_type !== 'site_visit' || $order->acceptance_status !== 'pending') {
             return response()->json(['error' => 'This site visit assignment cannot be accepted.'], 422);
         }
+        if ($order->fee_status === 'pending_owner') {
+            return response()->json(['error' => 'Wait for the organization to answer your proposed fee, or the visit would be accepted at the original fee.'], 422);
+        }
+        if ((float) $order->fee_amount > 0) {
+            if (empty(auth()->user()->lipr_wallet)) {
+                return response()->json(['error' => 'Set up your wallet before accepting a paid site visit, so you can be paid when your report is approved.'], 422);
+            }
+            $program = $order->program;
+            $required = (float) ReviewerOrder::where('program_id', $program->id)
+                ->whereIn('order_type', ['site_visit', 'round_review'])
+                ->where('acceptance_status', 'accepted')
+                ->where('payment_status', '!=', 'completed')
+                ->where('work_status', '!=', 'rejected')
+                ->where('id', '!=', $order->id)->sum('fee_amount') + (float) $order->fee_amount;
+            $available = (float) ($program->wallet?->balance ?? 0);
+            if ($available < $required) {
+                $shortfall = $required - $available;
+                $this->programNotification->send('reviewer.accepted_insufficient_funds', [$program->owner], [
+                    'program_id' => $program->id, 'program_title' => $program->program_title,
+                    'round_name' => $visit->checkpoint->checkpoint_name, 'required' => $required,
+                    'available' => $available, 'shortfall' => $shortfall, 'currency' => $order->currency,
+                ]);
+                return response()->json(['error' => 'The program wallet cannot cover this visit fee yet. The program owner has been told to top it up.', 'required' => $required, 'available' => $available, 'shortfall' => $shortfall], 422);
+            }
+        }
         $order->update(['acceptance_status' => 'accepted', 'accepted_at' => now(), 'work_status' => 'in_progress']);
         $this->programNotification->send('reviewer.site_visit_accepted', [$order->program->owner], [
             'program_id' => $order->program_id, 'program_title' => $order->program->program_title,
@@ -160,13 +195,53 @@ class SiteVisitController extends Controller
         if (!$this->isSiteVisitOrder($order)) return response()->json(['error' => 'This is not a checkpoint site visit order.'], 422);
         if (!\App\Service\Program\ProgramAccess::owns($order->program)) return response()->json(['error' => 'Unauthorized'], 403);
         if ($order->work_status !== 'delivered') return response()->json(['error' => 'Can only request changes to delivered work.'], 422);
-        $validated = $request->validate(['modification_note' => 'required|string|max:1000']);
-        $order->update(['work_status' => 'modification_requested', 'modification_note' => $validated['modification_note']]);
+        $validated = $request->validate([
+            'modification_note' => 'required|string|max:1000',
+            'flagged_items' => 'nullable|array|max:100',
+            'flagged_items.*.field_id' => 'required|string|max:100',
+            'flagged_items.*.label' => 'required|string|max:500',
+            'flagged_items.*.note' => 'required|string|max:240',
+        ]);
+        $order->update(['work_status' => 'modification_requested', 'modification_note' => $validated['modification_note'], 'flagged_items' => $validated['flagged_items'] ?? null]);
         $order->siteVisit?->update(['status' => 'scheduled']);
         $this->programNotification->send('reviewer.modification_requested', [$order->reviewer], [
             'program_title' => $order->program->program_title, 'modification_note' => $validated['modification_note'], 'order_id' => $order->id,
         ]);
         return response()->json(['message' => 'Changes requested. Reviewer notified.', 'data' => $order->fresh()], 200);
+    }
+
+    public function proposeFee(Request $request, MESiteVisit $visit)
+    {
+        if ((int) $visit->reviewer_id !== (int) auth()->id()) return response()->json(['error' => 'Unauthorized'], 403);
+        $validated = $request->validate(['proposed_fee' => 'required|numeric|min:0|max:99999999.99', 'note' => 'nullable|string|max:500']);
+        $order = ReviewerOrder::where('site_visit_id', $visit->id)->first();
+        if (!$order || $order->order_type !== 'site_visit' || $order->acceptance_status !== 'pending') return response()->json(['error' => 'A fee can only be proposed before the visit is accepted.'], 422);
+        $order->update(['proposed_fee' => $validated['proposed_fee'], 'fee_status' => 'pending_owner', 'fee_proposal_note' => $validated['note'] ?? null, 'fee_proposed_at' => now()]);
+        $program = $order->program;
+        $this->programNotification->send('reviewer.fee_proposed', [$program->owner], [
+            'program_id' => $program->id, 'program_title' => $program->program_title, 'order_id' => $order->id,
+            'site_visit_id' => $visit->id, 'app_id' => $visit->app_id,
+            'checkpoint_name' => $visit->checkpoint->checkpoint_name,
+            'reviewer_name' => trim(auth()->user()->first_name . ' ' . auth()->user()->last_name),
+            'fee' => $order->fee_amount, 'proposed_fee' => $order->proposed_fee, 'currency' => $order->currency,
+        ]);
+        return response()->json(['message' => 'Fee proposal sent to the program owner.', 'data' => $order->fresh()], 200);
+    }
+
+    public function answerFee(Request $request, ReviewerOrder $order)
+    {
+        if (!\App\Service\Program\ProgramAccess::owns($order->program)) return response()->json(['error' => 'Unauthorized'], 403);
+        if (!$this->isSiteVisitOrder($order)) return response()->json(['error' => 'This is not a checkpoint site visit order.'], 422);
+        $validated = $request->validate(['decision' => 'required|in:accept,decline']);
+        if ($order->fee_status !== 'pending_owner' || $order->acceptance_status !== 'pending') return response()->json(['error' => 'There is no proposed fee waiting for an answer.'], 422);
+        $accepted = $validated['decision'] === 'accept';
+        $order->update(array_filter(['fee_status' => $accepted ? 'accepted' : 'declined', 'fee_amount' => $accepted ? $order->proposed_fee : null], fn ($value) => $value !== null));
+        $this->programNotification->send('reviewer.fee_decided', [$order->reviewer], [
+            'program_id' => $order->program_id, 'program_title' => $order->program->program_title,
+            'order_id' => $order->id, 'site_visit_id' => $order->site_visit_id, 'accepted' => $accepted,
+            'fee' => $order->fee_amount, 'proposed_fee' => $order->proposed_fee, 'currency' => $order->currency,
+        ]);
+        return response()->json(['message' => 'Fee proposal answered.', 'data' => $order->fresh()], 200);
     }
 
     /** Owner rejects delivered site visit work; distinct from round review decisions. */

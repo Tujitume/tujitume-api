@@ -20,7 +20,8 @@ class ReviewerOrder extends Model
         'fee_amount', 'fee_type', 'fee_kes', 'currency', 'minimum_apps_to_get_paid',
         'work_status', 'acceptance_status', 'accepted_at', 'delivery_note', 'modification_note', 'rejection_reason',
         'deadline', 'delivered_at', 'approved_at',
-        'payment_status', 'leg1_reference', 'leg2_reference', 'paid_at',
+        'payment_status', 'leg1_reference', 'leg2_reference', 'paid_at', 'flagged_items',
+        'proposed_fee', 'fee_status', 'fee_proposal_note', 'fee_proposed_at',
     ];
 
     protected $casts = [
@@ -32,6 +33,9 @@ class ReviewerOrder extends Model
         'approved_at'  => 'datetime',
         'paid_at'      => 'datetime',
         'minimum_apps_to_get_paid' => 'integer',
+        'flagged_items' => 'array',
+        'proposed_fee' => 'float',
+        'fee_proposed_at' => 'datetime',
     ];
 
     public function organization()

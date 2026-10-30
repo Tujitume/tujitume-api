@@ -14,6 +14,11 @@ class MESiteVisitResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
+        $reviewer = $this->reviewer;
+        $service = $reviewer ? \App\Models\Services\Services::where('user_id', $reviewer->id)
+            ->whereIn('category', ['project_management', 'business_coaching'])
+            ->orderByRaw('CASE WHEN lat IS NOT NULL AND lng IS NOT NULL THEN 0 ELSE 1 END')
+            ->first() : null;
         return [
             'id' => $this->id,
             'inspector' => $this->inspector,
@@ -33,7 +38,10 @@ class MESiteVisitResource extends JsonResource
             'status' => $this->status,
             'assign_type' => $this->assign_type,
             'email' => $this->email,
-            'reviewer' => $this->reviewer?->only(['id', 'first_name', 'last_name', 'email','image']),
+            'reviewer' => $reviewer ? array_merge($reviewer->only(['id', 'first_name', 'last_name', 'email','image']), [
+                'lat' => $service?->lat, 'lng' => $service?->lng, 'service_location' => $service?->location,
+                'price' => $service?->price, 'service_name' => $service?->name,
+            ]) : null,
             'checkpoint' => $this->whenLoaded('checkpoint', fn () => $this->checkpoint->only([
                 'id', 'checkpoint_name', 'type', 'due_date', 'requirement', 'require_site_visit', 'status',
             ])),

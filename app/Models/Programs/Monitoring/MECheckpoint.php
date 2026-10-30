@@ -14,7 +14,7 @@ class MECheckpoint extends Model
         'app_id', 'program_id', 'checkpoint_name', 'type', 'due_date',
         'requirement', 'checkpoint_description', 'require_site_visit', 'kpis_to_track','meeting_required', 'meeting_id',
         'evidence_required', 'submission_fields', 'custom_submission_fields',
-        'status', 'display_order',
+        'status', 'display_order', 'sent_at', 'respondent', 'should_notify_applicant',
     ];
 
     protected $casts = [
@@ -24,6 +24,7 @@ class MECheckpoint extends Model
         'custom_submission_fields'=> 'array',
         'require_site_visit'      => 'boolean',
         'due_date'                => 'date',
+        'sent_at'                 => 'datetime',
     ];
 
     public function application() { return $this->belongsTo(ProgramApplication::class, 'app_id'); }

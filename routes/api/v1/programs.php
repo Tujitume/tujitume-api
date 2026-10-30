@@ -265,6 +265,7 @@ Route::prefix('/programs')->middleware(['program', 'program.response'])->group(f
         // Checkpoints
         Route::get('/applications/{app}/checkpoints', [MEController::class, 'indexCheckpoints']);
         Route::post('/applications/{app}/checkpoints', [MEController::class, 'storeCheckpoint']);
+        Route::post('/checkpoints/{checkpoint}/send', [MEController::class, 'sendCheckpoint']);
         Route::patch('/checkpoints/{checkpoint}', [MEController::class, 'updateCheckpoint']);
         Route::delete('/checkpoints/{checkpoint}', [MEController::class, 'deleteCheckpoint']);
 
@@ -272,6 +273,7 @@ Route::prefix('/programs')->middleware(['program', 'program.response'])->group(f
         Route::post('/checkpoints/{checkpoint}/submit', [MEController::class, 'submit']);
         Route::post('/submissions/{submission}/verify', [MEController::class, 'verify']);
         Route::post('/submissions/{submission}/request-changes', [MEController::class, 'requestChanges']);
+        Route::delete('/submission-files/{file}', [MEController::class, 'deleteSubmissionFile']);
 
         Route::delete('/checkpoints/{checkpoint}/submissions', [MEController::class, 'deleteSubmissions']);
 
@@ -279,6 +281,8 @@ Route::prefix('/programs')->middleware(['program', 'program.response'])->group(f
         Route::post('/checkpoints/{checkpoint}/site-visit/assign', [SiteVisitController::class, 'assignSiteVisit']);
         Route::get('/programs/{program}/site-visit-orders', [SiteVisitController::class, 'ownerOrders']);
         Route::post('/site-visits/{visit}/accept', [SiteVisitController::class, 'acceptSiteVisit']);
+        Route::post('/site-visits/{visit}/propose-fee', [SiteVisitController::class, 'proposeFee']);
+        Route::post('/reviewer-orders/{order}/site-visit/answer-fee', [SiteVisitController::class, 'answerFee']);
         Route::post('/site-visits/{visit}/decline', [SiteVisitController::class, 'declineSiteVisit']);
         Route::post('/site-visits/{visit}/submit', [SiteVisitController::class, 'submitSiteVisit']);
         Route::get('/site-visits/{visit}', [SiteVisitController::class, 'showSiteVisit']);

@@ -9,6 +9,7 @@ class UserSetting extends Model
 {
     public const THEME_KEYS = [
         'default',
+        'tujitume',
         'emerald',
         'blue',
         'ocean',

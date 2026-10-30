@@ -14,7 +14,7 @@ class MESubmission extends Model
     protected $fillable = [
         'checkpoint_id', 'app_id', 'submitted_by', 'written_report',
         'kpi_actual_values', 'beneficiary_list', 'custom_field_values',
-        'status', 'reviewer_note', 'reviewed_by', 'reviewed_at', 'submitted_at',
+        'status', 'reviewer_note', 'reviewed_by', 'reviewed_at', 'submitted_at', 'flagged_items',
     ];
 
     protected $casts = [
@@ -23,6 +23,7 @@ class MESubmission extends Model
         'custom_field_values'=> 'array',
         'reviewed_at'        => 'datetime',
         'submitted_at'       => 'datetime',
+        'flagged_items'      => 'array',
     ];
 
     public function checkpoint() { return $this->belongsTo(MECheckpoint::class, 'checkpoint_id'); }

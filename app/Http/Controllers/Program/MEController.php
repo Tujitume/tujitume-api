@@ -37,6 +37,7 @@ class MEController extends Controller
         }
 
         $checkpoints = MECheckpoint::where('app_id', $app->id)
+            ->when(!$isProgramOwner, fn ($query) => $query->where('respondent', 'applicant')->whereNotNull('sent_at'))
             ->with(['submission.files', 'siteVisit.checkpoint', 'siteVisit.files'])
             ->orderBy('display_order')
             ->get();
@@ -70,7 +71,8 @@ class MEController extends Controller
         try {
             $validated = $request->validate([
                 'checkpoint_name'          => 'required|string|max:255',
-                'type'                     => 'required|in:monitoring,reporting,meeting',
+                'type'                     => 'required|in:monitoring,reporting,meeting,site_visit,milestone_review,financial_audit,kpi_assessment,impact_evaluation,disbursement_approval,closure_review',
+                'respondent'               => 'sometimes|in:applicant,organization,site_visit_officer',
                 'due_date'                 => 'nullable|date',
                 'requirement'              => 'nullable|string',
                 'checkpoint_description'   => 'nullable|string|max:500',
@@ -83,12 +85,31 @@ class MEController extends Controller
                 //'custom_submission_fields' => 'nullable|array',
                 'display_order'            => 'nullable|integer',
                 'should_notify_applicant'  => 'boolean|required_with:require_site_visit',
+                'send' => 'sometimes|boolean',
             ]);
 
             $validated['app_id']   = $app->id;
             $validated['program_id'] = $app->program_id;
+            $validated['respondent'] = $validated['respondent'] ?? (!empty($validated['require_site_visit']) ? 'site_visit_officer' : 'applicant');
+            $send = $validated['send'] ?? true;
+            unset($validated['send']);
+            $validated['sent_at'] = $send ? now() : null;
 
             $checkpoint = MECheckpoint::create($validated);
+
+            if ($send && $checkpoint->require_site_visit && $checkpoint->should_notify_applicant) {
+                $this->programNotification->send('applicant.site_visit_planned', [$app->user], [
+                    'program_id' => $app->program_id, 'program_title' => $app->program->program_title,
+                    'app_id' => $app->id, 'checkpoint_name' => $checkpoint->checkpoint_name,
+                ]);
+            }
+            if ($send && $checkpoint->respondent === 'applicant') {
+                $this->programNotification->send('applicant.checkpoint_sent', [$app->user], [
+                    'program_id' => $app->program_id, 'program_title' => $app->program->program_title,
+                    'app_id' => $app->id, 'checkpoint_name' => $checkpoint->checkpoint_name,
+                    'due_date' => $checkpoint->due_date?->toDateString(),
+                ]);
+            }
 
             DB::commit();
 
@@ -104,6 +125,46 @@ class MEController extends Controller
         }
     }
 
+    public function sendCheckpoint(MECheckpoint $checkpoint)
+    {
+        $application = $checkpoint->application;
+        if (!\App\Service\Program\ProgramAccess::owns($application->program)) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+        if (!$checkpoint->sent_at) {
+            $checkpoint->update(['sent_at' => now()]);
+            $checkpoint = $checkpoint->fresh();
+            $data = [
+                'program_id' => $application->program_id,
+                'program_title' => $application->program->program_title,
+                'app_id' => $application->id,
+                'checkpoint_name' => $checkpoint->checkpoint_name,
+                'due_date' => $checkpoint->due_date?->toDateString(),
+            ];
+            if ($checkpoint->respondent === 'applicant') {
+                $this->programNotification->send('applicant.checkpoint_sent', [$application->user], $data);
+            }
+            if ($checkpoint->require_site_visit && $checkpoint->should_notify_applicant) {
+                $this->programNotification->send('applicant.site_visit_planned', [$application->user], $data);
+            }
+        }
+        return new ApiResponseResource('Checkpoint sent', new MECheckpointResource($checkpoint->fresh()), 200);
+    }
+
+    public function deleteSubmissionFile(MESubmissionFile $file)
+    {
+        if ((int) $file->submission->checkpoint->application->user_id !== (int) auth()->id()) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+        if ($file->submission->status !== 'changes_requested') {
+            return response()->json(['error' => 'Files can only be removed while changes are requested'], 422);
+        }
+        try { Storage::disk('s3')->delete($file->file_path); } catch (\Throwable $e) { /* database removal still proceeds */ }
+        $id = $file->id;
+        $file->delete();
+        return new ApiResponseResource('File removed', ['file_id' => $id], 200);
+    }
+
     // PATCH /program/me/checkpoints/{checkpoint}
     public function updateCheckpoint(Request $request, MECheckpoint $checkpoint)
     {
@@ -115,7 +176,8 @@ class MEController extends Controller
         try {
             $validated = $request->validate([
                 'checkpoint_name'          => 'sometimes|string|max:255',
-                'type'                     => 'sometimes|in:monitoring,reporting',
+                'type'                     => 'sometimes|in:monitoring,reporting,meeting,site_visit,milestone_review,financial_audit,kpi_assessment,impact_evaluation,disbursement_approval,closure_review',
+                'respondent'               => 'sometimes|in:applicant,organization,site_visit_officer',
                 'due_date'                 => 'nullable|date',
                 'requirement'              => 'nullable|string',
                 'checkpoint_description'  => 'sometimes|nullable|string|max:500',
@@ -128,6 +190,18 @@ class MEController extends Controller
             ]);
 
             $checkpoint->update($validated);
+            $visit = $checkpoint->siteVisit;
+            $order = $visit?->reviewerOrder;
+            if ($visit && $visit->status === 'scheduled' && $order?->acceptance_status !== 'accepted') {
+                $business = $checkpoint->application->business;
+                $visit->update([
+                    'kpi_targets' => $checkpoint->kpis_to_track,
+                    'data_collection_fields' => array_merge($checkpoint->submission_fields ?? [], $checkpoint->evidence_required ?? []),
+                    'location' => $visit->location ?: $business?->location,
+                    'gps_lat' => $visit->gps_lat ?? $business?->lat,
+                    'gps_lng' => $visit->gps_lng ?? $business?->lng,
+                ]);
+            }
             DB::commit();
 
             return new ApiResponseResource('Checkpoint updated successfully', new MECheckpointResource($checkpoint), 200);
@@ -164,6 +238,10 @@ class MEController extends Controller
 
         if ($checkpoint->application->user_id !== $userId) {
             return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
+        if (!$checkpoint->sent_at) {
+            return response()->json(['error' => 'This checkpoint has not been sent yet'], 422);
         }
 
         if ($checkpoint->status === 'verified') {
@@ -267,6 +345,7 @@ class MEController extends Controller
             $submission->update([
                 'status'        => 'verified',
                 'reviewer_note' => $validated['reviewer_note'] ?? null,
+                'flagged_items' => null,
                 'reviewed_by'   => auth()->id(),
                 'reviewed_at'   => now(),
             ]);
@@ -295,11 +374,16 @@ class MEController extends Controller
         try {
             $validated = $request->validate([
                 'reviewer_note' => 'required|string',
+                'flagged_items' => 'nullable|array|max:100',
+                'flagged_items.*.field_id' => 'required|string|max:100',
+                'flagged_items.*.label' => 'required|string|max:500',
+                'flagged_items.*.note' => 'required|string|max:240',
             ]);
 
             $submission->update([
                 'status'        => 'changes_requested',
                 'reviewer_note' => $validated['reviewer_note'],
+                'flagged_items' => $validated['flagged_items'] ?? null,
                 'reviewed_by'   => auth()->id(),
                 'reviewed_at'   => now(),
             ]);
@@ -310,6 +394,9 @@ class MEController extends Controller
 
             return new ApiResponseResource('Changes requested successfully', new MESubmissionResource($submission->fresh()->load('files')), 200);
 
+        } catch (ValidationException $e) {
+            DB::rollBack();
+            return response()->json(['message' => 'Validation failed.', 'errors' => $e->errors()], 422);
         } catch (\Exception $e) {
             DB::rollBack();
             ErrorLogService::report($e, ['input' => request()->except(['password', 'token'])]);

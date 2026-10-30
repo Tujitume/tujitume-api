@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Auth\User;
 use App\Models\Organizations\OrganizationProvider;
 use App\Models\Programs\MilestoneSupplier;
+use App\Models\ReviewerOrder;
 use App\Models\Programs\MilestoneVerification;
 use App\Models\Programs\Monitoring\MESiteVisit;
 use App\Models\Programs\Rounds\RoundReviewer;
@@ -95,10 +96,11 @@ class ProviderWorkController extends Controller
     private function inspections(User $me)
     {
         return MESiteVisit::where('reviewer_id', $me->id)
-            ->with(['checkpoint.application.program'])
+            ->with(['checkpoint.application.program', 'reviewerOrder'])
             ->get()
             ->map(function (MESiteVisit $visit) {
                 $application = $visit->checkpoint?->application;
+                $order = $visit->reviewerOrder ?: ReviewerOrder::where('site_visit_id', $visit->id)->first();
 
                 return [
                     'kind' => 'inspection',
@@ -113,7 +115,13 @@ class ProviderWorkController extends Controller
                     'location' => $visit->location,
                     'support_type' => $visit->assign_type === 'third_party_audit' ? 'Third-party audit' : 'Site visit',
                     'inspector' => $visit->inspector,
-                    'amount' => null,
+                    'order_id' => $order?->id,
+                    'amount' => $order?->fee_amount !== null ? (float) $order->fee_amount : null,
+                    'currency' => $order?->currency,
+                    'work_status' => $order?->work_status,
+                    'payment_status' => $order?->payment_status,
+                    'fee_status' => $order?->fee_status,
+                    'proposed_fee' => $order?->proposed_fee,
                     'status' => $visit->status,
                     'due' => $visit->start_date?->toDateString(),
                     'sort' => $visit->start_date?->timestamp ?? $visit->created_at?->timestamp ?? 0,
@@ -145,6 +153,10 @@ class ProviderWorkController extends Controller
                     'support_type' => 'MPRV audit',
                     'inspector' => null,
                     'amount' => null,
+                    'order_id' => null,
+                    'currency' => null,
+                    'work_status' => null,
+                    'payment_status' => null,
                     'status' => (string) ($verification->decision ?? 'audit_requested'),
                     'due' => null,
                     'sort' => $verification->audit_started_at?->timestamp ?? $verification->created_at?->timestamp ?? 0,
@@ -241,22 +253,31 @@ class ProviderWorkController extends Controller
                 : [];
 
             $servicesByUser = Services::whereIn('user_id', $users->pluck('id'))
-                ->get(['id', 'user_id', 'name', 'category'])
+                ->whereIn('category', ['project_management', 'business_coaching'])
+                ->get(['id', 'user_id', 'name', 'category', 'price', 'lat', 'lng', 'location'])
                 ->groupBy('user_id');
 
             return response()->json([
-                'data' => $users->map(fn (User $user) => [
+                'data' => $users->map(function (User $user) use ($servicesByUser) {
+                    $services = $servicesByUser->get($user->id) ?? collect();
+                    $service = $services->first(fn ($s) => is_numeric($s->lat) && is_numeric($s->lng)) ?? $services->first();
+                    return [
                     'id' => $user->id,
                     'name' => $user->display_name ?: trim($user->first_name . ' ' . $user->last_name),
                     'email' => $user->email,
                     'phone' => $user->phone,
                     'image' => $user->image,
                     'location' => collect([$user->city, $user->country])->filter()->implode(', '),
+                    'lat' => $service?->lat,
+                    'lng' => $service?->lng,
+                    'price' => $service?->price,
+                    'service_location' => $service?->location,
                     'added' => in_array($user->id, $addedIds),
-                    'services' => ($servicesByUser->get($user->id) ?? collect())
-                        ->map(fn ($service) => ['id' => $service->id, 'name' => $service->name, 'category' => $service->category])
+                    'services' => $services
+                        ->map(fn ($service) => ['id' => $service->id, 'name' => $service->name, 'category' => $service->category, 'price' => $service->price, 'lat' => $service->lat, 'lng' => $service->lng, 'location' => $service->location])
                         ->values(),
-                ])->values(),
+                    ];
+                })->values(),
                 'meta' => ['page' => $page, 'per_page' => $perPage, 'has_more' => $hasMore],
             ], 200);
         } catch (\Throwable $e) {

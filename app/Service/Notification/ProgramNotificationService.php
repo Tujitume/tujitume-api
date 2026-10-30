@@ -28,6 +28,8 @@ class ProgramNotificationService
         'agreement.agreed', 'agreement.message', 'agreement.answered',
         'milestone_verification.approved', 'milestone_verification.rejected',
         'milestone_verification.modification_requested',
+        'applicant.checkpoint_sent',
+        'applicant.site_visit_planned',
     ];
 
     public function __construct() {
@@ -246,6 +248,9 @@ class ProgramNotificationService
             'reviewer.modification_requested' => "{$actor} asked you to change your work on {$program}. Open Orders to see what to fix.",
             'reviewer.work_approved' => "Your work on {$program} was approved.",
             'reviewer.site_visit_assigned' => "You were assigned a site visit for {$program}. Accept or decline the assignment.",
+            'applicant.checkpoint_sent' => "A new monitoring checkpoint, {$v('checkpoint_name')}, is ready for you on {$program}. Open it to see what to submit.",
+            'reviewer.fee_proposed' => "{$v('reviewer_name')} proposed a fee of " . ($this->money($d, 'proposed_fee') ?: $v('proposed_fee')) . " for the site visit on {$program}. Open the checkpoint to accept or decline it.",
+            'reviewer.fee_decided' => ($d['accepted'] ?? false) ? "The organization accepted your proposed fee for a site visit under {$program}. You can now accept the visit." : "The organization declined your proposed fee for a site visit under {$program}. You can accept the visit at this fee, or decline it.",
             'reviewer.site_visit_accepted' => "{$v('reviewer_name')} accepted the site visit assignment for {$program}.",
             'reviewer.site_visit_declined' => "{$v('reviewer_name')} declined the site visit assignment for {$program}. {$v('reason')}",
             'reviewer.work_rejected' => "Your site visit work for {$program} was rejected: {$v('reason')}.",
@@ -1000,6 +1005,35 @@ class ProgramNotificationService
                 'email_subject' => 'New Site Visit Assignment',
                 'email_view'    => $this->view_base . 'reviewer_site_visit_assigned',
                 'link'          => $this->link('dashboard.reviewerGrantOrg.orders'),
+            ],
+
+            'applicant.checkpoint_sent' => [
+                'title' => 'New Monitoring Checkpoint',
+                'message' => "A new monitoring checkpoint, {$this->v($data, 'checkpoint_name')}, is ready for you under {$this->v($data, 'program_title')}.",
+                'email_subject' => 'A Monitoring Checkpoint Is Ready for You',
+                'email_view' => $this->view_base . 'applicant_checkpoint_sent',
+                'link' => $this->link('dashboard.entrepreneur.grantsDealroom.monitoring', ['application_id' => $data['app_id'] ?? null]),
+            ],
+            'reviewer.fee_proposed' => [
+                'title' => 'Site Visit Fee Proposed',
+                'message' => $this->v($data, 'reviewer_name') . ' proposed a different fee for a site visit under ' . $this->v($data, 'program_title') . '.',
+                'email_subject' => 'A Site Visit Fee Was Proposed',
+                'email_view' => $this->view_base . 'reviewer_fee_proposed',
+                'link' => $this->link('dashboard.grantOrg.dealroom.monitoring', ['application_id' => $data['app_id'] ?? null]),
+            ],
+            'reviewer.fee_decided' => [
+                'title' => 'Site Visit Fee Answered',
+                'message' => ($data['accepted'] ?? false) ? 'The organization accepted your proposed fee.' : 'The organization declined your proposed fee.',
+                'email_subject' => 'Your Proposed Site Visit Fee Was Answered',
+                'email_view' => $this->view_base . 'reviewer_fee_decided',
+                'link' => $this->link('dashboard.reviewerGrantOrg.orders'),
+            ],
+            'applicant.site_visit_planned' => [
+                'title' => 'Site Visit Planned',
+                'message' => 'A site visit has been planned for ' . $this->v($data, 'checkpoint_name') . ' under ' . $this->v($data, 'program_title') . '.',
+                'email_subject' => 'A Site Visit Is Planned',
+                'email_view' => $this->view_base . 'applicant_site_visit_planned',
+                'link' => $this->link('dashboard.entrepreneur.grantsDealroom.monitoring', ['application_id' => $data['app_id'] ?? null]),
             ],
 
             'reviewer.site_visit_accepted' => [

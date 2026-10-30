@@ -7,12 +7,14 @@ All routes are under `/api/v1/programs` and inherit `auth:sanctum`, `extend-toke
 | POST | `/monitoring/applications/{app}/checkpoints` | Program owner | Create a checkpoint; set `require_site_visit: true` when it needs a visit |
 | POST | `/monitoring/checkpoints/{checkpoint}/site-visit/assign` | Program owner | Assign or reassign the checkpoint visit and create/update its `site_visit` reviewer order |
 | POST | `/monitoring/site-visits/{visit}/accept` | Assigned reviewer | Accept the assignment and move the order to `in_progress` |
+| POST | `/monitoring/site-visits/{visit}/propose-fee` | Assigned reviewer | Propose a different fee before accepting |
+| POST | `/monitoring/reviewer-orders/{order}/site-visit/answer-fee` | Program owner | Accept or decline a pending fee proposal |
 | POST | `/monitoring/site-visits/{visit}/decline` | Assigned reviewer | Decline a pending assignment |
 | POST | `/monitoring/site-visits/{visit}/submit` | Assigned reviewer | Submit report fields/files; marks the visit completed and order delivered |
 | GET | `/monitoring/site-visits/{visit}` | Program owner, assigned reviewer, or applicant | Get visit details and linked order |
 | GET | `/monitoring/reviewer/{reviewer_id}/site-visits` | That reviewer | List the caller's assigned visits |
 | GET | `/monitoring/programs/{program}/site-visit-orders` | Program owner | List checkpoint-linked site visit reviewer orders for the program |
-| POST | `/monitoring/reviewer-orders/{order}/site-visit/request-changes` | Program owner | Return delivered site visit work for changes |
+| POST | `/monitoring/reviewer-orders/{order}/site-visit/request-changes` | Program owner | Return delivered site visit work for changes; accepts optional structured `flagged_items` |
 | POST | `/monitoring/reviewer-orders/{order}/site-visit/reject` | Program owner | Reject delivered site visit work |
 | POST | `/monitoring/reviewer-orders/{order}/site-visit/approve` | Program owner | Approve delivered work and start payment when its fee is positive |
 | POST | `/monitoring/reviewer-orders/{order}/site-visit/retry-payment` | Program owner | Retry payment for approved work with an unpaid or failed payment |

@@ -22,6 +22,7 @@ class MESubmissionResource extends JsonResource
             'custom_field_values' => $this->custom_field_values,
             'status' => $this->status,
             'reviewer_note' => $this->reviewer_note,
+            'flagged_items' => $this->flagged_items,
             'reviewed_at' => $this->reviewed_at?->toISOString(),
             'submitted_at' => $this->submitted_at?->toISOString(),
             'files' => MESubmissionFileResource::collection($this->whenLoaded('files')),

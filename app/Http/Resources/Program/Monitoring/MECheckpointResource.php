@@ -29,6 +29,8 @@ class MECheckpointResource extends JsonResource
             'submission_fields' => $this->whenHas('submission_fields', $this->submission_fields),
             'custom_submission_fields' => $this->whenHas('custom_submission_fields', $this->custom_submission_fields),
             'display_order' => $this->whenHas('display_order', $this->display_order),
+            'respondent' => $this->whenHas('respondent', $this->respondent),
+            'sent_at' => $this->whenHas('sent_at', $this->sent_at?->toISOString()),
             'status' => $this->whenHas('status', [
                 'value' => $this->status,
                 'color' => config("status.me_checkpoint.{$this->status}", 'gray'),
