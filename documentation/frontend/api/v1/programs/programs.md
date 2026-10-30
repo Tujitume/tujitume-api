@@ -30,7 +30,7 @@ Creates a draft program for the authenticated organization owner and provisions 
 **Example Response — 201 Created**
 
 ```json
-{"success":true,"message":"Program created successfully","data":{"program":{"id":12,"program_title":"Green Enterprise Fund","status":"draft","max_awardees":10},"first_round":{"id":7,"round_number":1,"status":"draft"}}}
+{"success":true,"message":"Program created successfully","data":{"program":{"id":12,"public_id":"01JBF3W7Q8M2Y6K4T9P1C5V0RX","program_title":"Green Enterprise Fund","status":"draft","max_awardees":10},"first_round":{"id":7,"round_number":1,"status":"draft"}}}
 ```
 
 **Error Responses**
@@ -49,7 +49,7 @@ Creates a draft program for the authenticated organization owner and provisions 
 |---|---|---|
 | GET | `/programs` | Owner receives owned programs; public users receive non-draft records |
 | GET | `/public-programs` | Returns programs visible to the public |
-| GET | `/get_program/{id}` | Returns a program and first round; 404 if absent |
+| GET | `/get_program/{id}` | Returns a program and first round by numeric database ID; 404 if absent |
 | POST | `/programs/{program}` | Owner updates own program |
 | DELETE | `/delete-program/{id}` | Owner only; blocked by active applications or wallet history |
 | POST | `/{program}/duplicate` | Owner only; creates a draft copy (current path) |
@@ -65,3 +65,5 @@ Creates a draft program for the authenticated organization owner and provisions 
 Program list responses retain the top-level `programs` array and also return `{ "success":true,"message":"Programs fetched successfully.","data":{"items":[...]} }`. Supply `page` or `per_page` to paginate; then `data.pagination` contains `current_page`, `per_page`, `total`, `last_page`, `from`, and `to`. `per_page` defaults to 15 when paginating and is clamped to 1–100. Status metadata objects contain `value`, `label`, and `color`.
 
 `match_score_limit` only gates program bonus points; it is separate from the 50% minimum match score required to submit an application. `null` leaves bonuses unrestricted.
+
+Each program has a nullable, unique `public_id` ULID for display in client interfaces; new programs receive one automatically and existing records are backfilled by migration. Internal database `id` values and foreign keys remain numeric and are always used for lookup, updates, and database operations. Example: `01JBF3W7Q8M2Y6K4T9P1C5V0RX` (26 characters). Program list, create, update, and detail responses include `public_id`.

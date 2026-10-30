@@ -12,6 +12,7 @@ use App\Models\Shared\Like;
 use App\Traits\HasS3Files;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Str;
 
 class Program extends Model
 {
@@ -21,6 +22,15 @@ class Program extends Model
 
     use HasS3Files;
 
+    protected static function booted(): void
+    {
+        static::creating(function (Program $program): void {
+            if (empty($program->public_id)) {
+                $program->public_id = (string) Str::ulid();
+            }
+        });
+    }
+
     protected function privateFileFields(): array
     {
         return [
@@ -29,6 +39,8 @@ class Program extends Model
     }
 
     protected $guarded = [];
+
+    protected $fillable = ['public_id'];
 
     // The organization's logo goes out with every program, so cards and pages can show it instead of the owner's photo.
     protected $appends = ['organization_logo'];

@@ -313,7 +313,7 @@ class ProgramController extends Controller
             // 3. Replicate base program
             $newProgram = $program->replicate([
                 'program_title', 'status', 'available_amount', 'program_brief_pdf', 'start_date', 'application_deadline',
-                'created_at', 'updated_at'
+                'public_id', 'created_at', 'updated_at'
             ]);
 
             // 4. Reset important fields
