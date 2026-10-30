@@ -26,6 +26,7 @@ class MESiteVisitResource extends JsonResource
             'location' => $this->location,
             'gps_lat' => $this->gps_lat,
             'gps_lng' => $this->gps_lng,
+            'confirm_location' => (bool) $this->confirm_location,
             'objective' => $this->objective,
             'kpi_targets' => $this->kpi_targets,
             'data_collection_fields' => $this->data_collection_fields,
@@ -46,7 +47,18 @@ class MESiteVisitResource extends JsonResource
                 'id', 'checkpoint_name', 'type', 'due_date', 'requirement', 'require_site_visit', 'status',
             ])),
             'files' => MESiteVisitFileResource::collection($this->whenLoaded('files')),
-            'order' => $this->whenLoaded('reviewerOrder', fn () => $this->reviewerOrder),
+            'order' => $this->whenLoaded('reviewerOrder', fn () => $this->reviewerOrder ? [
+                'id' => $this->reviewerOrder->id,
+                'work_status' => $this->reviewerOrder->work_status,
+                'acceptance_status' => $this->reviewerOrder->acceptance_status,
+                'payment_status' => $this->reviewerOrder->payment_status,
+                'fee_amount' => $this->reviewerOrder->fee_amount,
+                'currency' => $this->reviewerOrder->currency,
+                'fee_status' => $this->reviewerOrder->fee_status,
+                'proposed_fee' => $this->reviewerOrder->proposed_fee,
+                'delivered_at' => $this->reviewerOrder->delivered_at?->toISOString(),
+                'approved_at' => $this->reviewerOrder->approved_at?->toISOString(),
+            ] : null),
         ];
     }
 }

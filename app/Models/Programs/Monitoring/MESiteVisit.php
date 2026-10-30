@@ -13,7 +13,7 @@ class MESiteVisit extends Model
 
     protected $fillable = [
         'checkpoint_id', 'app_id', 'reviewer_id', 'inspector', 'start_date',
-        'location', 'gps_lat', 'gps_lng', 'objective', 'kpi_targets', 'assign_type', 'email',
+        'location', 'gps_lat', 'gps_lng', 'confirm_location', 'objective', 'kpi_targets', 'assign_type', 'email',
         'data_collection_fields', 'objectives_assessment', 'observed_actions',
         'evidence_found', 'risk_notes', 'recommendation_notes', 'visit_comments', 'status',
     ];
@@ -22,6 +22,7 @@ class MESiteVisit extends Model
         'kpi_targets'            => 'array',
         'data_collection_fields' => 'array',
         'start_date'             => 'date',
+        'confirm_location'       => 'boolean',
     ];
 
     public function checkpoint() { return $this->belongsTo(MECheckpoint::class, 'checkpoint_id'); }

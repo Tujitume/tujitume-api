@@ -46,6 +46,7 @@ class SiteVisitController extends Controller
                 'location'    => 'nullable|string',
                 'gps_lat'    => 'nullable|numeric',
                 'gps_lng'    => 'nullable|numeric',
+                'confirm_location' => 'sometimes|boolean',
                 'inspector'   => 'nullable|string',
                 'objective'   => 'nullable|string',
                 'kpi_targets' => 'nullable|array',
@@ -55,11 +56,13 @@ class SiteVisitController extends Controller
             $validated['checkpoint_id'] = $checkpoint->id;
             $validated['app_id']        = $checkpoint->app_id;
             $business = $checkpoint->application->business;
+            $validated['objective'] = $validated['objective'] ?? $checkpoint->requirement;
             $validated['kpi_targets'] = $validated['kpi_targets'] ?? $checkpoint->kpis_to_track;
             $validated['data_collection_fields'] = $validated['data_collection_fields'] ?? array_merge($checkpoint->submission_fields ?? [], $checkpoint->evidence_required ?? []);
             $validated['location'] = $validated['location'] ?? $business?->location;
             $validated['gps_lat'] = $validated['gps_lat'] ?? $business?->lat;
             $validated['gps_lng'] = $validated['gps_lng'] ?? $business?->lng;
+            $validated['confirm_location'] = $validated['confirm_location'] ?? false;
 
             $existingVisit = MESiteVisit::where('checkpoint_id', $checkpoint->id)->first();
             $order = $existingVisit ? ReviewerOrder::where('site_visit_id', $existingVisit->id)->first() : null;
@@ -204,6 +207,7 @@ class SiteVisitController extends Controller
         ]);
         $order->update(['work_status' => 'modification_requested', 'modification_note' => $validated['modification_note'], 'flagged_items' => $validated['flagged_items'] ?? null]);
         $order->siteVisit?->update(['status' => 'scheduled']);
+        $order->siteVisit?->checkpoint?->update(['status' => 'changes_requested']);
         $this->programNotification->send('reviewer.modification_requested', [$order->reviewer], [
             'program_title' => $order->program->program_title, 'modification_note' => $validated['modification_note'], 'order_id' => $order->id,
         ]);
@@ -272,6 +276,7 @@ class SiteVisitController extends Controller
             return response()->json(['error' => 'Can only approve delivered site visit work.'], 422);
         
         $order->update(['work_status' => 'approved', 'approved_at' => now()]);
+        $order->siteVisit?->checkpoint?->update(['status' => 'verified']);
         $this->programNotification->send('reviewer.work_approved', [$order->reviewer], [
             'program_title' => $order->program->program_title, 'order_type' => 'site_visit', 'order_id' => $order->id,
         ]);
@@ -370,6 +375,7 @@ class SiteVisitController extends Controller
                 'work_status'  => 'delivered',
                 'delivered_at' => now(),
             ]);
+            $visit->checkpoint()->update(['status' => 'submitted']);
 
             $this->programNotification->send('reviewer.work_delivered', [
                 $visit->checkpoint->application->program->owner

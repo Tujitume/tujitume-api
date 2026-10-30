@@ -38,7 +38,7 @@ class MEController extends Controller
 
         $checkpoints = MECheckpoint::where('app_id', $app->id)
             ->when(!$isProgramOwner, fn ($query) => $query->where('respondent', 'applicant')->whereNotNull('sent_at'))
-            ->with(['submission.files', 'siteVisit.checkpoint', 'siteVisit.files'])
+            ->with(['submission.files', 'siteVisit.checkpoint', 'siteVisit.files', 'siteVisit.reviewerOrder'])
             ->orderBy('display_order')
             ->get();
 
@@ -192,11 +192,12 @@ class MEController extends Controller
             $checkpoint->update($validated);
             $visit = $checkpoint->siteVisit;
             $order = $visit?->reviewerOrder;
-            if ($visit && $visit->status === 'scheduled' && $order?->acceptance_status !== 'accepted') {
+            if ($visit && !in_array($order?->work_status, ['delivered', 'approved'], true)) {
                 $business = $checkpoint->application->business;
                 $visit->update([
                     'kpi_targets' => $checkpoint->kpis_to_track,
                     'data_collection_fields' => array_merge($checkpoint->submission_fields ?? [], $checkpoint->evidence_required ?? []),
+                    'objective' => $checkpoint->requirement,
                     'location' => $visit->location ?: $business?->location,
                     'gps_lat' => $visit->gps_lat ?? $business?->lat,
                     'gps_lng' => $visit->gps_lng ?? $business?->lng,

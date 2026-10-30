@@ -24,7 +24,7 @@ All routes are under `/api/v1/programs` and inherit `auth:sanctum`, `extend-toke
 
 Checkpoint creation uses `POST /monitoring/applications/{app}/checkpoints`. Required fields are `checkpoint_name` (string, max 255) and `type` (`monitoring`, `reporting`, or `meeting`). For a site-visit checkpoint send `require_site_visit: true` and `should_notify_applicant` (boolean; required when `require_site_visit` is present). `due_date`, `requirement`, `checkpoint_description` (max 500), `meeting_required`, `meeting_id` (required when meeting is true), `kpis_to_track`, `evidence_required`, `submission_fields`, and `display_order` are optional. See [Monitoring Checkpoints](checkpoints.md) for the checkpoint workflow.
 
-Required JSON fields: `reviewer_id` (existing user ID), `start_date` (date), and `assign_type` (`internal`, `external`, or `third_party_audit`). `email` is optional except it is required and must be valid when `assign_type` is `external`. Optional fields are `data_collection_fields` (array), `location` (string), `gps_lat`/`gps_lng` (numeric), `inspector` (string), `objective` (string), `kpi_targets` (array), and `reviewer_fee` (numeric >= 0; defaults to 0).
+Required JSON fields: `reviewer_id` (existing user ID), `start_date` (date), and `assign_type` (`internal`, `external`, or `third_party_audit`). `email` is optional except it is required and must be valid when `assign_type` is `external`. Optional fields are `data_collection_fields` (array), `location` (string), `gps_lat`/`gps_lng` (numeric), `confirm_location` (boolean; defaults to `false`), `inspector` (string), `objective` (string), `kpi_targets` (array), and `reviewer_fee` (numeric >= 0; defaults to 0).
 
 ```json
 {
@@ -39,6 +39,8 @@ Required JSON fields: `reviewer_id` (existing user ID), `start_date` (date), and
 Success is HTTP `201`, with the common `{success,message,data,status}` envelope. The reviewer receives an email and in-app notification. Assignment acceptance is initially `pending`; reassignment resets the acceptance and work statuses. An assignment cannot be changed while payment is pending, processing, or completed.
 
 Site visit resources returned by assignment, report submission, detail, reviewer-list, checkpoint-list, and reviewer-order responses include the loaded `checkpoint` relation as an object with `id`, `checkpoint_name`, `type`, `due_date`, `requirement`, `require_site_visit`, and `status`.
+
+Site visit resources include `confirm_location` as a boolean. Monitoring plan/checkpoint responses also include the visit `order` when present, with its work and payment statuses, fee fields, and delivery/approval timestamps. Editing checkpoint `submission_fields`, `evidence_required`, `kpis_to_track`, or `requirement` synchronizes the visit's collection fields, KPI targets, and objective while its order is not delivered or approved.
 
 ### Reviewer lifecycle
 
