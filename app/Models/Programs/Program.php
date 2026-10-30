@@ -40,8 +40,6 @@ class Program extends Model
 
     protected $guarded = [];
 
-    protected $fillable = ['public_id'];
-
     // The organization's logo goes out with every program, so cards and pages can show it instead of the owner's photo.
     protected $appends = ['organization_logo'];
 
