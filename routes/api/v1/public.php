@@ -14,6 +14,7 @@ use App\Http\Controllers\Business\BusinessController;
 use App\Http\Controllers\Business\MilestoneController;
 use App\Http\Controllers\Capital\CapitalController;
 use App\Http\Controllers\Misc\AiController;
+use App\Http\Controllers\Misc\AmariController;
 use App\Http\Controllers\Misc\EventController;
 use App\Http\Controllers\Misc\LookupController;
 use App\Http\Controllers\Misc\MiscController;
@@ -68,6 +69,11 @@ Route::middleware('throttle:public')->group(function () {
 
     Route::get('getMilestones/{id}', [MilestoneController::class, 'getMilestones'])->name('getMilestones');
     Route::get('getMilestonesS/{id}', [ServiceMilestoneController::class, 'getMilestones'])->name('getMilestonesS');
+
+    // A M A R I   (signed-in users are recognised by their bearer token; visitors use the public profile)
+    Route::get('amari/chat', [AmariController::class, 'status']);
+    Route::post('amari/chat', [AmariController::class, 'chat'])
+        ->middleware('throttle:amari');
 
     // A I   P U B L I C
     Route::prefix('/ai')->group(function () {

@@ -31,6 +31,17 @@ return [
         'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
     ],
 
+    // Amari, the in-app assistant. The key stays on the server; the browser only ever calls /api/v1/amari/chat.
+    'amari' => [
+        'key' => env('AMARI_AI_API_KEY'),
+        'url' => env('AMARI_AI_URL', 'https://api.groq.com/openai/v1/chat/completions'),
+        'model' => env('AMARI_AI_MODEL', 'openai/gpt-oss-120b'),
+        // Public (signed-out) chat only answers after the prompt check passes; it also needs its own answer model.
+        'public_model' => env('AMARI_AI_PUBLIC_MODEL', env('AMARI_AI_MODEL', 'openai/gpt-oss-120b')),
+        'guard_model' => env('AMARI_AI_GUARD_MODEL', 'meta-llama/llama-prompt-guard-2-86m'),
+        'rate_per_minute' => (int) env('AMARI_RATE_PER_MIN', 20),
+    ],
+
     'recaptcha' => [
         'key' => env('GOOGLE_RECAPTCHA_KEY'),
         'secret' => env('GOOGLE_RECAPTCHA_SECRET'),

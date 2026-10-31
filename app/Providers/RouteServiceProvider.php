@@ -30,6 +30,11 @@ class RouteServiceProvider extends ServiceProvider
             return Limit::perMinute(120)->by($request->user()?->id ?: $request->ip());
         });
 
+        // Amari chat: accepted requests per minute per user (or visitor IP); configurable in config/services.php
+        RateLimiter::for('amari', function (Request $request) {
+            return Limit::perMinute(config('services.amari.rate_per_minute'))->by($request->user('sanctum')?->id ?: $request->ip());
+        });
+
         RateLimiter::for('custom', function ($request) {
             return Limit::perMinute(200)->by($request->user()?->id ?: $request->ip());
         });
