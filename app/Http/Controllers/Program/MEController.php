@@ -10,8 +10,10 @@ use App\Models\Programs\ProgramApplication;
 use App\Models\Programs\Monitoring\MECheckpoint;
 use App\Models\Programs\Monitoring\MESubmission;
 use App\Models\Programs\Monitoring\MESubmissionFile;
+use App\Models\Auth\User;
 use App\Service\Misc\ErrorLogService;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
@@ -31,14 +33,21 @@ class MEController extends Controller
         $userId = auth()->id();
         $isProgramOwner = $app->program->user_id === $userId;
         $isApplicant  = $app->user_id === $userId;
+        $assignedCheckpointIds = MECheckpoint::where('app_id', $app->id)
+            ->where('respondent', 'organization')
+            ->where('assigned_to', $userId)
+            ->whereNotNull('sent_at')
+            ->pluck('id');
+        $isAssignedMember = $assignedCheckpointIds->isNotEmpty();
 
-        if (!$isProgramOwner && !$isApplicant) {
+        if (!$isProgramOwner && !$isApplicant && !$isAssignedMember) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
         $checkpoints = MECheckpoint::where('app_id', $app->id)
-            ->when(!$isProgramOwner, fn ($query) => $query->where('respondent', 'applicant')->whereNotNull('sent_at'))
-            ->with(['submission.files', 'siteVisit.checkpoint', 'siteVisit.files', 'siteVisit.reviewerOrder'])
+            ->when(!$isProgramOwner && !$isApplicant, fn ($query) => $query->whereIn('id', $assignedCheckpointIds))
+            ->when(!$isProgramOwner && $isApplicant, fn ($query) => $query->where('respondent', 'applicant')->whereNotNull('sent_at'))
+            ->with(['assignedTo:id,first_name,last_name', 'submission.files', 'siteVisit.checkpoint', 'siteVisit.files', 'siteVisit.reviewerOrder'])
             ->orderBy('display_order')
             ->get();
 
@@ -125,15 +134,42 @@ class MEController extends Controller
         }
     }
 
-    public function sendCheckpoint(MECheckpoint $checkpoint)
+    public function sendCheckpoint(Request $request, MECheckpoint $checkpoint)
     {
         $application = $checkpoint->application;
         if (!\App\Service\Program\ProgramAccess::owns($application->program)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
-        if (!$checkpoint->sent_at) {
-            $checkpoint->update(['sent_at' => now()]);
-            $checkpoint = $checkpoint->fresh();
+        $program = $application->program;
+        $organizationId = $program->organization_id ?? $program->owner?->organization_id;
+        $ownerId = (int) $program->user_id;
+        $validated = $request->validate([
+            'assigned_to' => [
+                'sometimes', 'nullable', 'integer',
+                Rule::exists('organization_user_roles', 'user_id')->where(fn ($query) => $query
+                    ->where('organization_id', $organizationId)
+                    ->where('status', 'active')
+                    ->where('user_id', '<>', $ownerId)),
+            ],
+        ]);
+        if (array_key_exists('assigned_to', $validated) && $checkpoint->respondent !== 'organization') {
+            return response()->json(['message' => 'Only organization checkpoints can be assigned to a team member.'], 422);
+        }
+
+        $wasSent = (bool) $checkpoint->sent_at;
+        $previousAssigneeId = $checkpoint->assigned_to;
+        if (array_key_exists('assigned_to', $validated)) {
+            $checkpoint->assigned_to = $validated['assigned_to'];
+        }
+        if (!$wasSent) {
+            $checkpoint->sent_at = now();
+        }
+        if ($checkpoint->isDirty()) {
+            $checkpoint->save();
+        }
+        $checkpoint->load('assignedTo:id,first_name,last_name');
+
+        if (!$wasSent) {
             $data = [
                 'program_id' => $application->program_id,
                 'program_title' => $application->program->program_title,
@@ -148,12 +184,31 @@ class MEController extends Controller
                 $this->programNotification->send('applicant.site_visit_planned', [$application->user], $data);
             }
         }
-        return new ApiResponseResource('Checkpoint sent', new MECheckpointResource($checkpoint->fresh()), 200);
+        if ($checkpoint->respondent === 'organization'
+            && $checkpoint->assigned_to
+            && (int) $checkpoint->assigned_to !== (int) $previousAssigneeId) {
+            $this->programNotification->send('organization.checkpoint_assigned', [User::find($checkpoint->assigned_to)], [
+                'program_id' => $program->id,
+                'program_title' => $program->program_title,
+                'app_id' => $application->id,
+                'checkpoint_name' => $checkpoint->checkpoint_name,
+                'due_date' => $checkpoint->due_date?->toDateString(),
+            ]);
+        }
+
+        return new ApiResponseResource('Checkpoint sent', new MECheckpointResource($checkpoint->fresh()->load('assignedTo:id,first_name,last_name')), 200);
     }
 
     public function deleteSubmissionFile(MESubmissionFile $file)
     {
-        if ((int) $file->submission->checkpoint->application->user_id !== (int) auth()->id()) {
+        $checkpoint = $file->submission->checkpoint;
+        $application = $checkpoint->application;
+        $userId = (int) auth()->id();
+        $isApplicant = $checkpoint->respondent === 'applicant' && (int) $application->user_id === $userId;
+        $isOrganizationSubmitter = $checkpoint->respondent === 'organization'
+            && ((int) $application->program->user_id === $userId || (int) $checkpoint->assigned_to === $userId);
+
+        if (!$isApplicant && !$isOrganizationSubmitter) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
         if ($file->submission->status !== 'changes_requested') {
@@ -237,7 +292,14 @@ class MEController extends Controller
     {
         $userId = auth()->id();
 
-        if ($checkpoint->application->user_id !== $userId) {
+        $application = $checkpoint->application;
+        $isApplicantSubmission = $checkpoint->respondent === 'applicant'
+            && (int) $application->user_id === (int) $userId;
+        $isOrganizationSubmission = $checkpoint->respondent === 'organization'
+            && ((int) $application->program->user_id === (int) $userId
+                || (int) $checkpoint->assigned_to === (int) $userId);
+
+        if (!$isApplicantSubmission && !$isOrganizationSubmission) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 

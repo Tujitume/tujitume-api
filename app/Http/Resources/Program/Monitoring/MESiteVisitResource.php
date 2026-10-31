@@ -56,6 +56,8 @@ class MESiteVisitResource extends JsonResource
                 'currency' => $this->reviewerOrder->currency,
                 'fee_status' => $this->reviewerOrder->fee_status,
                 'proposed_fee' => $this->reviewerOrder->proposed_fee,
+                'modification_note' => $this->reviewerOrder->modification_note,
+                'flagged_items' => $this->reviewerOrder->flagged_items,
                 'delivered_at' => $this->reviewerOrder->delivered_at?->toISOString(),
                 'approved_at' => $this->reviewerOrder->approved_at?->toISOString(),
             ] : null),

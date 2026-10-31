@@ -14,7 +14,7 @@ class MECheckpoint extends Model
         'app_id', 'program_id', 'checkpoint_name', 'type', 'due_date',
         'requirement', 'checkpoint_description', 'require_site_visit', 'kpis_to_track','meeting_required', 'meeting_id',
         'evidence_required', 'submission_fields', 'custom_submission_fields',
-        'status', 'display_order', 'sent_at', 'respondent', 'should_notify_applicant',
+        'status', 'display_order', 'sent_at', 'respondent', 'should_notify_applicant', 'assigned_to',
     ];
 
     protected $casts = [
@@ -28,6 +28,7 @@ class MECheckpoint extends Model
     ];
 
     public function application() { return $this->belongsTo(ProgramApplication::class, 'app_id'); }
+    public function assignedTo() { return $this->belongsTo(\App\Models\Auth\User::class, 'assigned_to'); }
     public function submission()  { return $this->hasOne(MESubmission::class, 'checkpoint_id'); }
     public function siteVisit()   { return $this->hasOne(MESiteVisit::class, 'checkpoint_id'); }
 }

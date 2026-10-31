@@ -14,6 +14,8 @@ class MECheckpointResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
+        $assignedTo = $this->assignedTo;
+
         return [
             'id' => $this->whenHas('id', $this->id),
             'checkpoint_name' => $this->whenHas('checkpoint_name', $this->checkpoint_name),
@@ -30,6 +32,10 @@ class MECheckpointResource extends JsonResource
             'custom_submission_fields' => $this->whenHas('custom_submission_fields', $this->custom_submission_fields),
             'display_order' => $this->whenHas('display_order', $this->display_order),
             'respondent' => $this->whenHas('respondent', $this->respondent),
+            'assigned_to' => $assignedTo ? [
+                'id' => $assignedTo->id,
+                'name' => trim(($assignedTo->first_name ?? '') . ' ' . ($assignedTo->last_name ?? '')) ?: $assignedTo->email,
+            ] : null,
             'sent_at' => $this->whenHas('sent_at', $this->sent_at?->toISOString()),
             'status' => $this->whenHas('status', [
                 'value' => $this->status,

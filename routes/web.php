@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Account\WalletController;
+use App\Http\Controllers\Program\PublicProgramPreviewController;
 use App\Http\Controllers\Business\SubscriptionController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -18,6 +19,9 @@ Route::get('/', function () {
     echo "<script>window.location.href='https://beta.tujitume.com/'</script>";
 
 });
+
+Route::get('/program-preview/{publicId}', [PublicProgramPreviewController::class, 'show'])
+    ->where('publicId', '[0-9A-HJKMNP-TV-Z]{26}');
 
 // Subscription Routes | Stripe
 Route::get(
