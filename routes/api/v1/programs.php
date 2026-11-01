@@ -146,6 +146,8 @@ Route::prefix('/programs')->middleware(['program', 'program.response'])->group(f
     Route::get('/rounds/{round}/applications/not_selected', [ApplicationRoundProgressController::class, 'notSelectedApplications']);
 
     Route::get('/rounds/applications/{application}', [ProgramRoundController::class, 'application_show']);
+    // One application as it stands in one round (answers and scores only once the applicant has submitted it)
+    Route::get('/rounds/{round}/applications/{application}', [ProgramRoundController::class, 'roundApplicationShow'])->whereNumber(['round', 'application']);
 
     // submit to other rounds
     Route::post('applications/{application}/current-round/submit', [ProgramRoundController::class, 'submitRound']);

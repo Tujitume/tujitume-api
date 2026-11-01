@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Program\Rounds;
 
+use App\Service\Program\RoundParticipation;
 use App\Http\Controllers\Controller;
 use App\Models\Auth\User;
 use App\Models\Programs\Rounds\ProgramRound;
@@ -594,6 +595,10 @@ class RoundReviewerController extends Controller
 
         if (!$assignment) {
             return response()->json(['error' => 'This application is not assigned to you'], 403);
+        }
+
+        if (! RoundParticipation::for($application, $round)['submitted']) {
+            return response()->json(['error' => 'This applicant has not submitted ' . $round->round_name . ' yet. You can start the review once they submit.'], 422);
         }
 
         $roundReviewer = RoundReviewer::where('round_id', $round->id)->where('user_id', $userId)->first();

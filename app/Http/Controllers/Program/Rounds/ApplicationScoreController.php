@@ -9,6 +9,7 @@ use App\Models\Programs\Rounds\ApplicationScore;
 use App\Models\Programs\Rounds\ReviewerApplicationAssignment;
 use App\Models\ReviewerOrder;
 use App\Service\Misc\ErrorLogService;
+use App\Service\Program\RoundParticipation;
 use App\Service\Notification\ProgramNotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -40,6 +41,15 @@ class ApplicationScoreController extends Controller
         // Scoring closes once the round is finalized; results and reviewer pay are based on the scores as they stand.
         if ($round->status === 'finalized') {
             return response()->json(['message' => 'This round has been finalized. Scores can no longer be submitted or changed.'], 422);
+        }
+
+        // Nothing to score until the applicant has submitted this round (from round 2 on, advancing only places them in it)
+        $participation = RoundParticipation::for($application, $round);
+        if (! $participation['submitted']) {
+            return response()->json([
+                'message' => 'This applicant has not submitted ' . $round->round_name . ' yet, so it cannot be scored. You can score it once they submit.',
+                'participation' => $participation,
+            ], 422);
         }
 
         $isProgramOwner = $round->program->user_id === $userId;

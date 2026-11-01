@@ -17,6 +17,7 @@ use App\Service\Program\RoundFinalizationService;
 use App\Service\Program\ProgramAccess;
 use App\Support\ApiContract;
 use App\Service\Program\RoundHelperService;
+use App\Service\Program\RoundParticipation;
 use App\Service\Program\RoundHistoryService;
 use App\Service\Misc\ErrorLogService;
 use App\Service\Notification\ProgramNotificationService;
@@ -45,9 +46,24 @@ class ProgramRoundController extends Controller
         $rounds = ProgramRound::with('applications')
             ->withCount('applications')
             ->where('program_id', $program->id)
-            ->get()->map(function($round) use ($program){
+            ->get();
+
+        // Everyone who took part in a round counts for it, not only those still in it: round 1 keeps its whole field
+        // after people advance, and a later round counts the advanced applicants as soon as they are placed in it.
+        $history = ApplicationRoundHistory::whereIn('round_id', $rounds->pluck('id'))->get(['round_id', 'application_id', 'submitted_at', 'outcome', 'round_number'])->groupBy('round_id');
+
+        $rounds = $rounds->map(function($round) use ($program, $history){
+                $rows = $history->get($round->id, collect());
+                $participants = $rows->pluck('application_id')->merge($round->applications->pluck('id'))->unique();
+                // From round 2 on, someone placed in the round who has not handed it in yet
+                $awaiting = (int) $round->round_number > 1
+                    ? $rows->filter(fn ($row) => $row->submitted_at === null && $row->outcome === 'in_progress')->count()
+                    : 0;
+
                 return[
                     ...$round->toArray(),
+                    'applications_count' => $participants->count(),
+                    'awaiting_submission_count' => $awaiting,
                     'status' => ApiContract::statusMeta('program_round', $round->status),
                     // A multi-round program is only finished at its last planned round, not at the last one created so far
                     'program_total_rounds' => (int) ($program->total_rounds ?? 1),
@@ -283,13 +299,16 @@ class ProgramRoundController extends Controller
             ->get()
             ->groupBy('application_id');
 
-        $mapped = $applications->map(function ($app) use ($round_id, $round, $scoresByApplication, $assignmentsByApplication) {
-            // Get this app's outcome in this specific round from history
-            $roundHistory = ApplicationRoundHistory::where('application_id', $app->id)
-                ->where('round_id', $round_id)
-                ->first();
+        $historyByApplication = $history->keyBy('application_id');
 
-            $roundScores = $scoresByApplication->get($app->id, collect());
+        $mapped = $applications->map(function ($app) use ($round_id, $round, $scoresByApplication, $assignmentsByApplication, $historyByApplication) {
+            // Get this app's outcome in this specific round from history
+            $roundHistory = $historyByApplication->get($app->id);
+
+            // Advanced into this round but nothing handed in yet: no scores or answers to show, and why
+            $participation = RoundParticipation::for($app, $round, $roundHistory);
+
+            $roundScores = $participation['submitted'] ? $scoresByApplication->get($app->id, collect()) : collect();
             $criteriaCount = is_array($round->scoring_criteria) ? count($round->scoring_criteria) : 0;
             $average = $roundScores->isNotEmpty() ? round((float) $roundScores->avg('total_score'), 1) : null;
 
@@ -315,6 +334,7 @@ class ProgramRoundController extends Controller
                         ? (int) round(($average / 100) * $criteriaCount)
                         : null,
                 ],
+                'participation' => $participation,
                 'round_outcome' => $roundHistory?->outcome,      // ← what happened in THIS round
                 'round_score'   => $roundHistory?->average_score, // ← score in THIS round
                 'status' => [
@@ -344,52 +364,120 @@ class ProgramRoundController extends Controller
 
     public function application_show($application_id)
     {
-        $application = ProgramApplication::with([
-            'currentRound.questions',
-            'currentRound.knockoutQuestions',
-        ])->findOrFail($application_id);  // ← also fixed: use findOrFail not where()->get()
+        $application = ProgramApplication::findOrFail($application_id);
+        (new ProgramAccess())->authorizeApplication(auth()->user(), $application);
 
-        // Only what belongs to the round the applicant is in now. An applicant who moved on starts the new round clean:
-        // the earlier round's reviews, answers and documents stay with that round.
-        $roundId = $application->current_round_id;
-        $application->load([
-            'roundAnswers' => fn ($q) => $q->where('round_id', $roundId),
-            'scores' => fn ($q) => $q->where('round_id', $roundId),
-            'scores.reviewer',
-            'roundDocuments' => fn ($q) => $q->where('round_id', $roundId),
-        ]);
+        $round = $application->currentRound;
+        if (! $round) {
+            return response()->json(['application' => $application->toArray()], 200);
+        }
+
+        return response()->json(['application' => $this->roundApplicationPayload($application, $round)], 200);
+    }
+
+    /**
+     * One application as it stands in ONE round (the round in the address), not wherever it is now.
+     * GET /programs/rounds/{round}/applications/{application}
+     */
+    public function roundApplicationShow($round_id, $application_id)
+    {
+        $round = ProgramRound::findOrFail($round_id);
+        $application = ProgramApplication::findOrFail($application_id);
 
         (new ProgramAccess())->authorizeApplication(auth()->user(), $application);
 
-        // Is this application assigned to the signed-in person to review? (a team member or an external reviewer)
-        // The page uses this to show them the scoring, instead of the program owner's view.
+        if ((int) $application->program_id !== (int) $round->program_id) {
+            return response()->json(['message' => 'This application is not part of this round.'], 404);
+        }
+
+        $participation = RoundParticipation::for($application, $round);
+        if ($participation['state'] === 'not_in_round') {
+            // Not an error for the page: a round nobody has been advanced into yet simply has nobody in it.
+            return response()->json(['message' => $participation['reason'], 'participation' => $participation], 404);
+        }
+
+        return response()->json(['application' => $this->roundApplicationPayload($application, $round)], 200);
+    }
+
+    /**
+     * What the program team may read about an application in a round. Answers, documents and scores belong to
+     * that round alone, and only exist for them once the applicant has submitted it: an advanced applicant who has
+     * not submitted yet shows the round's setup (its questions and documents) and the reason, not saved drafts.
+     */
+    private function roundApplicationPayload(ProgramApplication $application, ProgramRound $round): array
+    {
+        $round->load(['questions', 'knockoutQuestions']);
+        // The program (title, currency, the organization's logo) is what pages show beside the application
+        $application->loadMissing('program');
+        $roundId = $round->id;
+        $history = ApplicationRoundHistory::where('application_id', $application->id)->where('round_id', $roundId)->first();
+        $participation = RoundParticipation::for($application, $round, $history);
+        $isCurrent = $participation['is_current'];
+
+        if ($participation['submitted']) {
+            $application->load([
+                'roundAnswers' => fn ($q) => $q->where('round_id', $roundId),
+                'scores' => fn ($q) => $q->where('round_id', $roundId),
+                'scores.reviewer',
+                'roundDocuments' => fn ($q) => $q->where('round_id', $roundId),
+            ]);
+        } else {
+            foreach (['roundAnswers', 'scores', 'roundDocuments'] as $relation) {
+                $application->setRelation($relation, collect());
+            }
+        }
+
+        // Is this application assigned to the signed-in person to review in this round? (a team member or an external reviewer)
         $myReviewAssignment = \App\Models\Programs\Rounds\ReviewerApplicationAssignment::where('application_id', $application->id)
+            ->where('round_id', $roundId)
             ->where('reviewer_id', auth()->id())
             ->latest('id')
             ->first();
 
-        return response()->json([
-            'application' => [
-                ...$application->toArray(),
-                'my_review_assignment' => $myReviewAssignment,
-                'status' => [
-                    'value' => $application->status,
-                    'color' => config('status.program_application.' . $application->status, 'gray'),
-                ],
-                'round_status' => [
-                    'value' => $application->round_status,
-                    'color' => config('status.program_application_round.' . $application->round_status, 'gray'),
-                ],
-                'knockout_status' => [
-                    'value' => $application->knockout_status,
-                    'color' => config('status.knockout.' . $application->knockout_status, 'gray'),
-                ],
-                'funding_setup_status' => [
-                    'value' => $application->funding_setup_status,
-                    'color' => config('status.funding_setup.' . $application->funding_setup_status, 'gray'),
-                ],
-            ]
-        ], 200);
+        // The status words describe THIS round. For a round the application has left, they come from what happened there.
+        $roundStatus = $application->round_status;
+        $knockoutStatus = $application->knockout_status;
+        $averageScore = $application->average_score;
+        if (! $participation['submitted']) {
+            $roundStatus = $participation['state'] === 'not_submitted' ? ($history?->outcome === 'not_selected' ? 'not_selected' : 'draft') : 'draft';
+            $knockoutStatus = 'pending';
+            $averageScore = null;
+        } elseif (! $isCurrent) {
+            $roundStatus = match ($history?->outcome) {
+                'advanced', 'awarded' => 'advanced',
+                'not_selected' => 'not_selected',
+                default => 'submitted',
+            };
+            $knockoutStatus = in_array($history?->outcome, ['advanced', 'awarded'], true) ? 'passed' : $knockoutStatus;
+            $averageScore = $history?->average_score;
+        }
+
+        $roundData = $round->toArray();
+
+        return [
+            ...$application->toArray(),
+            'current_round' => $roundData,
+            'viewed_round_id' => $roundId,
+            'participation' => $participation,
+            'average_score' => $averageScore,
+            'my_review_assignment' => $myReviewAssignment,
+            'status' => [
+                'value' => $application->status,
+                'color' => config('status.program_application.' . $application->status, 'gray'),
+            ],
+            'round_status' => [
+                'value' => $roundStatus,
+                'color' => config('status.program_application_round.' . $roundStatus, 'gray'),
+            ],
+            'knockout_status' => [
+                'value' => $knockoutStatus,
+                'color' => config('status.knockout.' . $knockoutStatus, 'gray'),
+            ],
+            'funding_setup_status' => [
+                'value' => $application->funding_setup_status,
+                'color' => config('status.funding_setup.' . $application->funding_setup_status, 'gray'),
+            ],
+        ];
     }
 
     /**
@@ -1592,10 +1680,13 @@ class ProgramRoundController extends Controller
                     ]], 422);
             }
 
-            $application->update([
+            // The round's own record (application_round_history.submitted_at, set just below) is what says when it was
+            // handed in. The application row only keeps a copy where that column exists, so a schema without it
+            // does not make every submission fail.
+            $application->update(array_filter([
                 'round_status' => 'submitted',
-                'submitted_at' => now(),
-            ]);
+                'submitted_at' => \Illuminate\Support\Facades\Schema::hasColumn($application->getTable(), 'submitted_at') ? now() : null,
+            ], fn ($value) => $value !== null));
 
             // Update submitted_at in round history (don't change outcome)
             ApplicationRoundHistory::where('application_id', $application->id)
