@@ -104,15 +104,18 @@ class SiteVisitController extends Controller
             // commit the transaction
             DB::commit();
 
-            $this->programNotification->send('reviewer.site_visit_assigned', [$order->reviewer], [
-                'program_id' => $order->program_id,
-                'program_title' => $order->program->program_title,
-                'order_id' => $order->id,
-                'site_visit_id' => $siteVisit->id,
-                'checkpoint_name' => $checkpoint->title ?? ('Checkpoint ' . $checkpoint->id),
-                'fee' => $order->fee_amount,
-                'currency' => $order->currency,
-            ]);
+            // Assigning an officer is set-up. They are only told when the checkpoint is sent (see MEController::sendCheckpoint)
+            if ($checkpoint->sent_at) {
+                $this->programNotification->send('reviewer.site_visit_assigned', [$order->reviewer], [
+                    'program_id' => $order->program_id,
+                    'program_title' => $order->program->program_title,
+                    'order_id' => $order->id,
+                    'site_visit_id' => $siteVisit->id,
+                    'checkpoint_name' => $checkpoint->checkpoint_name ?? ('Checkpoint ' . $checkpoint->id),
+                    'fee' => $order->fee_amount,
+                    'currency' => $order->currency,
+                ]);
+            }
 
             return new ApiResponseResource('Site visit assigned successfully', new MESiteVisitResource($siteVisit->load(['checkpoint', 'files', 'reviewerOrder'])), 201);
 
@@ -132,6 +135,7 @@ class SiteVisitController extends Controller
         if ((int) $visit->reviewer_id !== (int) auth()->id()) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
+        if ($unsent = $this->notSentYet($visit)) return $unsent;
         $order = ReviewerOrder::where('site_visit_id', $visit->id)->first();
         if (!$order || $order->order_type !== 'site_visit' || $order->acceptance_status !== 'pending') {
             return response()->json(['error' => 'This site visit assignment cannot be accepted.'], 422);
@@ -176,6 +180,7 @@ class SiteVisitController extends Controller
         if ((int) $visit->reviewer_id !== (int) auth()->id()) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
+        if ($unsent = $this->notSentYet($visit)) return $unsent;
         $validated = $request->validate(['reason' => 'nullable|string|max:1000']);
         $order = ReviewerOrder::where('site_visit_id', $visit->id)->first();
         if (!$order || $order->order_type !== 'site_visit' || $order->acceptance_status !== 'pending') {
@@ -217,6 +222,7 @@ class SiteVisitController extends Controller
     public function proposeFee(Request $request, MESiteVisit $visit)
     {
         if ((int) $visit->reviewer_id !== (int) auth()->id()) return response()->json(['error' => 'Unauthorized'], 403);
+        if ($unsent = $this->notSentYet($visit)) return $unsent;
         $validated = $request->validate(['proposed_fee' => 'required|numeric|min:0|max:99999999.99', 'note' => 'nullable|string|max:500']);
         $order = ReviewerOrder::where('site_visit_id', $visit->id)->first();
         if (!$order || $order->order_type !== 'site_visit' || $order->acceptance_status !== 'pending') return response()->json(['error' => 'A fee can only be proposed before the visit is accepted.'], 422);
@@ -315,6 +321,14 @@ class SiteVisitController extends Controller
         return response()->json(['message' => $payment['message'], 'payment' => $payment, 'data' => $order->fresh()], $payment['ok'] ? 200 : 422);
     }
 
+    /** A visit whose checkpoint has not been sent yet is still the owner's set-up: nobody else can act on it. */
+    private function notSentYet(MESiteVisit $visit): ?\Illuminate\Http\JsonResponse
+    {
+        return $visit->checkpoint?->sent_at
+            ? null
+            : response()->json(['error' => 'This site visit has not been sent yet. You will be told when the program owner sends it.'], 422);
+    }
+
     private function isSiteVisitOrder(ReviewerOrder $order): bool
     {
         $visit = $order->siteVisit;
@@ -329,6 +343,7 @@ class SiteVisitController extends Controller
         if ($visit->reviewer_id !== auth()->id()) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
+        if ($unsent = $this->notSentYet($visit)) return $unsent;
 
         $order = ReviewerOrder::where('site_visit_id', $visit->id)->first();
         if (!$order || $order->order_type !== 'site_visit' || $order->acceptance_status !== 'accepted'
@@ -414,6 +429,8 @@ class SiteVisitController extends Controller
         if (!$isProgramOwner && !$isReviewer && !$isApplicant) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
+        // Until the program owner sends the checkpoint, the officer and the applicant have nothing to see
+        if (!$isProgramOwner && ($unsent = $this->notSentYet($visit))) return $unsent;
 
         return new ApiResponseResource('Site visit details fetched successfully', new MESiteVisitResource($visit->load(['checkpoint', 'files', 'reviewerOrder'])), 200);
     }
@@ -426,7 +443,7 @@ class SiteVisitController extends Controller
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
-        $siteVisits = MESiteVisit::where('reviewer_id', $reviewer_id)
+        $siteVisits = MESiteVisit::sent()->where('reviewer_id', $reviewer_id)
             ->with(['checkpoint.application', 'checkpoint', 'files', 'reviewerOrder'])
             ->orderBy('start_date', 'desc')
             ->get();

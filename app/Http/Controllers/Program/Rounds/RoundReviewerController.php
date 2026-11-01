@@ -206,10 +206,18 @@ class RoundReviewerController extends Controller
             ->whereIn('status', ['assigned', 'in_review'])
             ->count();
 
+        // Monitoring checkpoints the organization sent to them that still need their work
+        $assignedCheckpoints = \App\Models\Programs\Monitoring\MECheckpoint::where('respondent', 'organization')
+            ->where('assigned_to', $userId)
+            ->whereNotNull('sent_at')
+            ->whereIn('status', ['pending', 'changes_requested'])
+            ->count();
+
         return response()->json([
-            'pending_requests' => $pendingRequests,
-            'to_review'        => $toReview,
-            'total'            => $pendingRequests + $toReview,
+            'pending_requests'     => $pendingRequests,
+            'to_review'            => $toReview,
+            'assigned_checkpoints' => $assignedCheckpoints,
+            'total'                => $pendingRequests + $toReview + $assignedCheckpoints,
         ], 200);
     }
 

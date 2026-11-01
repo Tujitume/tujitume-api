@@ -98,3 +98,26 @@ describe('Monitoring checkpoints', function () {
         $this->assertDatabaseHas('m_e_checkpoints', ['id' => $checkpoint->id, 'sent_at' => null, 'assigned_to' => null]);
     });
 });
+
+describe('Assigned checkpoints (a team member\'s requests)', function () {
+    it('lists only what was sent to the organization and assigned to the signed-in member, and counts what is still to do', function () {
+        $member = \App\Models\Auth\User::factory()->create(['user_type_id' => 4, 'organization_id' => $this->organization->id]);
+        $mine = \App\Models\Programs\Monitoring\MECheckpoint::create([
+            'app_id' => $this->application->id, 'program_id' => $this->program->id, 'checkpoint_name' => 'Visit the farm', 'type' => 'monitoring',
+            'respondent' => 'organization', 'assigned_to' => $member->id, 'sent_at' => now(), 'status' => 'pending', 'require_site_visit' => true,
+        ]);
+        // not sent yet, someone else's, and one already handed in: none of these is a request for them to act on now
+        \App\Models\Programs\Monitoring\MECheckpoint::create(['app_id' => $this->application->id, 'program_id' => $this->program->id, 'checkpoint_name' => 'Unsent', 'type' => 'monitoring', 'respondent' => 'organization', 'assigned_to' => $member->id, 'sent_at' => null]);
+        \App\Models\Programs\Monitoring\MECheckpoint::create(['app_id' => $this->application->id, 'program_id' => $this->program->id, 'checkpoint_name' => 'Not mine', 'type' => 'monitoring', 'respondent' => 'organization', 'assigned_to' => $this->orgUser->id, 'sent_at' => now()]);
+        \App\Models\Programs\Monitoring\MECheckpoint::create(['app_id' => $this->application->id, 'program_id' => $this->program->id, 'checkpoint_name' => 'Done', 'type' => 'monitoring', 'respondent' => 'organization', 'assigned_to' => $member->id, 'sent_at' => now(), 'status' => 'submitted']);
+
+        $list = $this->actingAs($member, 'sanctum')->getJson('/api/v1/programs/monitoring/assigned-checkpoints')->assertOk();
+        $names = collect($list->json('data.checkpoints'))->pluck('checkpoint_name')->sort()->values()->all();
+        expect($names)->toBe(['Done', 'Visit the farm']);
+        expect(collect($list->json('data.checkpoints'))->firstWhere('id', $mine->id)['needs_action'])->toBeTrue();
+        expect(collect($list->json('data.checkpoints'))->firstWhere('id', $mine->id)['program_title'])->toBe($this->program->program_title);
+
+        $this->actingAs($member, 'sanctum')->getJson('/api/v1/programs/reviewer/assignment-counts')->assertOk()
+            ->assertJsonPath('assigned_checkpoints', 1)->assertJsonPath('total', 1);
+    });
+});

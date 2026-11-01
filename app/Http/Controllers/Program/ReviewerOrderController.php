@@ -26,6 +26,9 @@ class ReviewerOrderController extends Controller
     public function myOrders()
     {
         $orders = ReviewerOrder::where('reviewer_id', Auth::id())
+            // A site visit assigned to them is theirs to see only once the program owner has sent its checkpoint
+            ->where(fn ($query) => $query->where('order_type', '!=', 'site_visit')
+                ->orWhereHas('siteVisit.checkpoint', fn ($checkpoint) => $checkpoint->whereNotNull('sent_at')))
             ->with(['program', 'round', 'siteVisit.checkpoint', 'applicationAssignments.application.business:id,name'])
             ->latest()
             ->get()

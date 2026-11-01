@@ -5,12 +5,12 @@
         <!-- Body -->
         <p>Hi {{ $recipientName }},</p>
 
-        <p>Your {{ $order_type }} work for <strong>{{ $program_title }}</strong> has been approved by the program owner.</p>
+        <p>Your {{ str_replace('_', ' ', $order_type ?? 'review') }} work for <strong>{{ $program_title }}</strong> has been approved by the program owner.</p>
 
         @if (($order_type ?? null) === 'round_review')
             <p>The program owner will initiate payment when the round is finalized.</p>
         @else
-            <p>The program owner will initiate payment for this site visit after approval.</p>
+            <p>Payment for this site visit is started automatically with the approval. You will be told when it reaches your wallet.</p>
         @endif
 
         @include('programs.partials.brand_button', ['label' => 'View Order'])

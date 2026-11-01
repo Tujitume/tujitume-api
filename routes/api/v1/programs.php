@@ -267,6 +267,8 @@ Route::prefix('/programs')->middleware(['program', 'program.response'])->group(f
         // Checkpoints
         Route::get('/applications/{app}/checkpoints', [MEController::class, 'indexCheckpoints']);
         Route::post('/applications/{app}/checkpoints', [MEController::class, 'storeCheckpoint']);
+        // What was assigned to the signed-in team member (their requests)
+        Route::get('/assigned-checkpoints', [MEController::class, 'assignedCheckpoints']);
         Route::post('/checkpoints/{checkpoint}/send', [MEController::class, 'sendCheckpoint']);
         Route::patch('/checkpoints/{checkpoint}', [MEController::class, 'updateCheckpoint']);
         Route::delete('/checkpoints/{checkpoint}', [MEController::class, 'deleteCheckpoint']);

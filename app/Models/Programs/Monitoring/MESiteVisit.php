@@ -26,6 +26,15 @@ class MESiteVisit extends Model
     ];
 
     public function checkpoint() { return $this->belongsTo(MECheckpoint::class, 'checkpoint_id'); }
+
+    /**
+     * Only visits whose checkpoint the program owner has sent. Assigning an officer is set-up work; the officer,
+     * the applicant and the lists they see only get it once the checkpoint is sent.
+     */
+    public function scopeSent($query)
+    {
+        return $query->whereHas('checkpoint', fn ($checkpoint) => $checkpoint->whereNotNull('sent_at'));
+    }
     public function reviewer()   { return $this->belongsTo(User::class, 'reviewer_id'); }
     public function files()      { return $this->hasMany(MESiteVisitFile::class, 'site_visit_id'); }
 

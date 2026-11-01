@@ -95,7 +95,7 @@ class ProviderWorkController extends Controller
     /** Site visits an organization assigned to this provider (including third-party audit visits). */
     private function inspections(User $me)
     {
-        return MESiteVisit::where('reviewer_id', $me->id)
+        return MESiteVisit::sent()->where('reviewer_id', $me->id)
             ->with(['checkpoint.application.program', 'reviewerOrder'])
             ->get()
             ->map(function (MESiteVisit $visit) {

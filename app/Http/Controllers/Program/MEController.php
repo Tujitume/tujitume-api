@@ -134,6 +134,39 @@ class MEController extends Controller
         }
     }
 
+    /**
+     * The checkpoints the signed-in team member was asked to complete: sent to the organization and assigned to them.
+     * This is their request list (the Pending requests drawer); the count of those still to do feeds the badge.
+     * GET /programs/monitoring/assigned-checkpoints
+     */
+    public function assignedCheckpoints()
+    {
+        $checkpoints = MECheckpoint::where('respondent', 'organization')
+            ->where('assigned_to', auth()->id())
+            ->whereNotNull('sent_at')
+            ->with(['application:id,startup_name,program_id', 'application.program:id,program_title'])
+            ->orderByRaw('due_date IS NULL, due_date')
+            ->orderByDesc('sent_at')
+            ->get()
+            ->map(fn (MECheckpoint $checkpoint) => [
+                'id' => $checkpoint->id,
+                'checkpoint_name' => $checkpoint->checkpoint_name,
+                'type' => $checkpoint->type,
+                'status' => $checkpoint->status,
+                // Still waiting on this person: not handed in yet, or sent back for changes
+                'needs_action' => in_array($checkpoint->status, ['pending', 'changes_requested'], true),
+                'require_site_visit' => (bool) $checkpoint->require_site_visit,
+                'due_date' => $checkpoint->due_date?->toDateString(),
+                'sent_at' => $checkpoint->sent_at?->toISOString(),
+                'app_id' => $checkpoint->app_id,
+                'program_id' => $checkpoint->application?->program_id,
+                'program_title' => $checkpoint->application?->program?->program_title,
+                'startup_name' => $checkpoint->application?->startup_name,
+            ]);
+
+        return new ApiResponseResource('Assigned checkpoints fetched', ['checkpoints' => $checkpoints->values()], 200);
+    }
+
     public function sendCheckpoint(Request $request, MECheckpoint $checkpoint)
     {
         $application = $checkpoint->application;
@@ -182,6 +215,20 @@ class MEController extends Controller
             }
             if ($checkpoint->require_site_visit && $checkpoint->should_notify_applicant) {
                 $this->programNotification->send('applicant.site_visit_planned', [$application->user], $data);
+            }
+            // An officer assigned while the checkpoint was still set-up is told now, not before
+            $visit = $checkpoint->siteVisit;
+            $order = $visit ? \App\Models\ReviewerOrder::where('site_visit_id', $visit->id)->first() : null;
+            if ($order && $order->acceptance_status === 'pending' && $order->reviewer) {
+                $this->programNotification->send('reviewer.site_visit_assigned', [$order->reviewer], [
+                    'program_id' => $order->program_id,
+                    'program_title' => $application->program->program_title,
+                    'order_id' => $order->id,
+                    'site_visit_id' => $visit->id,
+                    'checkpoint_name' => $checkpoint->checkpoint_name,
+                    'fee' => $order->fee_amount,
+                    'currency' => $order->currency,
+                ]);
             }
         }
         if ($checkpoint->respondent === 'organization'
