@@ -250,6 +250,9 @@ class ProgramNotificationService
             'reviewer.site_visit_assigned' => "You were assigned a site visit for {$program}. Accept or decline the assignment.",
             'applicant.checkpoint_sent' => "A new monitoring checkpoint, {$v('checkpoint_name')}, is ready for you on {$program}. Open it to see what to submit.",
             'organization.checkpoint_assigned' => "{$v('checkpoint_name')} for {$program} was assigned to you. Open the program monitoring page to complete it.",
+            'checkpoint.submitted' => "{$actor} submitted {$v('checkpoint_name')} for {$program}. Open it to verify the work or request changes.",
+            'checkpoint.verified' => "{$v('checkpoint_name')} for {$program} was verified. Nothing more is needed from you.",
+            'checkpoint.changes_requested' => "Changes were requested on {$v('checkpoint_name')} for {$program}. Open it to see what to fix and submit again.",
             'reviewer.fee_proposed' => "{$v('reviewer_name')} proposed a fee of " . ($this->money($d, 'proposed_fee') ?: $v('proposed_fee')) . " for the site visit on {$program}. Open the checkpoint to accept or decline it.",
             'reviewer.fee_decided' => ($d['accepted'] ?? false) ? "The organization accepted your proposed fee for a site visit under {$program}. You can now accept the visit." : "The organization declined your proposed fee for a site visit under {$program}. You can accept the visit at this fee, or decline it.",
             'reviewer.site_visit_accepted' => "{$v('reviewer_name')} accepted the site visit assignment for {$program}.",
@@ -304,6 +307,16 @@ class ProgramNotificationService
      * user type ('links'); a recipient with no entry there must not be handed another
      * portal's page, so they get their own dashboard home instead.
      */
+    /** Where a checkpoint opens for each kind of person it can reach: the applicant, or a team member of the organization */
+    private function checkpointLinks(array $data): array
+    {
+        $application = ['application_id' => $data['app_id'] ?? null];
+        return [
+            1 => $this->link('dashboard.entrepreneur.grantsDealroom.monitoring', $application),
+            4 => $this->link('dashboard.grantOrg.dealroom.monitoring', $application),
+        ];
+    }
+
     private function linkFor(array $config, $recipient): string
     {
         $type = (int) $recipient->user_type_id;
@@ -1021,6 +1034,27 @@ class ProgramNotificationService
                 'email_subject' => 'A Program Monitoring Checkpoint Was Assigned to You',
                 'email_view' => $this->view_base . 'organization_checkpoint_assigned',
                 'link' => $this->link('dashboard.grantOrg.dealroom.monitoring', ['application_id' => $data['app_id'] ?? null]),
+            ],
+            'checkpoint.submitted' => [
+                'title' => 'Checkpoint Submitted',
+                'message' => "{$this->v($data, 'checkpoint_name')} for {$this->v($data, 'program_title')} was submitted for your review.",
+                'email_subject' => 'A Monitoring Checkpoint Was Submitted',
+                'email_view' => $this->view_base . 'checkpoint_submitted',
+                'link' => $this->link('dashboard.grantOrg.dealroom.monitoring', ['application_id' => $data['app_id'] ?? null]),
+            ],
+            'checkpoint.verified' => [
+                'title' => 'Checkpoint Verified',
+                'message' => "{$this->v($data, 'checkpoint_name')} for {$this->v($data, 'program_title')} was verified.",
+                'email_subject' => 'Your Monitoring Checkpoint Was Verified',
+                'email_view' => $this->view_base . 'checkpoint_verified',
+                'links' => $this->checkpointLinks($data),
+            ],
+            'checkpoint.changes_requested' => [
+                'title' => 'Checkpoint Changes Requested',
+                'message' => "Changes were requested on {$this->v($data, 'checkpoint_name')} for {$this->v($data, 'program_title')}.",
+                'email_subject' => 'Changes Were Requested on Your Monitoring Checkpoint',
+                'email_view' => $this->view_base . 'checkpoint_changes_requested',
+                'links' => $this->checkpointLinks($data),
             ],
             'reviewer.fee_proposed' => [
                 'title' => 'Site Visit Fee Proposed',

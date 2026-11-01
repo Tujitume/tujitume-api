@@ -422,6 +422,15 @@ class MEController extends Controller
 
             DB::commit();
 
+            // The program owner is the one who verifies it, so they hear when the work is handed in
+            $program = $application->program;
+            $this->programNotification->send('checkpoint.submitted', [$program->owner], [
+                'program_id' => $program->id,
+                'program_title' => $program->program_title,
+                'app_id' => $application->id,
+                'checkpoint_name' => $checkpoint->checkpoint_name,
+            ]);
+
             return new ApiResponseResource(
                 'Submission created successfully',
                 new MESubmissionResource($submission->fresh()->load('files')),
@@ -438,6 +447,22 @@ class MEController extends Controller
     }
 
     // ─── REVIEW ──────────────────────────────────────────────────────────
+
+    /** Tell whoever handed the checkpoint in (the applicant, or the team member it was assigned to) how it was answered */
+    private function notifySubmitter(string $event, MESubmission $submission): void
+    {
+        $submitter = User::find($submission->submitted_by);
+        $checkpoint = $submission->checkpoint;
+        $program = $checkpoint->application->program;
+        if (!$submitter) return;
+        $this->programNotification->send($event, [$submitter], [
+            'program_id' => $program->id,
+            'program_title' => $program->program_title,
+            'app_id' => $checkpoint->app_id,
+            'checkpoint_name' => $checkpoint->checkpoint_name,
+            'reviewer_note' => $submission->reviewer_note,
+        ]);
+    }
 
     // POST /program/me/submissions/{submission}/verify
     public function verify(Request $request, MESubmission $submission)
@@ -463,6 +488,8 @@ class MEController extends Controller
             $submission->checkpoint->update(['status' => 'verified']);
 
             DB::commit();
+
+            $this->notifySubmitter('checkpoint.verified', $submission);
 
             return new ApiResponseResource('Submission verified successfully', new MESubmissionResource($submission->fresh()->load('files')), 200);
 
@@ -501,6 +528,8 @@ class MEController extends Controller
             $submission->checkpoint->update(['status' => 'changes_requested']);
 
             DB::commit();
+
+            $this->notifySubmitter('checkpoint.changes_requested', $submission);
 
             return new ApiResponseResource('Changes requested successfully', new MESubmissionResource($submission->fresh()->load('files')), 200);
 
