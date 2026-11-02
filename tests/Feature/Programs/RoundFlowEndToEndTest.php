@@ -68,6 +68,7 @@ describe('Round flow, end to end', function () {
         $overview = $this->actingAsOrgOwner()->getJson("/api/v1/programs/{$this->program->id}/rounds")->assertOk();
         $rounds = collect($overview->json('rounds') ?? $overview->json('data.rounds') ?? $overview->json('data'));
         expect($rounds->firstWhere('id', $this->round->id)['advanced_count'])->toBe(1);
+        expect($rounds->firstWhere('id', $this->round->id)['configuration_progress']['steps'])->toHaveKeys(['setup', 'questions', 'reviewers', 'notifications']);
         expect($rounds->firstWhere('id', $round2->id)['awaiting_submission_count'])->toBe(1);
     });
 

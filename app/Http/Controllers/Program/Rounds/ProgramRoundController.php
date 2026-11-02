@@ -68,6 +68,8 @@ class ProgramRoundController extends Controller
                     ...$round->toArray(),
                     'applications_count' => $participants->count(),
                     'awaiting_submission_count' => $awaiting,
+                    // Which of the setup steps are done, so the overview can show how ready each round is
+                    'configuration_progress' => $this->configurationProgress($round),
                     'advanced_count' => $outcomes->filter(fn ($outcome) => in_array($outcome, ['advanced', 'awarded'], true))->count(),
                     'not_selected_count' => $outcomes->filter(fn ($outcome) => $outcome === 'not_selected')->count(),
                     'status' => ApiContract::statusMeta('program_round', $round->status),
