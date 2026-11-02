@@ -24,6 +24,7 @@ class ProgramMetadataTest extends TestCase
 
     public function test_get_returns_global_defaults_and_industry_overrides(): void
     {
+        $this->industry('Default Industry'); // ID 1 uses the global defaults.
         $industry = $this->industry('Agriculture');
         ProgramMetadata::create(['program_industry_id' => null, 'key' => 'startup_stage_focus', 'value' => ['idea', 'seed']]);
         ProgramMetadata::create(['program_industry_id' => null, 'key' => 'bonus_points', 'value' => ['gender_led']]);
@@ -32,6 +33,17 @@ class ProgramMetadataTest extends TestCase
         $this->authenticated()->getJson("/api/v1/programs/program-metadata?program_industry_id={$industry->id}")
             ->assertOk()
             ->assertExactJson(['startup_stage_focus' => ['farm_ready'], 'bonus_points' => ['gender_led']]);
+    }
+
+    public function test_industry_one_uses_global_defaults_even_if_specific_metadata_exists(): void
+    {
+        $industry = $this->industry('Default Industry');
+        ProgramMetadata::create(['program_industry_id' => null, 'key' => 'startup_stage_focus', 'value' => ['idea']]);
+        ProgramMetadata::create(['program_industry_id' => $industry->id, 'key' => 'startup_stage_focus', 'value' => ['custom']]);
+
+        $this->authenticated()->getJson("/api/v1/programs/program-metadata/{$industry->id}")
+            ->assertOk()
+            ->assertExactJson(['startup_stage_focus' => ['idea']]);
     }
 
     public function test_post_creates_and_updates_multiple_fields_without_touching_omitted_fields(): void

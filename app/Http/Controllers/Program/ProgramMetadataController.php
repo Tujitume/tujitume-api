@@ -22,7 +22,8 @@ class ProgramMetadataController extends Controller
         $defaults = ProgramMetadata::whereNull('program_industry_id')->get(['key', 'value'])
             ->mapWithKeys(fn (ProgramMetadata $record) => [$record->key => $record->value])
             ->all();
-        if ($industryId === null) {
+        // Industry 1 is the legacy/default industry and shares global values.
+        if ($industryId === null || (int) $industryId === 1) {
             return response()->json($defaults);
         }
 
