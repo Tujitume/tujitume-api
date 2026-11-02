@@ -539,13 +539,14 @@ class ProgramApplicationController extends Controller
                     return response()->json(['error' => 'Round 2 not found'], 422);
                 }
 
-                $pitch->current_round_id = $nextRound->id;
-                $pitch->round_status = 'draft';
-
-                // Track round history
+                // Close the round they are leaving in the history before the application moves: the history is found by the
+                // application's current round, so moving first would leave round 1 looking undecided forever
                 $this->roundHistory->closeAndCreate(
                     $pitch, $nextRound, $program->applications()->count(), 'in_progress'
                 );
+
+                $pitch->current_round_id = $nextRound->id;
+                $pitch->round_status = 'draft';
 
                 $this->programNotification->send('round.advanced', [$pitch->user], [
                     'program_title' => $pitch->program->program_title, 'round_name' => $nextRound->round_name ?? 'Final Round', 'application_id' => $pitch->id,

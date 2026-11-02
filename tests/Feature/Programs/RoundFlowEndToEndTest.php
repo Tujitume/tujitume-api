@@ -50,4 +50,35 @@ describe('Round flow, end to end', function () {
             ->assertOk()->assertJsonPath('application.participation.state', 'submitted')->assertJsonPath('application.participation.can_review', true);
         $this->actingAsOrgOwner()->postJson("/api/v1/programs/applications/{$this->application->id}/scores", ['criterion_scores' => [['criterion' => 'Impact', 'score' => 5]]])->assertSuccessful();
     });
+
+    it('accepting an applicant out of round 1 records the advance on round 1', function () {
+        $round2 = ProgramRound::factory()->create([
+            'program_id' => $this->program->id, 'round_number' => 2, 'round_name' => 'Round two', 'status' => 'published',
+            'open_date' => now()->subDay(), 'close_date' => now()->addMonth(), 'advancement_mode' => 'manual',
+        ]);
+        $this->program->update(['program_type' => 'multi_round', 'total_rounds' => 2]);
+        \App\Models\ApplicationRoundHistory::create(['application_id' => $this->application->id, 'round_id' => $this->round->id, 'round_number' => 1, 'entered_at' => now()->subDays(3), 'submitted_at' => now()->subDays(3), 'outcome' => 'in_progress']);
+        $this->application->update(['status' => 'pending']);
+
+        $this->actingAsOrgOwner()->postJson("/api/v1/programs/applications/{$this->application->id}/accept")->assertOk();
+
+        // round 1 now says the applicant advanced, in the list, in its counts and on the rounds overview
+        $list = $this->actingAsOrgOwner()->getJson("/api/v1/programs/rounds/{$this->round->id}/applications")->assertOk();
+        $list->assertJsonPath('applications.0.round_outcome', 'advanced')->assertJsonPath('stats.advanced_count', 1)->assertJsonPath('stats.in_progress_count', 0);
+        $overview = $this->actingAsOrgOwner()->getJson("/api/v1/programs/{$this->program->id}/rounds")->assertOk();
+        $rounds = collect($overview->json('rounds') ?? $overview->json('data.rounds') ?? $overview->json('data'));
+        expect($rounds->firstWhere('id', $this->round->id)['advanced_count'])->toBe(1);
+        expect($rounds->firstWhere('id', $round2->id)['awaiting_submission_count'])->toBe(1);
+    });
+
+    it('shows an advance that an older version left open as advanced', function () {
+        $round2 = ProgramRound::factory()->create(['program_id' => $this->program->id, 'round_number' => 2, 'status' => 'published']);
+        $this->program->update(['program_type' => 'multi_round', 'total_rounds' => 2]);
+        \App\Models\ApplicationRoundHistory::create(['application_id' => $this->application->id, 'round_id' => $this->round->id, 'round_number' => 1, 'entered_at' => now()->subDays(3), 'outcome' => 'in_progress']);
+        \App\Models\ApplicationRoundHistory::create(['application_id' => $this->application->id, 'round_id' => $round2->id, 'round_number' => 2, 'entered_at' => now(), 'outcome' => 'in_progress']);
+        $this->application->update(['current_round_id' => $round2->id, 'round_status' => 'draft']);
+
+        $this->actingAsOrgOwner()->getJson("/api/v1/programs/rounds/{$this->round->id}/applications")->assertOk()
+            ->assertJsonPath('applications.0.round_outcome', 'advanced')->assertJsonPath('stats.advanced_count', 1);
+    });
 });

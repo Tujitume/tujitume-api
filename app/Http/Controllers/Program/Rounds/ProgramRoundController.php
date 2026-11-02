@@ -56,6 +56,10 @@ class ProgramRoundController extends Controller
                 $rows = $history->get($round->id, collect());
                 $participants = $rows->pluck('application_id')->merge($round->applications->pluck('id'))->unique();
                 // From round 2 on, someone placed in the round who has not handed it in yet
+                // An applicant who left this round is not undecided in it: a row still "in progress" for someone who has
+                // moved on is an advance that was never closed in the history (older data), so it counts as advanced
+                $currentIds = $round->applications->pluck('id');
+                $outcomes = $rows->map(fn ($row) => $row->outcome === 'in_progress' && !$currentIds->contains($row->application_id) ? 'advanced' : $row->outcome);
                 $awaiting = (int) $round->round_number > 1
                     ? $rows->filter(fn ($row) => $row->submitted_at === null && $row->outcome === 'in_progress')->count()
                     : 0;
@@ -64,6 +68,8 @@ class ProgramRoundController extends Controller
                     ...$round->toArray(),
                     'applications_count' => $participants->count(),
                     'awaiting_submission_count' => $awaiting,
+                    'advanced_count' => $outcomes->filter(fn ($outcome) => in_array($outcome, ['advanced', 'awarded'], true))->count(),
+                    'not_selected_count' => $outcomes->filter(fn ($outcome) => $outcome === 'not_selected')->count(),
                     'status' => ApiContract::statusMeta('program_round', $round->status),
                     // A multi-round program is only finished at its last planned round, not at the last one created so far
                     'program_total_rounds' => (int) ($program->total_rounds ?? 1),
@@ -268,6 +274,11 @@ class ProgramRoundController extends Controller
 
         // Stats always from history (accurate regardless of round state)
         $history = ApplicationRoundHistory::where('round_id', $round_id)->get();
+
+        // A row still "in progress" for an applicant who has moved on is an advance that was never closed in the history
+        $leftRound = fn ($row) => $row->outcome === 'in_progress'
+            && $applications->firstWhere('id', $row->application_id)?->current_round_id !== (int) $round_id;
+        $history->each(fn ($row) => $leftRound($row) ? $row->outcome = 'advanced' : null);
 
         $stats = [
             'total'              => $applications->count(),
