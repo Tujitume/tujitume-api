@@ -8,9 +8,22 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('program_metadata', function (Blueprint $table) {
+        // Existing installations may have created this legacy table with an
+        // integer ID instead of the bigint defined by the current migration.
+        // MySQL requires the FK column width and signedness to match exactly.
+        $industryIdType = strtolower(Schema::getColumnType('program_industries', 'id'));
+
+        Schema::create('program_metadata', function (Blueprint $table) use ($industryIdType) {
             $table->id();
-            $table->foreignId('program_industry_id')->nullable()->constrained('program_industries')->nullOnDelete();
+            if (in_array($industryIdType, ['integer', 'int'], true)) {
+                $table->unsignedInteger('program_industry_id')->nullable();
+            } else {
+                $table->unsignedBigInteger('program_industry_id')->nullable();
+            }
+            $table->foreign('program_industry_id')
+                ->references('id')
+                ->on('program_industries')
+                ->nullOnDelete();
             $table->string('key');
             $table->json('value');
             $table->timestamps();
