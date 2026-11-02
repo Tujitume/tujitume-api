@@ -29,4 +29,5 @@ class MESubmission extends Model
     public function checkpoint() { return $this->belongsTo(MECheckpoint::class, 'checkpoint_id'); }
     public function files()      { return $this->hasMany(MESubmissionFile::class, 'submission_id'); }
     public function reviewer()   { return $this->belongsTo(User::class, 'reviewed_by'); }
+    public function submitter()  { return $this->belongsTo(User::class, 'submitted_by'); }
 }

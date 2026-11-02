@@ -20,6 +20,12 @@ class MESubmissionResource extends JsonResource
             'kpi_actual_values' => $this->kpi_actual_values,
             'beneficiary_list' => $this->beneficiary_list,
             'custom_field_values' => $this->custom_field_values,
+            // Who handed it in, so the page can tell them apart from the person who reviews it
+            'submitted_by' => $this->whenLoaded('submitter', fn () => $this->submitter ? [
+                'id' => $this->submitter->id,
+                'name' => trim(($this->submitter->first_name ?? '') . ' ' . ($this->submitter->last_name ?? '')) ?: $this->submitter->email,
+            ] : null),
+            'submitted_by_id' => $this->submitted_by,
             'status' => $this->status,
             'reviewer_note' => $this->reviewer_note,
             'flagged_items' => $this->flagged_items,

@@ -47,7 +47,7 @@ class MEController extends Controller
         $checkpoints = MECheckpoint::where('app_id', $app->id)
             ->when(!$isProgramOwner && !$isApplicant, fn ($query) => $query->whereIn('id', $assignedCheckpointIds))
             ->when(!$isProgramOwner && $isApplicant, fn ($query) => $query->where('respondent', 'applicant')->whereNotNull('sent_at'))
-            ->with(['assignedTo:id,first_name,last_name', 'submission.files', 'siteVisit.checkpoint', 'siteVisit.files', 'siteVisit.reviewerOrder'])
+            ->with(['assignedTo:id,first_name,last_name', 'submission.files', 'submission.submitter:id,first_name,last_name,email', 'siteVisit.checkpoint', 'siteVisit.files', 'siteVisit.reviewerOrder'])
             ->orderBy('display_order')
             ->get();
 

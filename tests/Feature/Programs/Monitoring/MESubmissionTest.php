@@ -24,6 +24,10 @@ describe('Checkpoint answers reach the right person', function () {
             ->assertStatus(201)->json('data.id');
         expect($notes($this->orgUser))->toBe($ownerBefore + 1);
 
+        // the owner's list says who handed it in
+        $list = $this->actingAsOrgOwner()->getJson("$base/applications/{$this->application->id}/checkpoints")->assertOk();
+        expect($list->json('data.0.submission.submitted_by.id') ?? $list->json('data.checkpoints.0.submission.submitted_by.id'))->toBe($this->applicantUser->id);
+
         $this->actingAsOrgOwner()->postJson("$base/submissions/$submissionId/request-changes", ['reviewer_note' => 'Add photos'])->assertOk();
         expect($notes($this->applicantUser))->toBe($applicantBefore + 1);
 
