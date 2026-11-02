@@ -454,12 +454,13 @@ class ProgramRoundController extends Controller
             $knockoutStatus = 'pending';
             $averageScore = null;
         } elseif (! $isCurrent) {
-            $roundStatus = match ($history?->outcome) {
+            $outcome = RoundParticipation::outcome($history, false);
+            $roundStatus = match ($outcome) {
                 'advanced', 'awarded' => 'advanced',
                 'not_selected' => 'not_selected',
                 default => 'submitted',
             };
-            $knockoutStatus = in_array($history?->outcome, ['advanced', 'awarded'], true) ? 'passed' : $knockoutStatus;
+            $knockoutStatus = in_array($outcome, ['advanced', 'awarded'], true) ? 'passed' : $knockoutStatus;
             $averageScore = $history?->average_score;
         }
 

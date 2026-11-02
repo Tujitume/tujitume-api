@@ -17,6 +17,15 @@ class RoundParticipation
 {
     private const SUBMITTED_STATUSES = ['submitted', 'assigned', 'under_review', 'scored'];
 
+    /**
+     * What happened to the applicant in a round. An applicant who left a round while its record still says "in progress"
+     * was advanced by an older version that never closed it, so that counts as advanced.
+     */
+    public static function outcome(?ApplicationRoundHistory $history, bool $isCurrent): ?string
+    {
+        return $history?->outcome === 'in_progress' && ! $isCurrent ? 'advanced' : $history?->outcome;
+    }
+
     public static function for(ProgramApplication $application, ProgramRound $round, ?ApplicationRoundHistory $history = null): array
     {
         $history ??= ApplicationRoundHistory::where('application_id', $application->id)
@@ -26,7 +35,7 @@ class RoundParticipation
         $isCurrent = (int) $application->current_round_id === (int) $round->id;
         $inRound = $isCurrent || $history !== null;
         $firstRound = (int) $round->round_number === 1;
-        $movedOn = $history && in_array($history->outcome, ['advanced', 'awarded'], true);
+        $movedOn = $history && in_array(self::outcome($history, $isCurrent), ['advanced', 'awarded'], true);
         $submittedNow = $isCurrent && in_array((string) $application->round_status, self::SUBMITTED_STATUSES, true);
 
         $submitted = $inRound && ($firstRound || $history?->submitted_at || $submittedNow || $movedOn);

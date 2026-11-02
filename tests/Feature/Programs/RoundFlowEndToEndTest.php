@@ -80,5 +80,8 @@ describe('Round flow, end to end', function () {
 
         $this->actingAsOrgOwner()->getJson("/api/v1/programs/rounds/{$this->round->id}/applications")->assertOk()
             ->assertJsonPath('applications.0.round_outcome', 'advanced')->assertJsonPath('stats.advanced_count', 1);
+        // and the application's own page for that round says so too, so it offers no Advance or Reject
+        $this->actingAsOrgOwner()->getJson("/api/v1/programs/rounds/{$this->round->id}/applications/{$this->application->id}")
+            ->assertOk()->assertJsonPath('application.round_status.value', 'advanced');
     });
 });
