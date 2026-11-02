@@ -22,6 +22,7 @@ use App\Http\Controllers\Misc\SearchController;
 use App\Http\Controllers\Misc\SupportController;
 use App\Http\Controllers\Organizations\ProgramIndustryController;
 use App\Http\Controllers\Program\ProgramController;
+use App\Http\Controllers\Program\PublicProgramPreviewController;
 use App\Http\Controllers\Program\ProgramDisbursementController;
 use App\Http\Controllers\Service\BookingController;
 use App\Http\Controllers\Service\ServiceController;
@@ -34,6 +35,9 @@ Route::get('/locations/{query}', [SearchController::class, 'locations']);
 Route::get('/get-conversion-rate/{base}', [WalletController::class, 'conversion_rate']);
 Route::get('all-events', [EventController::class, 'browse']);
 Route::get('/home/programs', [ProgramController::class, 'index']);
+Route::get('/public/programs/{publicId}', [PublicProgramPreviewController::class, 'details'])
+    ->where('publicId', '[0-9A-HJKMNP-TV-Z]{26}')
+    ->middleware('throttle:public');
 
 Route::get('program/reject-invitation/{email}', [ProgramController::class, 'reject_invitation'])
     ->name('reject.invitation')
