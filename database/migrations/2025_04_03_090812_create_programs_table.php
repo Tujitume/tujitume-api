@@ -17,6 +17,9 @@ return new class extends Migration
             $table->unsignedBigInteger('user_id')->nullable();          // program admin / owner
             $table->unsignedBigInteger('organization_id')->nullable();          // program admin / owner
 
+            $table->unsignedBigInteger('program_industry_id')->nullable()->constrained('program_industries')->onDelete('null');          // program admin / owner
+
+            
             // Core program info
             $table->string('program_title', 255);
             $table->decimal('total_program_amount', 15, 2);

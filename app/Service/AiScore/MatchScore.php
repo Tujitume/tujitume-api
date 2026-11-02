@@ -40,12 +40,23 @@ class MatchScore
                 'documents_submitted' => $program->program_brief_pdf != null ? true : false,
             ];
 
+            // A criterion is only scored when both sides supplied a value. Its
+            // weight is redistributed across the criteria that can be scored.
+            $criterionAvailable = [
+                'Sector Alignment' => $business['sectors'] !== null && $org['preferred_sectors'] !== null,
+                'Geographic Fit' => $business['region'] !== null && $org['target_regions'] !== null,
+                'Startup Stage Compatibility' => $business['stage'] !== null && $org['target_stages'] !== null,
+                'Revenue Traction' => $request->revenue_last_12_months !== null && $org['revenue'] !== null,
+                'Impact Focus' => $business['impact_score'] !== null && $org['impact_score'] !== null,
+                'Milestone Success' => true,
+                'Document Completeness' => true,
+            ];
+
             // Sector Alignment (30%)
             if (!is_array($org['preferred_sectors'])) {
                 $org['preferred_sectors'] = json_decode($org['preferred_sectors'], true)?? [];
             }
             $sectorScore = in_array($business['sectors'], $org['preferred_sectors']) ? 100 : 0;;
-            $score += $sectorScore * 0.30;
 
             // Geographic Fit (15%)
 
@@ -75,30 +86,28 @@ class MatchScore
                 }
             }
 
-            $score += $geoScore * 0.15;
 
 
             // Startup Stage Compatibility (10%)
             if (!is_array($org['target_stages'])) {
                 $org['target_stages'] = json_decode($org['target_stages'],true)?? [];
             }
-            if($business['stage'] && $org['target_stages'])
+            if ($criterionAvailable['Startup Stage Compatibility'])
                 $stageScore = in_array($business['stage'], $org['target_stages']) ? 100 : 0;
             else
                 $stageScore = 0;
-            $score += $stageScore * 0.10;
 
             // Revenue Traction/Projection (10%)
             $revenueScore = $business['revenue'] >= $org['revenue'] ? 100 : 0;
-            $score += $revenueScore * 0.10;
 
             // Team Experience / Background (10%)
             //$teamScore = $business['team_size'] >= $org['team_threshold'] ? 100 : 0;
             //$score += $teamScore * 0.10;
 
             // Impact Focus (10%)
-            $impactScore = array_intersect($business['impact_score'], $org['impact_score']) ? 100 : 0;
-            $score += $impactScore * 0.10;
+            $businessImpact = is_array($business['impact_score']) ? $business['impact_score'] : (is_string($business['impact_score']) ? (json_decode($business['impact_score'], true) ?? [$business['impact_score']]) : []);
+            $programImpact = is_array($org['impact_score']) ? $org['impact_score'] : (is_string($org['impact_score']) ? (json_decode($org['impact_score'], true) ?? [$org['impact_score']]) : []);
+            $impactScore = array_intersect($businessImpact, $programImpact) ? 100 : 0;
 
 
             // Milestone Success (10%)
@@ -112,7 +121,6 @@ class MatchScore
                 }
             }
             $milestoneScore = $business['milestones_achieved'] ? 100 : 100;
-            $score += $milestoneScore * 0.10;
 
             // Document Completeness (5%)
             $round1 = ProgramRound::where('program_id', $program->id)->where('round_number', 1)->first();
@@ -132,7 +140,42 @@ class MatchScore
             }
 
             $documentScore = $documentsSubmitted ? 100 : 0;
-            $score += $documentScore * 0.05;
+
+            $criterionScores = [
+                'Sector Alignment' => $sectorScore,
+                'Geographic Fit' => $geoScore,
+                'Startup Stage Compatibility' => $stageScore,
+                'Revenue Traction' => $revenueScore,
+                'Impact Focus' => $impactScore,
+                'Milestone Success' => $milestoneScore,
+                'Document Completeness' => $documentScore,
+            ];
+            $criterionWeights = [
+                'Sector Alignment' => 30,
+                'Geographic Fit' => 15,
+                'Startup Stage Compatibility' => 10,
+                'Revenue Traction' => 10,
+                'Impact Focus' => 10,
+                'Milestone Success' => 10,
+                'Document Completeness' => 5,
+            ];
+            $distributedMarks = 0;
+            $activeCriteriaCount = 0;
+            foreach ($criterionWeights as $criterion => $weight) {
+                if ($criterionAvailable[$criterion]) {
+                    $activeCriteriaCount++;
+                } else {
+                    $distributedMarks += $weight;
+                }
+            }
+
+            $marksPerActiveCriterion = $activeCriteriaCount > 0 ? $distributedMarks / $activeCriteriaCount : 0;
+            $scoreBreakdown = [];
+            foreach ($criterionWeights as $criterion => $weight) {
+                $effectiveWeight = $criterionAvailable[$criterion] ? $weight + $marksPerActiveCriterion : 0;
+                $scoreBreakdown[$criterion] = round($criterionScores[$criterion] * $effectiveWeight / 100, 2);
+                $score += $scoreBreakdown[$criterion];
+            }
 
             // Bonus (up to +20)
             $bonusInput = $request->bonus_points;
@@ -179,16 +222,11 @@ class MatchScore
                 'score' => round($score, 2),
                 'result' => $result,
                 'score_breakdown' => [
-                    'Sector Alignment' => round($sectorScore * 0.30, 2),
+                    ...$scoreBreakdown,
                     //'Sector Alignment2' => $org['preferred_sectors'],
-                    'Geographic Fit' => round($geoScore * 0.15, 2),
-                    'Startup Stage Compatibility' => round($stageScore * 0.10, 2),
-                    'Revenue Traction' => round($revenueScore * 0.10, 2),
-                    'Impact Focus' => round($impactScore * 0.10, 2),
-                    'Milestone Success' => round($milestoneScore * 0.10, 2),
-                    'Document Completeness' => round($documentScore * 0.05, 2),
                     'Bonus ' => $bo
                 ],
+                'distributed_marks_for_other_sector' => $distributedMarks,
                 // For the applicant to read: the score before bonus, the limit, and whether bonus counted
                 'base_score' => round($baseScore, 2),
                 'match_score_limit' => $limit,

@@ -203,7 +203,7 @@ class ProgramController extends Controller
 
 
                 'disbursement_type' => 'nullable|in:supplier,hybrid,beneficiary',
-                //'end_date' => 'nullable|date|after:start_date',
+                'program_industry_id' => 'required|exists:program_industries,id',
             ]);
 
             $orgUser = User::with('organization')->find(Auth::id());

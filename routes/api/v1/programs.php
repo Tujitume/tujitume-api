@@ -23,6 +23,7 @@ use App\Http\Controllers\Program\ProgramDealRoomController;
 use App\Http\Controllers\Program\ProgramDisbursementController;
 use App\Http\Controllers\Program\ProgramEmailTemplateController;
 use App\Http\Controllers\Program\ProgramMilestoneController;
+use App\Http\Controllers\Program\ProgramMetadataController;
 use App\Http\Controllers\Program\ProgramServiceController;
 use App\Http\Controllers\Program\ProgramSupplierController;
 use App\Http\Controllers\Program\ProgramWalletController;
@@ -38,6 +39,10 @@ use App\Http\Controllers\TestData\TestApplicationGeneratorController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('/programs')->middleware(['program', 'program.response'])->group(function () {
+    Route::get('program-metadata', [ProgramMetadataController::class, 'index']);
+    Route::get('program-metadata/{program_industry_id}', [ProgramMetadataController::class, 'index'])->whereNumber('program_industry_id');
+    Route::post('program-metadata', [ProgramMetadataController::class, 'store']);
+
     // Program
     Route::get('programs', [ProgramController::class, 'index']);
     Route::get('public-programs', [ProgramController::class, 'public_programs']);
