@@ -318,6 +318,17 @@ class ProgramRoundController extends Controller
             // Get this app's outcome in this specific round from history
             $roundHistory = $historyByApplication->get($app->id);
 
+            // "Scored" has to be backed by this round's own scores. An application row that still says scored, with a
+            // score left over from an earlier round and nothing scored here, is not scored in this round (read-only fix
+            // for the response: nothing is saved).
+            if ((int) $app->current_round_id === (int) $round_id
+                && $app->round_status === 'scored'
+                && $scoresByApplication->get($app->id, collect())->isEmpty()) {
+                $app->round_status = ($roundHistory?->submitted_at || (int) $round->round_number === 1) ? 'submitted' : 'draft';
+                $app->average_score = null;
+                $app->is_eligible_to_advance = false;
+            }
+
             // Advanced into this round but nothing handed in yet: no scores or answers to show, and why
             $participation = RoundParticipation::for($app, $round, $roundHistory);
 
@@ -853,7 +864,7 @@ class ProgramRoundController extends Controller
             $this->rejectUnderCapReviewerOrders($round);
 
             $isFinal = $this->isFinalRound($round);
-            $advancedCount = ApplicationRoundHistory::where('round_id', $round->id)->whereIn('outcome', ['advanced', 'awarded'])->count();
+            $advancedCount = $this->roundOutcomes($round)->whereIn('outcome', ['advanced', 'awarded'])->count();
 
             $round->status = 'finalized';
             $round->save();
@@ -1272,6 +1283,23 @@ class ProgramRoundController extends Controller
     }
 
     /**
+     * This round's history rows by application, with what each applicant's outcome really was. A row still
+     * "in progress" for an applicant who has moved on is an advance that was never closed in the history, so it counts
+     * as advanced (the same rule the round list and the applications stats use), instead of showing 0 advanced.
+     */
+    private function roundOutcomes(ProgramRound $round)
+    {
+        $history = ApplicationRoundHistory::where('round_id', $round->id)->get()->keyBy('application_id');
+        $currentRoundIds = ProgramApplication::whereIn('id', $history->keys())->pluck('current_round_id', 'id');
+
+        return $history->each(function ($row) use ($currentRoundIds, $round) {
+            if ($row->outcome === 'in_progress' && (int) ($currentRoundIds[$row->application_id] ?? $round->id) !== (int) $round->id) {
+                $row->outcome = 'advanced';
+            }
+        });
+    }
+
+    /**
      * What finalizing would do, without doing it.
      * GET /api/v1/program/rounds/{round}/finalize-preview
      */
@@ -1316,7 +1344,7 @@ class ProgramRoundController extends Controller
 
             // Accepting an applicant moves them to the next round straight away, so who was accepted or rejected is
             // read from this round's own record, not from where the applicants are now
-            $history = ApplicationRoundHistory::where('round_id', $round->id)->get()->keyBy('application_id');
+            $history = $this->roundOutcomes($round);
             $decided = ProgramApplication::whereIn('id', $history->filter(fn ($h) => in_array($h->outcome, ['advanced', 'awarded', 'not_selected'], true))->keys())->get()
                 ->each(fn ($a) => $a->round_score = $history[$a->id]->average_score);
 
