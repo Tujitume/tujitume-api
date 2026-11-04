@@ -25,6 +25,7 @@ use App\Service\File\ImageUploadService;
 use App\Service\Misc\ErrorLogService;
 use App\Service\Notification\NotificationService;
 use App\Service\Organization\TeamMemberNotifier;
+use App\Service\Program\ProgramCustomFieldService;
 use Hash;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
@@ -111,6 +112,22 @@ class ProgramController extends Controller
 
                 $program->liked = $user_id ? $program->liked()->where('user_id', $user_id)->exists() : false;
                 $program->owner_website = $program->owner->website ?? null;
+                $program->application_fields = $program->customFields()->where('audience', 'application')->where('is_archived', false)->where('visibility', 'public')->orderBy('display_order')->get()->map(function ($field) {
+                    return [
+                        'id' => $field->id,
+                        'key' => $field->key,
+                        'label' => $field->label,
+                        'type' => $field->type,
+                        'options' => $field->options,
+                        'is_required' => $field->is_required,
+                        'help_text' => $field->help_text,
+                        'validation' => $field->validation,
+                    ];
+                })->values();
+                $program->info = $program->customFields()->where('audience', 'info')->where('is_archived', false)->orderBy('display_order')->get()->map(function ($field) {
+                    $value = $field->values()->where('entity_type', 'program')->where('entity_id', $program->id)->first();
+                    return ['id' => $field->id, 'key' => $field->key, 'label' => $field->label, 'value' => $value?->value_text ?? $value?->value_json ?? $value?->value_number ?? $value?->value_bool ?? $value?->value_date];
+                })->values();
 
                 $program->status = ApiContract::statusMeta('program', $program->status);
             }
@@ -138,7 +155,22 @@ class ProgramController extends Controller
                 $program->pitch_count = $program->applications_count ?? 0;
                 $program->liked = $user_id ? $program->liked()->where('user_id', $user_id)->exists() : false;
                 $program->owner_website = $program->owner->website ?? null;
-
+                $program->application_fields = $program->customFields()->where('audience', 'application')->where('is_archived', false)->where('visibility', 'public')->orderBy('display_order')->get()->map(function ($field) {
+                    return [
+                        'id' => $field->id,
+                        'key' => $field->key,
+                        'label' => $field->label,
+                        'type' => $field->type,
+                        'options' => $field->options,
+                        'is_required' => $field->is_required,
+                        'help_text' => $field->help_text,
+                        'validation' => $field->validation,
+                    ];
+                })->values();
+                $program->info = $program->customFields()->where('audience', 'info')->where('is_archived', false)->orderBy('display_order')->get()->map(function ($field) {
+                    $value = $field->values()->where('entity_type', 'program')->where('entity_id', $program->id)->first();
+                    return ['id' => $field->id, 'key' => $field->key, 'label' => $field->label, 'value' => $value?->value_text ?? $value?->value_json ?? $value?->value_number ?? $value?->value_bool ?? $value?->value_date];
+                })->values();
                 $program->status = ApiContract::statusMeta('program', $program->status);
             }
             return ApiContract::listResponse('Programs fetched successfully.', $programs, $page, ['programs']);
@@ -155,55 +187,33 @@ class ProgramController extends Controller
      */
     public function store(Request $request)
     {
-        $uploadedFile = null;
         DB::beginTransaction();
 
         try{
             $validated = $request->validate([
-                // Required core fields
                 'program_title' => 'required|string|max:255',
+                'program_industry_id' => 'required|exists:program_industries,id',
+                'organization_id' => 'sometimes|exists:organizations,id',
                 'total_program_amount' => 'required|numeric|min:0',
+                'available_amount' => 'nullable|numeric|min:0',
                 'funding_per_business' => 'required|numeric|min:0',
-
+                'disbursement_type' => 'nullable|in:supplier,hybrid,beneficiary',
                 'program_type' => 'required|in:single_round,multi_round',
                 'total_rounds' => 'nullable|integer|min:1|max:10',
-
-                // Important optional fields
-                'funder_name' => 'nullable|string|max:200',
-                'eligibility_criteria' => 'nullable|string',
-                'required_documents' => 'nullable|array',
-                'program_focus' => 'required|array',
-                "startup_stage_focus" => "required|array",
-                'regions' => 'nullable|array',
-                'bonus_points' => 'nullable|array',
-                // Bonus points only count for applicants whose match score reaches this (1 to 100)
+                'max_awardees' => 'nullable|integer|min:1',
+                'currency' => 'nullable|string|max:3',
+                'application_start_date' => 'required|date|after_or_equal:today',
+                'application_deadline' => 'required|date|after:application_start_date',
+                'require_kyc_verification_to_apply' => 'nullable|boolean',
                 'match_score_limit' => 'nullable|integer|min:1|max:100',
-
-                "impact_objectives" => "nullable|string",
-                "social_impact_areas" => "nullable|array",
-                //"program_brief_pdf" => "required|file|mimes:pdf,docx|max:2048",
-                'start_date' => 'required|date',
-                'application_deadline' => 'required|date|after:today',
-                'currency' => 'nullable|string',
-                'mid_milestone_required' => 'nullable|boolean',
-
-                // round 1
-                'application_round' => 'required|array',  // âœ… Now it's an array
-                'application_round.round_name' => 'nullable|string|max:100',
-                'application_round.rubric_mode' => 'nullable|in:weighted,simple_total,pass_fail',
-                'application_round.advancement_mode' => 'nullable|in:manual,score_threshold,fixed_quota',
-                'application_round.required_documents' => 'nullable|array',
-                'application_round.knockout_questions' => 'nullable|array',
-
-
-                // Question
-                'round_questions' => 'nullable|array',
-                'round_questions.*.question_text' => 'nullable|string|max:255',
-                'round_questions.*.question_type' => 'nullable|in:short_answer,long_text',
-
-
-                'disbursement_type' => 'nullable|in:supplier,hybrid,beneficiary',
-                'program_industry_id' => 'required|exists:program_industries,id',
+                'status' => 'nullable|in:draft,published,open,closed,under_review,awarded,cancelled,completed',
+                'visible' => 'nullable|boolean',
+                'custom_fields' => 'sometimes|array',
+                'custom_fields.*.label' => 'required|string|max:150',
+                'custom_fields.*.type' => 'nullable|in:text,textarea,number,boolean,date,select,multi_select,file,url',
+                'custom_fields.*.is_required' => 'nullable|boolean',
+                'custom_fields.*.is_scoring' => 'nullable|boolean',
+                'custom_fields.*.is_bonus' => 'nullable|boolean',
             ]);
 
             $orgUser = User::with('organization')->find(Auth::id());
@@ -211,61 +221,45 @@ class ProgramController extends Controller
                 return response()->json(['message' => 'Organization not found, Forbidden.'], 403);
             }
 
-            if($validated['program_type'] == 'multi_round' && $validated['total_rounds'] == 1){
-                throw ValidationException::withMessages([
-                    'total_rounds' => ['Total rounds must be greater than 1 for multi-round programs']
-                ]);
+            if (($validated['program_type'] ?? 'single_round') === 'multi_round') {
+                $validated['total_rounds'] = $validated['total_rounds'] ?? 1;
+                if ((int) $validated['total_rounds'] < 2) {
+                    throw ValidationException::withMessages([
+                        'total_rounds' => ['Total rounds must be greater than 1 for multi-round programs']
+                    ]);
+                }
+            } else {
+                $validated['total_rounds'] = 1;
             }
 
-            // NEW: Validate funding per business cannot exceed total
             if ($validated['funding_per_business'] > $validated['total_program_amount']) {
                 throw ValidationException::withMessages([
                     'funding_per_business' => ['Funding per business cannot exceed total program amount']
                 ]);
             }
-            $maxAwardees = floor($validated['total_program_amount'] / $validated['funding_per_business']);
 
-
-            // Auto-set fields
             $validated['user_id'] = Auth::id();
             $validated['organization_id'] = $orgUser->organization->id;
-            $validated['status'] = 'draft';
-            $validated['funder_type'] = $orgUser->organization->organization_type; //draft
-            $validated['visible'] = 1;
+            $validated['status'] = $validated['status'] ?? 'draft';
+            $validated['visible'] = $validated['visible'] ?? true;
             $validated['currency'] = $validated['currency'] ?? 'KES';
-            $validated['available_amount'] = $validated['total_program_amount'];
-            $validated['max_awardees'] = $maxAwardees;
+            $validated['available_amount'] = $validated['available_amount'] ?? $validated['total_program_amount'];
+            $validated['max_awardees'] = $validated['max_awardees'] ?? (int) floor($validated['total_program_amount'] / max($validated['funding_per_business'], 1));
             $validated['program_type'] = $validated['program_type'] ?? 'single_round';
-            $validated['total_rounds'] = $validated['total_rounds'] ?? 1;
 
-            // Without the column yet, the limit is simply not stored
             if (! Program::supportsMatchScoreLimit()) {
                 unset($validated['match_score_limit']);
             }
 
-            $program = Program::create(
-                Arr::except($validated, ['application_round', 'round_questions'])
-            );
+            $program = Program::create(Arr::except($validated, ['custom_fields']));
 
-            // Create Application Round with helper fund
-            $firstRound = $this->CreateApplicationRound(
-                $validated['application_round'] ?? null,
-                $validated['round_questions'] ?? null,
-                $program
-            );
+            if (! empty($validated['custom_fields'] ?? [])) {
+                app(ProgramCustomFieldService::class)->createForProgram($program, $validated['custom_fields']);
+            }
 
-            //Upload file & update
-            $path='files/programs/'.$program->id;
-            $program_brief_pdf = $request->file('program_brief_pdf');
-            $program_brief_pdf_path = $this->fileUpload->saveFile($program_brief_pdf, $path);
-
-            $uploadedFile = $program_brief_pdf_path;
-            $program->update([ 'program_brief_pdf' => $program_brief_pdf_path ]);
-
-            # Create dedicated wallet
             $wallet['total_deposited'] = 0.00; $wallet['total_disbursed'] = 0.00;
             $wallet['total_reserved'] = 0.00;  $wallet['balance'] = 0.00;
-            $wallet['status'] = 'inactive';  // not active until funded
+            $wallet['status'] = 'inactive';
             $wallet['currency'] = $validated['currency'] ?? config('app.currency', 'KES');
             $wallet['program_id'] = $program->id;
 
@@ -276,7 +270,6 @@ class ProgramController extends Controller
             return response()->json([
                 'message' => 'Program created successfully',
                 'program' => $program,
-                'first_round' => $firstRound,
             ], 200);
         }
         catch ( ValidationException $e) {
@@ -284,9 +277,6 @@ class ProgramController extends Controller
         }
         catch (\Exception $e) {
             DB::rollBack();
-            if ($uploadedFile && file_exists($uploadedFile)) {
-                unlink($uploadedFile);
-            }
             ErrorLogService::report($e, ['input' => request()->except(['password', 'token']),]);
             return response()->json(['message' => 'Something went wrong, please try again later.'], 500);
         }
@@ -312,7 +302,7 @@ class ProgramController extends Controller
 
             // 3. Replicate base program
             $newProgram = $program->replicate([
-                'program_title', 'status', 'available_amount', 'program_brief_pdf', 'start_date', 'application_deadline',
+                'program_title', 'status', 'available_amount', 'application_start_date', 'application_deadline',
                 'public_id', 'created_at', 'updated_at'
             ]);
 
@@ -321,19 +311,47 @@ class ProgramController extends Controller
             $newProgram->program_title = $program->program_title . ' Copy';
             $newProgram->available_amount = $program->total_program_amount;
             $newProgram->visible = 0; // safer default
-            $newProgram->start_date = null;
+            $newProgram->application_start_date = null;
             $newProgram->application_deadline = null;
             $newProgram->push();
 
-            // 5. Duplicate file (optional but recommended)
-            /* if ($program->program_brief_pdf && file_exists($program->program_brief_pdf)) {
-                $newPath = 'files/programs/' . $newProgram->id;
+            // 5. Duplicate custom-field definitions and information values, but not answers.
+            $fieldMap = [];
+            foreach ($program->customFields()->get() as $field) {
+                $clone = $field->replicate([
+                    'program_id',
+                    'created_at',
+                    'updated_at',
+                ]);
+                $clone->program_id = $newProgram->id;
+                $clone->key = $field->key;
+                $clone->is_archived = false;
+                $clone->save();
+                $fieldMap[$field->id] = $clone->id;
+            }
 
-                $newFile = $this->fileUpload->copyFile(
-                    $program->program_brief_pdf, $newPath
-                );
-                $newProgram->update([ 'program_brief_pdf' => $newFile ]);
-            } */
+            foreach ($program->customFields()->with('values')->get() as $field) {
+                if ($field->audience !== 'info') {
+                    continue;
+                }
+
+                $newFieldId = $fieldMap[$field->id] ?? null;
+                if (! $newFieldId) {
+                    continue;
+                }
+
+                foreach ($field->values()->where('entity_type', 'program')->where('entity_id', $program->id)->get() as $value) {
+                    $newValue = $value->replicate([
+                        'field_id',
+                        'entity_id',
+                        'created_at',
+                        'updated_at',
+                    ]);
+                    $newValue->field_id = $newFieldId;
+                    $newValue->entity_id = $newProgram->id;
+                    $newValue->save();
+                }
+            }
 
             // 6. Duplicate rounds + questions
             foreach ($program->rounds as $round) {
@@ -467,56 +485,47 @@ class ProgramController extends Controller
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
-        // The edit form sends an empty list as the text "[]"
-        if (is_string($request->input('bonus_points'))) {
-            $request->merge(['bonus_points' => json_decode($request->input('bonus_points'), true) ?: []]);
+        if ($request->has('custom_fields')) {
+            throw ValidationException::withMessages([
+                'custom_fields' => ['Program custom fields must be managed through the program field endpoints.'],
+            ]);
         }
 
         DB::beginTransaction();
         try {
             $validated = $request->validate([
-                // Use 'sometimes' - only validate if present in request, if not present, it won't be updated
                 'program_title' => 'sometimes|required|string|max:255',
+                'program_industry_id' => 'sometimes|required|exists:program_industries,id',
                 'total_program_amount' => 'sometimes|required|numeric|min:0',
+                'available_amount' => 'sometimes|nullable|numeric|min:0',
                 'funding_per_business' => 'sometimes|required|numeric|min:0',
-
-                'funder_name' => 'nullable|string|max:200',
-                'eligibility_criteria' => 'sometimes|required|string',
-                'required_documents' => 'sometimes|required||array',
-                'program_focus' => 'sometimes|required|array',
-                'startup_stage_focus' => 'sometimes|required|array',
-                'regions' => 'sometimes|required|array',
-                'impact_objectives' => 'nullable|string',
-
-                'program_brief_pdf' => 'sometimes|file|mimes:pdf|max:2048',
-                'start_date' => 'sometimes|required|date',
-                'application_deadline' => 'sometimes|required|date|after:today',
-                'currency' => 'nullable|string',
-                'status' => 'sometimes|required|string',
-                'total_rounds' => 'sometimes|required|numeric|min:1',
-
-                'disbursement_type' => 'nullable|in:supplier,hybrid,beneficiary',
-
-                'bonus_points' => 'sometimes|nullable|array',
+                'disbursement_type' => 'sometimes|nullable|in:supplier,hybrid,beneficiary',
+                'program_type' => 'sometimes|required|in:single_round,multi_round',
+                'total_rounds' => 'sometimes|required|integer|min:1|max:10',
+                'max_awardees' => 'sometimes|nullable|integer|min:1',
+                'currency' => 'sometimes|nullable|string|max:3',
+                'application_start_date' => 'sometimes|required|date|after_or_equal:today',
+                'application_deadline' => 'sometimes|required|date|after:application_start_date',
+                'require_kyc_verification_to_apply' => 'sometimes|nullable|boolean',
                 'match_score_limit' => 'sometimes|nullable|integer|min:1|max:100',
+                'status' => 'sometimes|required|in:draft,published,open,closed,under_review,awarded,cancelled,completed',
+                'visible' => 'sometimes|nullable|boolean',
             ]);
 
             if (! Program::supportsMatchScoreLimit()) {
                 unset($validated['match_score_limit']);
             }
 
-            if($program->program_type == 'single_round' && $validated['total_rounds'] > 1) {
-                throw new ValidationException([
-                    'rounds' => 'Single rounds cannot be greater than 1'
+            if (($validated['program_type'] ?? $program->program_type) === 'multi_round' && (($validated['total_rounds'] ?? $program->total_rounds) < 2)) {
+                throw ValidationException::withMessages([
+                    'total_rounds' => ['Total rounds must be greater than 1 for multi-round programs']
                 ]);
             }
 
-
-            // Handle file upload if provided
-            if ($request->hasFile('program_brief_pdf')) {
-                $path = 'files/programs/' . $program->id;
-                $program_brief_pdf = $request->file('program_brief_pdf');
-                $validated['program_brief_pdf'] = $this->fileUpload->saveFile($program_brief_pdf, $path);
+            if (($validated['funding_per_business'] ?? $program->funding_per_business) > ($validated['total_program_amount'] ?? $program->total_program_amount)) {
+                throw ValidationException::withMessages([
+                    'funding_per_business' => ['Funding per business cannot exceed total program amount']
+                ]);
             }
 
             $program->update($validated);
@@ -590,7 +599,7 @@ class ProgramController extends Controller
             }
 
             // Delete program brief file if exists
-            if ($program->program_brief_pdf != null && file_exists($program->program_brief_pdf)) {
+            if (! empty($program->program_brief_pdf) && is_string($program->program_brief_pdf) && file_exists($program->program_brief_pdf)) {
                 unlink($program->program_brief_pdf);
             }
 
@@ -650,6 +659,22 @@ class ProgramController extends Controller
 
             //  No extra query (use loaded relation)
             $round1 = $program->rounds->first();
+            $program->application_fields = $program->customFields()->where('audience', 'application')->where('is_archived', false)->where('visibility', 'public')->orderBy('display_order')->get()->map(function ($field) {
+                return [
+                    'id' => $field->id,
+                    'key' => $field->key,
+                    'label' => $field->label,
+                    'type' => $field->type,
+                    'options' => $field->options,
+                    'is_required' => $field->is_required,
+                    'help_text' => $field->help_text,
+                    'validation' => $field->validation,
+                ];
+            })->values();
+            $program->info = $program->customFields()->where('audience', 'info')->where('is_archived', false)->orderBy('display_order')->get()->map(function ($field) {
+                $value = $field->values()->where('entity_type', 'program')->where('entity_id', $program->id)->first();
+                return ['id' => $field->id, 'key' => $field->key, 'label' => $field->label, 'value' => $value?->value_text ?? $value?->value_json ?? $value?->value_number ?? $value?->value_bool ?? $value?->value_date];
+            })->values();
 
             //  Better naming (no overwrite)
             if (Auth::check()) {
@@ -1066,7 +1091,7 @@ class ProgramController extends Controller
             'program_id' => $program->id,
             'round_name' => $roundData['round_name'] ?? 'Public Application Round',
             'round_number' => 1,
-            'open_date' => $program->start_date ,
+            'open_date' => $program->application_start_date,
             'close_date' => $program->application_deadline,
             'review_period_end' => $roundData['review_period_end'] ?? null,
             'announcement_date' => $roundData['announcement_date'] ?? null,
@@ -1095,11 +1120,15 @@ class ProgramController extends Controller
         $program->save();
 
         if($questions){
-            foreach ($questions as $question) {
+            foreach ($questions as $index => $question) {
                 $question = RoundCustomQuestion::create([
                     'round_id' => $round->id,
                     'question_text' => $question['question_text'] ?? null,
                     'question_type' => $question['question_type'] ?? null,
+                    'options' => $question['options'] ?? null,
+                    'is_required' => $question['is_required'] ?? false,
+                    'display_order' => $question['display_order'] ?? ($index + 1),
+                    'knockout_fail_value' => $question['knockout_fail_value'] ?? null,
                 ]);
             }
         }

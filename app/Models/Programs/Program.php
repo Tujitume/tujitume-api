@@ -9,6 +9,8 @@ use App\Models\Auth\UserSetting;
 use App\Models\Programs\Rounds\ProgramRound;
 use App\Models\Organizations\Organization;
 use App\Models\Shared\Like;
+use App\Models\Programs\ProgramCustomField;
+use App\Models\Programs\ProgramCustomFieldValue;
 use App\Traits\HasS3Files;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -73,12 +75,10 @@ class Program extends Model
     }
 
     protected $casts = [
-        'startup_stage_focus' => 'array',
-        'program_focus' => 'array',
-        'regions' => 'array',
-        'required_documents' => 'array',
-        'social_impact_areas' => 'array',
-        'bonus_points' => 'array',
+        'visible' => 'boolean',
+        'require_kyc_verification_to_apply' => 'boolean',
+        'application_start_date' => 'date',
+        'application_deadline' => 'date',
     ];
 
     public function liked(){
@@ -92,6 +92,17 @@ class Program extends Model
 
     public function applications(){
         return $this->hasMany(ProgramApplication::class, 'program_id');
+    }
+
+    public function customFields()
+    {
+        return $this->hasMany(ProgramCustomField::class, 'program_id')->orderBy('display_order');
+    }
+
+    public function infoValues()
+    {
+        return $this->hasMany(ProgramCustomFieldValue::class, 'entity_id')
+            ->where('entity_type', 'program');
     }
 
     public function activeApplications(){

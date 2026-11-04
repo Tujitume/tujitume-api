@@ -46,10 +46,11 @@ class RoundQuestionController extends Controller
         try {
             $validated = $request->validate([
                 'question_text'  => 'sometimes|required|string|max:500',
-                'question_type'  => 'sometimes|required|in:short_answer,long_text,multiple_choice,file_upload,budget_breakdown,knockout',
+                'question_type'  => 'sometimes|required|in:knockout,short_answer,long_text,long_answer,paragraph,multiple_choice,checkbox,checkboxes,dropdown,yes_no,true_false,rating,rating_scale,linear_scale,number,email,phone,phone_number,url,url_website,video_link,date,time,datetime,date_time,file_upload,address,currency,currency_money,percentage,matrix,matrix_grid,ranking,signature,budget_breakdown,knockout_yes_no',
                 'options'        => 'nullable|array',
                 'is_required'    => 'nullable|boolean',
                 'display_order'  => 'sometimes|required|integer|min:1',
+                'knockout_fail_value' => 'nullable|string|max:45',
             ]);
 
             $question->update($validated);
@@ -90,10 +91,11 @@ class RoundQuestionController extends Controller
         try {
             $validated = $request->validate([
                 'question_text' => 'required|string|max:500',
-                'question_type' => 'required|in:short_answer,long_text,multiple_choice,file_upload,budget_breakdown,knockout',
+                'question_type' => 'required|in:knockout,short_answer,long_text,long_answer,paragraph,multiple_choice,checkbox,checkboxes,dropdown,yes_no,true_false,rating,rating_scale,linear_scale,number,email,phone,phone_number,url,url_website,video_link,date,time,datetime,date_time,file_upload,address,currency,currency_money,percentage,matrix,matrix_grid,ranking,signature,budget_breakdown,knockout_yes_no',
                 'options' => 'nullable|array', // For multiple choice
                 'is_required' => 'nullable|boolean',
                 'display_order' => 'required|integer|min:1',
+                'knockout_fail_value' => 'nullable|string|max:45',
             ]);
 
             $validated['round_id'] = $round->id;

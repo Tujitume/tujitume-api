@@ -7,6 +7,7 @@ use App\Models\ApplicationRoundHistory;
 use App\Models\Auth\User;
 use App\Models\Programs\Program;
 use App\Models\Programs\ProgramApplication;
+use App\Models\Programs\ProgramCustomField;
 use App\Models\Programs\ProgramMilestone;
 use App\Models\Programs\ProgramWatchlist;
 use App\Models\Programs\Rounds\ApplicationRoundResponse;
@@ -14,6 +15,7 @@ use App\Models\Programs\Rounds\ProgramRound;
 use App\Models\Programs\Rounds\ReviewerApplicationAssignment;
 use App\Models\Programs\Rounds\RoundCustomQuestion;
 use App\Models\Programs\Rounds\RoundRequiredDocument;
+use App\Service\Program\CustomFieldValueService;
 use App\Service\Program\ProgramAccess;
 use App\Service\Program\RoundHelperService;
 use App\Service\Program\RoundHistoryService;
@@ -24,6 +26,7 @@ use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
 class ProgramApplicationController extends Controller
@@ -289,8 +292,16 @@ class ProgramApplicationController extends Controller
                 return response()->json(['message' => $closedReason], 422);
             }
 
-            $validated = $request->validate([
-                // Required: Business info
+            $dynamicRules = [];
+            foreach ($program->customFields()->where('audience', 'application')->where('is_archived', false)->orderBy('display_order')->get() as $field) {
+                $key = 'custom_answers.' . $field->key;
+                $dynamicRules[$key] = $this->customFieldValidationRules($field);
+                if ($field->type === 'multi_select' && $field->options) {
+                    $dynamicRules[$key . '.*'] = ['nullable', 'string', Rule::in(array_map(fn ($option) => (string) ($option['value'] ?? $option['label'] ?? $option), $field->options ?? []))];
+                }
+            }
+
+            $validated = $request->validate(array_merge([
                 'business_id' => 'required|exists:listings,id',
                 'startup_name' => 'required|string|max:255',
                 'contact_person_name' => 'required|string|max:100',
@@ -298,62 +309,49 @@ class ProgramApplicationController extends Controller
                 'sector' => 'required|string|max:100',
                 'headquarters_location' => 'required|string|max:255',
                 'total_amount_requested' => 'required|numeric|min:0|max:' . $program->funding_per_business,
-
-                // Optional: Business details
                 'stage' => 'nullable|string|max:100',
                 'revenue_last_12_months' => 'nullable|numeric|min:0',
                 'team_experience_avg_years' => 'nullable|integer|min:0',
                 'traction_kpis' => 'nullable|string',
-
-                // Optional: Files
-                'pitch_deck_file' => 'nullable|file|mimes:pdf,ppt,pptx|max:20480',  // 20MB
+                'pitch_deck_file' => 'nullable|file|mimes:pdf,ppt,pptx|max:20480',
                 'pitch_video' => 'nullable|url',
                 'business_plan_file' => 'nullable|file|mimes:pdf,doc,docx|max:20480',
-
-                // Optional: Impact
                 'social_impact_areas' => 'nullable|array',
                 'bonus_points' => 'nullable|string|max:300',
-                'match_score' => 'required|numeric',
-                'score_breakdown' => 'required|array',
-
-                // Separate section validation
+                'custom_answers' => 'nullable|array',
+                'custom_answers.*' => 'nullable',
                 'round_answers' => 'nullable|array',
                 'round_answers.*.question_id' => 'required_with:round_answers|integer|exists:round_custom_questions,id',
                 'round_answers.*.response' => 'nullable|string|max:1000',
-
-
-                // Documents
                 'round_documents' => 'nullable|array',
                 'round_documents.*.document_type' => 'required_with:round_documents|string|max:100',
                 'round_documents.*.file' => 'required_with:round_documents|file|max:20480',
-
-                //'custom_field_confirmations' => 'nullable|array',
-
-
-            ]);
+            ], $dynamicRules));
 
             if (! \App\Models\Business\Listing::where('id', $validated['business_id'])
                 ->where('user_id', auth()->id())->exists()) {
                 return response()->json(['message' => 'Business does not belong to the authenticated user.'], 403);
             }
 
+            $customAnswers = $this->normalizeCustomAnswers($request, $program);
+
             // Work the match score out again here instead of trusting the number the browser sent
             try {
                 $scoringRequest = $request->duplicate();
-                $scoringRequest->merge(['bonus_points' => array_values(array_filter(array_map('trim', explode(',', (string) $request->input('bonus_points')))))]);
-                $computed = (new \App\Service\AiScore\MatchScore())->program($scoringRequest, $program->id)->getData(true);
+                $scoringRequest->merge(['custom_answers' => $customAnswers]);
+                $computed = (new \App\Service\AiScore\MatchScore())->program($scoringRequest, $program->id);
 
                 if (isset($computed['score'])) {
                     $validated['match_score'] = $computed['score'];
-                    $validated['score_breakdown'] = collect($computed['score_breakdown'] ?? [])
-                        ->map(fn ($value, $label) => ['label' => trim($label), 'value' => $value])->values()->all();
+                    $validated['score_breakdown'] = $computed['score_breakdown'] ?? $computed['breakdown'] ?? [];
                 }
             } catch (\Throwable $e) {
                 ErrorLogService::report($e, ['program_id' => $program->id]);
             }
 
-            if (($validated['match_score'] ?? 0) < 50) {
-                return response()->json(['message' => 'Your match score is ' . round($validated['match_score'] ?? 0) . '%, below the 50% needed to apply.'], 422);
+            $programMatchLimit = $program->match_score_limit ?? null;
+            if ($programMatchLimit !== null && (($validated['match_score'] ?? 0) < (int) $programMatchLimit)) {
+                return response()->json(['message' => 'Your match score is ' . round($validated['match_score'] ?? 0) . '%, below the program threshold of ' . $programMatchLimit . '%.' ], 422);
             }
 
             // Auto-set fields
@@ -404,8 +402,12 @@ class ProgramApplicationController extends Controller
             }
 
             $application = ProgramApplication::create(
-                Arr::except($validated, ['round_answers', 'round_documents'])
+                Arr::except($validated, ['round_answers', 'round_documents', 'custom_answers'])
             );
+
+            if (! empty($customAnswers)) {
+                $this->saveCustomAnswers($application, $customAnswers);
+            }
 
             $doc_path = "files/programApps/{$program->id}/rounds/{$application->current_round_id}";
 
@@ -904,6 +906,80 @@ class ProgramApplicationController extends Controller
             ]);
 
             throw $e;
+        }
+    }
+
+    protected function normalizeCustomAnswers(Request $request, Program $program): array
+    {
+        $answers = $request->input('custom_answers', []);
+        $files = $request->allFiles()['custom_answers'] ?? [];
+
+        if (is_array($files) && ! empty($files)) {
+            foreach ($files as $key => $file) {
+                $answers[$key] = $file;
+            }
+        }
+
+        if (! is_array($answers)) {
+            return [];
+        }
+
+        $normalized = [];
+        foreach ($answers as $key => $value) {
+            if ($key === '' || $value === null) {
+                continue;
+            }
+
+            $field = $program->customFields()->where('audience', 'application')->where('is_archived', false)->where('key', (string) $key)->first();
+            if (! $field) {
+                continue;
+            }
+
+            $normalized[$field->key] = $value;
+        }
+
+        return $normalized;
+    }
+
+    protected function customFieldValidationRules(ProgramCustomField $field): array
+    {
+        $base = [];
+        if ($field->is_required) {
+            $base[] = 'required';
+        } else {
+            $base[] = 'nullable';
+        }
+
+        $options = array_map(fn ($option) => (string) ($option['value'] ?? $option['label'] ?? $option), (array) ($field->options ?? []));
+
+        return match ($field->type) {
+            'text', 'textarea', 'url' => array_merge($base, ['string', 'max:' . (config('program_fields.text_answer_max_length', 5000))]),
+            'number' => array_merge($base, ['numeric']),
+            'boolean' => array_merge($base, ['boolean']),
+            'date' => array_merge($base, ['date']),
+            'select' => array_merge($base, ['string', Rule::in($options)]),
+            'multi_select' => array_merge($base, ['array']),
+            'file' => array_merge($base, ['file', 'max:' . (int) config('program_fields.file_max_size_kb', 20480) * 1024]),
+            default => $base,
+        };
+    }
+
+    protected function saveCustomAnswers(ProgramApplication $application, array $answers): void
+    {
+        $service = app(CustomFieldValueService::class);
+
+        foreach ($answers as $fieldKey => $value) {
+            $field = $application->program->customFields()
+                ->where('audience', 'application')
+                ->where('is_archived', false)
+                ->where('key', $fieldKey)
+                ->first();
+
+            if (! $field) {
+                continue;
+            }
+
+            $service->saveForEntity($field, 'application', $application->id, $value);
         }
     }
 

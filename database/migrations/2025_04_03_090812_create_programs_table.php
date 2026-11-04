@@ -14,28 +14,14 @@ return new class extends Migration
         Schema::create('programs', function (Blueprint $table) {
             $table->id();
 
-            $table->unsignedBigInteger('user_id')->nullable();          // program admin / owner
-            $table->unsignedBigInteger('organization_id')->nullable();          // program admin / owner
+            $table->unsignedBigInteger('user_id')->nullable();
+            $table->unsignedBigInteger('organization_id')->nullable();
+            $table->unsignedBigInteger('program_industry_id')->nullable();
 
-            $table->unsignedBigInteger('program_industry_id')->nullable()->constrained('program_industries')->onDelete('null');          // program admin / owner
-
-            
-            // Core program info
             $table->string('program_title', 255);
             $table->decimal('total_program_amount', 15, 2);
-            $table->decimal('available_amount', 15, 2)->nullable();     // was float → decimal
+            $table->decimal('available_amount', 15, 2)->nullable();
             $table->decimal('funding_per_business', 15, 2);
-
-            // Funder info (new)
-            $table->string('funder_name', 200)->nullable();
-            $table->enum('funder_type', [
-                'government',
-                'ngo',
-                'private',
-                'development',
-                'international_aid',
-                'other',
-            ])->default('government');
 
             $table->enum('disbursement_type', [
                 'supplier',
@@ -43,52 +29,31 @@ return new class extends Migration
                 'beneficiary',
             ])->default('supplier');
 
-            // Criteria & targeting
-            $table->text('eligibility_criteria')->nullable();
-            $table->json('required_documents')->nullable();              // was string(100) → json
-            $table->json('program_focus')->nullable();
-            $table->json('regions')->nullable();
-            $table->json('startup_stage_focus')->nullable();
-
-            // Objectives
-            $table->text('impact_objectives')->nullable();
-            $table->json('social_impact_areas')->nullable();
-            $table->json('bonus_points')->nullable();
-
-            $table->text('evaluation_criteria')->nullable();
-
-            $table->boolean('mid_milestone_required')->default(false);
-
-            // Dates — fixed to proper DATE type (were all VARCHAR/string)
+            $table->date('application_start_date')->nullable();
             $table->date('application_deadline')->nullable();
-            $table->date('start_date')->nullable();
-            $table->date('end_date')->nullable();
+            $table->boolean('require_kyc_verification_to_apply')->default(false);
+            $table->unsignedTinyInteger('match_score_limit')->nullable();
 
-            // Files
-            $table->string('program_brief_pdf', 255)->nullable();
-
-            // Status — ENUM replaces tinyInt (readable, safe)
             $table->enum('status', [
-                'draft',            // admin setting up
+                'draft',
                 'published',
-                'open',             // accepting applications
-                'closed',           // no more applications
-                'under_review',     // applications being evaluated
-                'awarded',          // winners selected & funds allocated
+                'open',
+                'closed',
+                'under_review',
+                'awarded',
                 'cancelled',
                 'completed',
             ])->default('draft');
 
-            $table->tinyInteger('visible')->default(1);
+            $table->boolean('visible')->default(true);
             $table->enum('currency', ['KES', 'USD'])->default('KES');
-
             $table->enum('program_type', ['single_round', 'multi_round'])->default('single_round');
-            $table->integer('total_rounds')->default(1);// new: multi-currency ready
-            $table->integer('max_awardees')->nullable(); // The max awardees validation we just discussed!
-
+            $table->integer('total_rounds')->default(1);
+            $table->integer('max_awardees')->nullable();
 
             $table->foreign('user_id')->references('id')->on('users')->onDelete('restrict');
             $table->foreign('organization_id')->references('id')->on('organizations')->onDelete('restrict');
+            $table->foreign('program_industry_id')->references('id')->on('program_industries')->nullOnDelete();
 
             $table->timestamps();
         });

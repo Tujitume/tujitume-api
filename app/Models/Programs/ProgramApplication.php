@@ -11,6 +11,7 @@ use App\Models\Programs\Rounds\ReviewerApplicationAssignment;
 use App\Models\Programs\Rounds\ApplicationScore;
 use App\Models\Programs\Rounds\ProgramRound;
 use App\Models\Programs\Rounds\RoundRequiredDocument;
+use App\Models\Programs\ProgramCustomFieldValue;
 use App\Traits\HasS3Files;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -79,6 +80,12 @@ class ProgramApplication extends Model
     {
         return $this->hasMany(ProgramMilestone::class,'app_id','id')
             ->orderBy('sequence_order');
+    }
+
+    public function customAnswers()
+    {
+        return $this->hasMany(ProgramCustomFieldValue::class, 'entity_id')
+            ->where('entity_type', 'application');
     }
 
     public function wallet()

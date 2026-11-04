@@ -24,8 +24,6 @@ class PublicProgramPreviewController extends Controller
             'public_id' => $program->public_id,
             'program_title' => $program->program_title,
             'description' => $program->description ?: ($program->message ?? null),
-            'funder_name' => $program->funder_name,
-            'funder_type' => $program->funder_type,
             'organization_logo' => $program->organization_logo,
             'owner_website' => $program->owner->website ?? null,
             'total_program_amount' => $program->total_program_amount,
@@ -33,20 +31,13 @@ class PublicProgramPreviewController extends Controller
             'currency' => $program->currency,
             'max_awardees' => $program->max_awardees,
             'disbursement_type' => $program->disbursement_type,
-            'eligibility_criteria' => $program->eligibility_criteria,
-            'impact_objectives' => $program->impact_objectives,
-            'evaluation_criteria' => $program->evaluation_criteria,
-            'program_focus' => $program->program_focus,
-            'social_impact_areas' => $program->social_impact_areas,
-            'regions' => $program->regions,
-            'startup_stage_focus' => $program->startup_stage_focus,
-            'bonus_points' => $program->bonus_points,
-            'required_documents' => $program->required_documents,
-            'program_brief_pdf' => $program->program_brief_pdf,
             'status' => $program->status,
-            'start_date' => $program->start_date,
+            'application_start_date' => $program->application_start_date,
             'application_deadline' => $program->application_deadline,
-            'end_date' => $program->end_date,
+            'custom_info' => $program->customFields()->where('audience', 'info')->where('is_archived', false)->orderBy('display_order')->get()->map(function ($field) {
+                $value = $field->values()->where('entity_type', 'program')->where('entity_id', $program->id)->first();
+                return ['key' => $field->key, 'label' => $field->label, 'value' => $value?->value_text ?? $value?->value_json ?? $value?->value_number ?? $value?->value_bool ?? $value?->value_date];
+            })->values(),
             'rounds' => $program->rounds->map(fn ($round) => [
                 'round_number' => $round->round_number,
                 'round_name' => $round->round_name,
@@ -75,8 +66,7 @@ class PublicProgramPreviewController extends Controller
 
         $url = 'https://tujitume.com/programs/' . rawurlencode($program->public_id);
         $title = $program->program_title ?: 'Program opportunity';
-        $description = $program->description
-            ?: ($program->message ?: ($program->impact_objectives ?: ($program->eligibility_criteria ?: 'View this program opportunity on Tujitume.')));
+        $description = $program->description ?: ($program->message ?: 'View this program opportunity on Tujitume.');
         $requestMessage = $request->query('share_message', '');
         $shareMessage = Str::of(is_string($requestMessage) ? $requestMessage : '')
             ->stripTags()

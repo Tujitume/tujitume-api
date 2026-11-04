@@ -547,7 +547,11 @@ class ProgramRoundController extends Controller
                 // Question
                 'round_questions' => 'nullable|array',
                 'round_questions.*.question_text' => 'nullable|string|max:255',
-                'round_questions.*.question_type' => 'nullable|in:short_answer,long_text',
+                'round_questions.*.question_type' => 'required|in:knockout,short_answer,long_text,long_answer,paragraph,multiple_choice,checkbox,checkboxes,dropdown,yes_no,true_false,rating,rating_scale,linear_scale,number,email,phone,phone_number,url,url_website,video_link,date,time,datetime,date_time,file_upload,address,currency,currency_money,percentage,matrix,matrix_grid,ranking,signature,budget_breakdown,knockout_yes_no',
+                'round_questions.*.options' => 'nullable|array',
+                'round_questions.*.is_required' => 'nullable|boolean',
+                'round_questions.*.display_order' => 'nullable|integer|min:1',
+                'round_questions.*.knockout_fail_value' => 'nullable|string|max:45',
 
                 'knockout_questions' => 'nullable|array',
                 'knockout_questions.*.text' => 'required|string|max:500',
@@ -592,23 +596,28 @@ class ProgramRoundController extends Controller
             }
 
             // Normal questions
-            foreach ($validated['round_questions'] ?? [] as $q) {
+            $questionsToInsert = [];
+            foreach ($validated['round_questions'] ?? [] as $index => $q) {
                 $questionsToInsert[] = [
                     'round_id' => $round->id,
                     'question_text' => $q['question_text'] ?? '',
                     'question_type' => $q['question_type'],
-                    'is_required' => true,
+                    'options' => $q['options'] ?? null,
+                    'is_required' => $q['is_required'] ?? true,
+                    'display_order' => $q['display_order'] ?? ($index + 1),
+                    'knockout_fail_value' => $q['knockout_fail_value'] ?? null,
                     'created_at' => now(),
                 ];
             }
 
             // Knockout questions
-            foreach ($validated['knockout_questions'] ?? [] as $q) {
+            foreach ($validated['knockout_questions'] ?? [] as $index => $q) {
                 $questionsToInsert[] = [
                     'round_id' => $round->id,
                     'question_text' => $q['text'] ?? '',
                     'question_type' => 'knockout',
                     'is_required' => true,
+                    'display_order' => count($validated['round_questions'] ?? []) + $index + 1,
                     'knockout_fail_value' => $q['disqualify_if'] ?? null,
                     'created_at' => now(),
                     'updated_at' => now(),
@@ -670,7 +679,11 @@ class ProgramRoundController extends Controller
                 // Question
                 'round_questions' => 'nullable|array',
                 'round_questions.*.question_text' => 'nullable|string|max:255',
-                'round_questions.*.question_type' => 'nullable|in:short_answer,long_text',
+                'round_questions.*.question_type' => 'required|in:knockout,short_answer,long_text,long_answer,paragraph,multiple_choice,checkbox,checkboxes,dropdown,yes_no,true_false,rating,rating_scale,linear_scale,number,email,phone,phone_number,url,url_website,video_link,date,time,datetime,date_time,file_upload,address,currency,currency_money,percentage,matrix,matrix_grid,ranking,signature,budget_breakdown,knockout_yes_no',
+                'round_questions.*.options' => 'nullable|array',
+                'round_questions.*.is_required' => 'nullable|boolean',
+                'round_questions.*.display_order' => 'nullable|integer|min:1',
+                'round_questions.*.knockout_fail_value' => 'nullable|string|max:45',
 
                 'knockout_questions' => 'nullable|array',
                 'knockout_questions.*.text' => 'required|string|max:500',
@@ -701,27 +714,30 @@ class ProgramRoundController extends Controller
             //}
 
             // Normal questions
-            foreach ($validated['round_questions'] ?? [] as $q) {
+            foreach ($validated['round_questions'] ?? [] as $index => $q) {
                 $questionsToInsert[] = [
                     'id' => $q['id'] ?? null, // IMPORTANT
                     'round_id' => $round->id,
                     'question_text' => $q['question_text'] ?? '',
                     'question_type' => $q['question_type'],
-                    'is_required' => true,
-                    'knockout_fail_value' => null,
+                    'options' => $q['options'] ?? null,
+                    'is_required' => $q['is_required'] ?? true,
+                    'display_order' => $q['display_order'] ?? ($index + 1),
+                    'knockout_fail_value' => $q['knockout_fail_value'] ?? null,
                     'updated_at' => now(),
                     'created_at' => now(),
                 ];
             }
 
             // Knockout questions
-            foreach ($validated['knockout_questions'] ?? [] as $q) {
+            foreach ($validated['knockout_questions'] ?? [] as $index => $q) {
                 $questionsToInsert[] = [
                     'id' => $q['id'] ?? null, // IMPORTANT
                     'round_id' => $round->id,
                     'question_text' => $q['text'] ?? '',
                     'question_type' => 'knockout',
                     'is_required' => true,
+                    'display_order' => count($validated['round_questions'] ?? []) + $index + 1,
                     'knockout_fail_value' => $q['disqualify_if'] ?? null,
                     'created_at' => now(),
                     'updated_at' => now(),
@@ -737,7 +753,9 @@ class ProgramRoundController extends Controller
                         'round_id',
                         'question_text',
                         'question_type',
+                        'options',
                         'is_required',
+                        'display_order',
                         'knockout_fail_value',
                         'updated_at'
                     ]

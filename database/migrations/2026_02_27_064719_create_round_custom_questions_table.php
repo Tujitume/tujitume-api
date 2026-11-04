@@ -15,7 +15,14 @@ return new class extends Migration
             $table->id();
             $table->foreignId('round_id')->constrained('program_rounds')->onDelete('cascade');
             $table->string('question_text', 500);
-            $table->enum('question_type', ['knockout','short_answer', 'long_text', 'multiple_choice', 'file_upload', 'budget_breakdown']);
+            $table->enum('question_type', [
+                'knockout', 'short_answer', 'long_text', 'multiple_choice', 'file_upload', 'budget_breakdown',
+                'checkbox', 'dropdown', 'yes_no', 'paragraph', 'true_false', 'rating', 'linear_scale',
+                'number', 'email', 'phone', 'url', 'date', 'time', 'datetime', 'address', 'currency',
+                'percentage', 'matrix', 'ranking', 'signature',
+                'long_answer', 'checkboxes', 'knockout_yes_no', 'rating_scale', 'phone_number',
+                'url_website', 'video_link', 'date_time', 'currency_money', 'matrix_grid',
+            ]);
             $table->json('options')->nullable(); // For multiple choice
             $table->boolean('is_required')->default(false);
             $table->integer('display_order');

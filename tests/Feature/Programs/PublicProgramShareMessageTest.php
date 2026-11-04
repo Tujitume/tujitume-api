@@ -26,7 +26,6 @@ it('provides published program details to the public React page without private 
 
     expect($response->json('data.program'))
         ->toHaveKey('program_title', $this->program->program_title)
-        ->toHaveKey('eligibility_criteria')
         ->toHaveKey('rounds');
     expect($response->json('data.program'))->not->toHaveKeys(['wallet', 'applications', 'questions', 'scoring_criteria']);
 

@@ -91,13 +91,12 @@
 
         <aside class="stack sidebar">
             <section class="card"><h2>Key dates</h2>
-                @if($program->start_date)<p><strong>Program opens:</strong> {{ \Illuminate\Support\Carbon::parse($program->start_date)->format('j M Y') }}</p>@endif
+                @if($program->application_start_date)<p><strong>Program opens:</strong> {{ \Illuminate\Support\Carbon::parse($program->application_start_date)->format('j M Y') }}</p>@endif
                 @if($program->application_deadline)<p><strong>Application deadline:</strong> {{ \Illuminate\Support\Carbon::parse($program->application_deadline)->format('j M Y') }}</p>@endif
-                @if($program->end_date)<p><strong>Program ends:</strong> {{ \Illuminate\Support\Carbon::parse($program->end_date)->format('j M Y') }}</p>@endif
                 @if($firstRound?->review_period_end)<p><strong>Review ends:</strong> {{ \Illuminate\Support\Carbon::parse($firstRound->review_period_end)->format('j M Y') }}</p>@endif
                 @if($firstRound?->announcement_date)<p><strong>Announcement:</strong> {{ \Illuminate\Support\Carbon::parse($firstRound->announcement_date)->format('j M Y') }}</p>@endif
             </section>
-            @php $documents = $firstRound?->required_documents ?: $program->required_documents; @endphp
+            @php $documents = $firstRound?->required_documents ?? []; @endphp
             @if(is_array($documents) && count($documents))
                 <section class="card"><h2>Required documents</h2><ul>
                     @foreach($documents as $document)
@@ -108,8 +107,12 @@
             @if($program->owner_website ?? false)
                 <section class="card"><h2>Organization website</h2><a class="external" href="{{ $program->owner_website }}" rel="noopener noreferrer">{{ $program->owner_website }}</a></section>
             @endif
-            @if($program->program_brief_pdf)
-                <section class="card"><h2>Program brief</h2><a class="external" href="{{ \Illuminate\Support\Str::startsWith($program->program_brief_pdf, ['http://', 'https://']) ? $program->program_brief_pdf : asset($program->program_brief_pdf) }}" target="_blank" rel="noopener noreferrer">View program brief (PDF)</a></section>
+            @php $brief = $program->customFields()->where('audience', 'info')->where('type', 'file')->where('is_archived', false)->first(); @endphp
+            @if($brief)
+                @php $briefValue = $brief->values()->where('entity_type', 'program')->where('entity_id', $program->id)->first()?->value_text; @endphp
+                @if($briefValue)
+                    <section class="card"><h2>Program brief</h2><a class="external" href="{{ \Illuminate\Support\Str::startsWith($briefValue, ['http://', 'https://']) ? $briefValue : asset($briefValue) }}" target="_blank" rel="noopener noreferrer">View program brief (PDF)</a></section>
+                @endif
             @endif
         </aside>
     </div>

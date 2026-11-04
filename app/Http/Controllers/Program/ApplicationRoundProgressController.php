@@ -328,8 +328,8 @@ class ApplicationRoundProgressController extends Controller
                 $program = $round->program;
                 $program->visible = 1;
                 $program->status = 'published';
-                if (! $program->start_date && $round->open_date) {
-                    $program->start_date = $round->open_date->toDateString();
+                if (! $program->application_start_date && $round->open_date) {
+                    $program->application_start_date = $round->open_date->toDateString();
                 }
                 if (! $program->application_deadline && $round->close_date) {
                     $program->application_deadline = $round->close_date->toDateString();

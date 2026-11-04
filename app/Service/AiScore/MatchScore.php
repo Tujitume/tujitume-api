@@ -1,397 +1,288 @@
 <?php
+
 namespace App\Service\AiScore;
-use App\Models\Business\Listing;
-use App\Models\Capital\CapitalOffer;
+
 use App\Models\Programs\Program;
-use App\Models\Programs\Rounds\ProgramRound;
+use App\Models\Programs\ProgramCustomField;
 use App\Service\Misc\ErrorLogService;
 
 class MatchScore
 {
-    public function program($request, $program_id)
+    public function program($request, $program_id = null)
     {
-        $now=date("Y-m-d H:i"); $date=date('d M, h:i a',strtotime($now));
-        $program = Program::where('id',$program_id)->first();
-        $business = Listing::where('id',$request->business_id)->first();
-        //$pitch = ProgramApplication::with('listing')->where('id',$pitch_id)->first();
-        $score = 0;
-        try{
-            // Input data
-            $business = [
-                'sectors' => $request->sector,
-                'region' => $request->headquarters_location,
-                'stage' => $request->stage,
-                'revenue' => (float) $request->revenue_last_12_months,
-                'team_size' => $request->team_experience_avg_years,
-                'impact_score' => $request->social_impact_areas,
-                'milestones_achieved' => true,
-                'documents_submitted' => $request->file('business_plan_file') != null ? true : false,
-
-            ];
-
-            $org = [
-                'preferred_sectors' => $program->program_focus,
-                'target_regions' => $program->regions,
-                'target_stages' => $program->startup_stage_focus,
-                'revenue' => $program->funding_per_business,
-                'team_size' => $request->evaluation_criteria,
-                'impact_score' => $program->social_impact_areas,
-                'milestones_achieved' => true,
-                'documents_submitted' => $program->program_brief_pdf != null ? true : false,
-            ];
-
-            // A criterion is only scored when both sides supplied a value. Its
-            // weight is redistributed across the criteria that can be scored.
-            $criterionAvailable = [
-                'Sector Alignment' => $business['sectors'] !== null && $org['preferred_sectors'] !== null,
-                'Geographic Fit' => $business['region'] !== null && $org['target_regions'] !== null,
-                'Startup Stage Compatibility' => $business['stage'] !== null && $org['target_stages'] !== null,
-                'Revenue Traction' => $request->revenue_last_12_months !== null && $org['revenue'] !== null,
-                'Impact Focus' => $business['impact_score'] !== null && $org['impact_score'] !== null,
-                'Milestone Success' => true,
-                'Document Completeness' => true,
-            ];
-
-            // Sector Alignment (30%)
-            if (!is_array($org['preferred_sectors'])) {
-                $org['preferred_sectors'] = json_decode($org['preferred_sectors'], true)?? [];
-            }
-            $sectorScore = in_array($business['sectors'], $org['preferred_sectors']) ? 100 : 0;;
-
-            // Geographic Fit (15%)
-
-            if (!is_array($org['target_regions'])) {
-                $org['target_regions'] = json_decode($org['target_regions'], true) ?? [];
-            }
-
-            $businessRegions = array_map(
-                fn($region) => trim($region),
-                explode(',', $business['region'] ?? '')
-            );
-
-            $targetRegions = array_map(
-                fn($region) => trim($region),
-                $org['target_regions']
-            );
-
-            $geoScore = 0;
-
-            foreach ($businessRegions as $businessRegion) {
-                foreach ($targetRegions as $targetRegion) {
-
-                    if (strcasecmp($businessRegion, $targetRegion) === 0) {
-                        $geoScore = 100;
-                        break 2;
-                    }
-                }
-            }
-
-
-
-            // Startup Stage Compatibility (10%)
-            if (!is_array($org['target_stages'])) {
-                $org['target_stages'] = json_decode($org['target_stages'],true)?? [];
-            }
-            if ($criterionAvailable['Startup Stage Compatibility'])
-                $stageScore = in_array($business['stage'], $org['target_stages']) ? 100 : 0;
-            else
-                $stageScore = 0;
-
-            // Revenue Traction/Projection (10%)
-            $revenueScore = $business['revenue'] >= $org['revenue'] ? 100 : 0;
-
-            // Team Experience / Background (10%)
-            //$teamScore = $business['team_size'] >= $org['team_threshold'] ? 100 : 0;
-            //$score += $teamScore * 0.10;
-
-            // Impact Focus (10%)
-            $businessImpact = is_array($business['impact_score']) ? $business['impact_score'] : (is_string($business['impact_score']) ? (json_decode($business['impact_score'], true) ?? [$business['impact_score']]) : []);
-            $programImpact = is_array($org['impact_score']) ? $org['impact_score'] : (is_string($org['impact_score']) ? (json_decode($org['impact_score'], true) ?? [$org['impact_score']]) : []);
-            $impactScore = array_intersect($businessImpact, $programImpact) ? 100 : 0;
-
-
-            // Milestone Success (10%)
-            $milestones = !is_array($request->input('milestones', '[]'))
-                ? json_decode($request->input('milestones', '[]'), true)
-                : $request->input('milestones', '[]');
-            foreach ($milestones as $milestone) {
-                if (!empty($milestone['has_deliverables'])) {
-                    $business['milestones_achieved'] = true;
-                    break;
-                }
-            }
-            $milestoneScore = $business['milestones_achieved'] ? 100 : 100;
-
-            // Document Completeness (5%)
-            $round1 = ProgramRound::where('program_id', $program->id)->where('round_number', 1)->first();
-            $requiredDocs = collect($round1?->required_documents ?? [])
-                ->map(fn($d) => is_array($d) ? ($d['label'] ?? '') : $d)
-                ->filter()->values()->toArray();
-
-            if (empty($requiredDocs)) {
-                $documentsSubmitted = true;
-            } else {
-                // Extract submitted document_types from round_documents array
-                $submittedTypes = collect($request->input('round_documents', []))->pluck('document_type')
-                    ->toArray();// e.g. ['pitch_deck', 'financials']
-
-                $missingDocs = array_diff($requiredDocs, $submittedTypes);
-                $documentsSubmitted = empty($missingDocs);
-            }
-
-            $documentScore = $documentsSubmitted ? 100 : 0;
-
-            $criterionScores = [
-                'Sector Alignment' => $sectorScore,
-                'Geographic Fit' => $geoScore,
-                'Startup Stage Compatibility' => $stageScore,
-                'Revenue Traction' => $revenueScore,
-                'Impact Focus' => $impactScore,
-                'Milestone Success' => $milestoneScore,
-                'Document Completeness' => $documentScore,
-            ];
-            $criterionWeights = [
-                'Sector Alignment' => 30,
-                'Geographic Fit' => 15,
-                'Startup Stage Compatibility' => 10,
-                'Revenue Traction' => 10,
-                'Impact Focus' => 10,
-                'Milestone Success' => 10,
-                'Document Completeness' => 5,
-            ];
-            $distributedMarks = 0;
-            $activeCriteriaCount = 0;
-            foreach ($criterionWeights as $criterion => $weight) {
-                if ($criterionAvailable[$criterion]) {
-                    $activeCriteriaCount++;
-                } else {
-                    $distributedMarks += $weight;
-                }
-            }
-
-            $marksPerActiveCriterion = $activeCriteriaCount > 0 ? $distributedMarks / $activeCriteriaCount : 0;
-            $scoreBreakdown = [];
-            foreach ($criterionWeights as $criterion => $weight) {
-                $effectiveWeight = $criterionAvailable[$criterion] ? $weight + $marksPerActiveCriterion : 0;
-                $scoreBreakdown[$criterion] = round($criterionScores[$criterion] * $effectiveWeight / 100, 2);
-                $score += $scoreBreakdown[$criterion];
-            }
-
-            // Bonus (up to +20)
-            $bonusInput = $request->bonus_points;
-            if (!is_array($bonusInput)) {
-                $bonusInput = $bonusInput ? [$bonusInput] : [];
-            }
-
-            // Bonus points only count for an applicant whose score so far reaches the program's match score limit.
-            // A program without a limit (older ones) gives its bonus to everyone.
-            $baseScore = $score;
-            $limit = $program->getAttributes()['match_score_limit'] ?? null; // null: no limit set (or the column does not exist yet)
-            $bonusUnlocked = $limit === null || $baseScore >= (float) $limit;
-
-            $bo = 0;
-            if ($bonusUnlocked) {
-                foreach ($bonusInput ?? [] as $bonus) {
-                    if (in_array($bonus, $program->bonus_points ?? [])) {
-                        $bo += 5;
-                    }
-                }
-            }
-            $score += $bo;
-
-            $score = min($score, 100);
-
-        // Final Result
-            if ($score >= 80) {
-                $result = "Ideal Match";
-            } elseif ($score >= 60) {
-                $result = "Strong Match";
-            } else {
-                $result = "Needs Revision";
-            }
-
-//            $value_compare = [
-//                'Sector Alignment' => implode(',', $business['sectors']) . ' <=> ' . implode(',', $org['preferred_sectors']),
-//                'Geographic Fit' => $business['region'] . ' <=> ' . implode(',', $org['target_regions']),
-//                'Startup Stage Compatibility' => $business['stage'] . ' <=> ' . implode(',', $org['target_stages']),
-//                'Revenue Traction' => $business['revenue'] . ' <=> ' . $org['revenue'],
-//            ];
-
-
-            return response()->json([
-                'score' => round($score, 2),
-                'result' => $result,
-                'score_breakdown' => [
-                    ...$scoreBreakdown,
-                    //'Sector Alignment2' => $org['preferred_sectors'],
-                    'Bonus ' => $bo
-                ],
-                'distributed_marks_for_other_sector' => $distributedMarks,
-                // For the applicant to read: the score before bonus, the limit, and whether bonus counted
-                'base_score' => round($baseScore, 2),
-                'match_score_limit' => $limit,
-                'bonus_unlocked' => $bonusUnlocked,
-                //'value_sent' => $request->all(),
-                //'value_compare' => $value_compare
-            ]);
-        }
-        catch (\Exception $e) {
-            ErrorLogService::report($e, [
-                'input' => request()->except(['password', 'token']),
-            ]);
-
-            return response()->json([
-                'message' => 'Something went wrong, please try again later.'
-            ], 500);
-        }
-    }
-
-
-    public function capital($request, $capital_id)
-    {
-        $now = date("Y-m-d H:i");
-        $date = date('d M, h:i a', strtotime($now));
-        $capital = CapitalOffer::where('id', $capital_id)->first();
-        $score = 0;
-
         try {
-            // Input data
-            $business = [
-                'sectors' => $request->sector,
-                'region' =>  $request->headquarters_location, // Modified: treat region as array
-                'stage' => $request->stage,
-                'revenue' => (float) $request->revenue_last_12_months,
-                'team_size' => $request->team_experience_avg_years,
-                'impact_score' => collect($request->social_impact_areas)
-                    ->flatMap(fn($area) => explode(' ', strtolower(trim($area)))), // Modified: flatten for keywords
-                'milestones_achieved' => false, // Modified: initially false
-                'documents_submitted' => $request->file('business_plan') != null ? true : false,
-            ];
+            $program = $request instanceof Program ? $request : Program::findOrFail($program_id ?? $request->program_id ?? $request->input('program_id'));
+            $answers = $request instanceof Program ? [] : $request->input('custom_answers', $request->all());
 
-            $org = [
-                'preferred_sectors' => $capital->sectors,
-                'target_regions' => $capital->regions,
-                'target_stages' =>  $capital->startup_stage,
-                'revenue' => $capital->per_startup_allocation,
-                'team_size' => $request->exit_strategy,
-                'impact_score' => collect(explode(' ', strtolower($capital->impact_objectives)))
-                    ->map(fn($item) => trim($item)), // Modified: normalize for keyword match
-                'milestones_achieved' => false,
-                'documents_submitted' => $capital->offer_brief_file != null ? true : false,
-            ];
-
-            // Sector Alignment (30%)
-            if (!is_array($org['preferred_sectors'])) {
-                $org['preferred_sectors'] = json_decode($org['preferred_sectors'],true)?? [];
-            }
-            $sectorScore = in_array($business['sectors'], $org['preferred_sectors']) ? 100 : 0;
-            $score += $sectorScore * 0.30;
-
-            // Geographic Fit (15%) - Modified
-            if (!is_array($org['target_regions'])) {
-                $org['target_regions'] = json_decode($org['target_regions'],true)?? [];
-            }
-            if($business['region'] && $org['target_regions'])
-                $geoScore = in_array($business['region'], $org['target_regions'])  ? 100 : 0;
-            else
-                $geoScore = 0;
-
-            $score += $geoScore * 0.15;
-
-
-
-            // Startup Stage Compatibility (10%)
-            if (!is_array($org['target_stages'])) {
-                $org['target_stages'] = json_decode($org['target_stages'],true)?? [];
-            }
-            if($business['stage'] && $org['target_stages'])
-                $stageScore = in_array($business['stage'], $org['target_stages']) ? 100 : 0;
-            else
-                $stageScore = 0;
-            $score += $stageScore * 0.10;
-
-            // Revenue Traction/Projection (10%)
-            $revenueScore = $business['revenue'] >= $org['revenue'] ? 100 : 0;
-            $score += $revenueScore * 0.10;
-
-            // Impact Focus (10%) - Modified
-            $matchCount = 0;
-            foreach ($business['impact_score'] as $item) {
-                $matchCount += substr_count(implode(' ', $org['impact_score']->toArray()), $item);
-            }
-            $impactScore = $matchCount >= 2 ? 100 : 0;
-            $score += $impactScore * 0.10;
-
-            // Milestone Success (10%) - Modified
-//            foreach ($request->file('milestones', []) as $milestone) {
-//                if ($milestone['deliverables'] ?? null) {
-//                    $business['milestones_achieved'] = true;
-//                    break;
-//                }
-//            }
-//          To be removed
-            $milestones = json_decode($request->input('milestones', '[]'), true);
-            foreach ($milestones as $milestone) {
-                if (!empty($milestone['has_deliverables'])) {
-                    $business['milestones_achieved'] = true;
-                    break;
-                }
-            }
-
-
-            $milestoneScore = $business['milestones_achieved'] ? 100 : 0;
-            $score += $milestoneScore * 0.10;
-
-            // Document Completeness (5%)
-            $documentScore = $business['documents_submitted'] ? 100 : 0;
-            $score += $documentScore * 0.05;
-
-            // Bonus (up to +20) - Modified
-            $bonus_points = explode(',', $request->bonus_points);
-            $bo = 0;
-            foreach ($bonus_points as $bonus) {
-                if (in_array($bonus, ['gender_led', 'youth_led', 'rural_based', 'uses_local_sourcing'])) {
-                    $bo += 5;
-                }
-            }
-            $score += $bo;
-
-            // Cap score
-            $score = min($score, 100);
-
-            // Final Result
-            if ($score >= 80) {
-                $result = "Ideal Match";
-            } elseif ($score >= 60) {
-                $result = "Strong Match";
-            } else {
-                $result = "Needs Revision";
-            }
-
-            return response()->json([
-                'score' => round($score, 2),
-                'result' => $result,
-                'score_breakdown' => [
-                    'Sector Alignment' => round($sectorScore * 0.30, 2),
-                    'Geographic Fit' => round($geoScore * 0.15, 2),
-                    'Startup Stage Compatibility' => round($stageScore * 0.10, 2),
-                    'Revenue Traction' => round($revenueScore * 0.10, 2),
-                    'Impact Focus' => round($impactScore * 0.10, 2),
-                    'Milestone Success' => round($milestoneScore * 0.10, 2),
-                    //'Milestone Success2' => $request->milestones,
-                    'Document Completeness' => round($documentScore * 0.05, 2),
-                    'Bonus' => $bo
-                ]
-            ]);
+            return $this->compute($program, is_array($answers) ? $answers : []);
         } catch (\Exception $e) {
-            ErrorLogService::report($e, [
-                'input' => request()->except(['password', 'token']),
-            ]);
+            ErrorLogService::report($e, ['input' => is_object($request) ? $request->all() : $request]);
 
-            return response()->json([
-                'message' => 'Something went wrong, please try again later.'
-            ], 500);
+            return ['score' => null, 'breakdown' => [], 'bonus' => [], 'eligible_for_bonus' => false, 'error' => 'Something went wrong, please try again later.'];
         }
     }
 
+    public function compute(Program $program, array $answers): array
+    {
+        $fields = $program->customFields()
+            ->where('audience', 'application')
+            ->where('is_archived', false)
+            ->where('is_scoring', true)
+            ->orderBy('display_order')
+            ->get();
+
+        if ($fields->isEmpty()) {
+            return ['score' => null, 'breakdown' => [], 'bonus' => [], 'eligible_for_bonus' => false];
+        }
+
+        $nonBonusFields = $fields->filter(fn (ProgramCustomField $field) => ! ($field->is_bonus ?? false));
+        if ($nonBonusFields->isEmpty()) {
+            return ['score' => null, 'breakdown' => [], 'bonus' => [], 'eligible_for_bonus' => false];
+        }
+
+        $baseWeightTotal = $nonBonusFields->sum(function (ProgramCustomField $field) {
+            $config = $field->scoring ?? ['weight' => 0];
+            return (float) ($config['weight'] ?? 0);
+        });
+
+        $baseScore = 0.0;
+        $breakdown = [];
+        foreach ($fields as $field) {
+            $config = $field->scoring ?? ['enabled' => false, 'weight' => 0];
+            if (($config['enabled'] ?? false) === false) {
+                continue;
+            }
+
+            $answer = $this->extractAnswer($field, $answers);
+            $matchType = $config['match_type'] ?? 'provided';
+            $strategy = $this->strategyFor($matchType);
+            $evaluation = $strategy->evaluate($field, $answer, $config);
+
+            $weight = (float) ($config['weight'] ?? 0);
+            $normalizedWeight = $baseWeightTotal > 0 ? ($weight / $baseWeightTotal) * 100 : 0;
+            $matchValue = (float) ($evaluation['match'] ?? 0);
+            $earned = $normalizedWeight * $matchValue;
+
+            if (($field->is_bonus ?? false) === false) {
+                $baseScore += $earned;
+            }
+
+            $breakdown[] = [
+                'field_id' => (int) $field->id,
+                'key' => $field->key,
+                'label' => $field->label,
+                'match_type' => $matchType,
+                'weight' => $weight,
+                'normalized_weight' => round($normalizedWeight, 2),
+                'match' => round(max(0, min(1, $matchValue)), 4),
+                'earned_points' => round($earned, 2),
+                'answer' => $answer,
+                'target' => $config['target'] ?? null,
+            ];
+        }
+
+        $baseScore = min(100, max(0, $baseScore));
+        $limit = $program->match_score_limit ?? null;
+        $eligibleForBonus = $limit === null || $baseScore >= (float) $limit;
+
+        $bonusEntries = [];
+        $bonusScore = 0.0;
+        foreach ($fields as $field) {
+            if (! ($field->is_bonus ?? false)) {
+                continue;
+            }
+
+            $config = $field->scoring ?? ['enabled' => false, 'weight' => 0];
+            if (($config['enabled'] ?? false) === false) {
+                continue;
+            }
+
+            $answer = $this->extractAnswer($field, $answers);
+            $evaluation = $this->strategyFor($config['match_type'] ?? 'provided')->evaluate($field, $answer, $config);
+            $weight = (float) ($config['weight'] ?? 0);
+            $matchValue = (float) ($evaluation['match'] ?? 0);
+            $bonusEarned = $eligibleForBonus ? $weight * $matchValue : 0.0;
+            $bonusScore += $bonusEarned;
+
+            $bonusEntries[] = [
+                'field_id' => (int) $field->id,
+                'key' => $field->key,
+                'label' => $field->label,
+                'match_type' => $config['match_type'] ?? 'provided',
+                'weight' => $weight,
+                'normalized_weight' => $weight,
+                'match' => round(max(0, min(1, $matchValue)), 4),
+                'earned_points' => round($bonusEarned, 2),
+                'answer' => $answer,
+                'target' => $config['target'] ?? null,
+            ];
+        }
+
+        $finalScore = $baseScore + $bonusScore;
+        $scoreValue = (int) round(min(100, max(0, $finalScore)), 0, PHP_ROUND_HALF_UP);
+
+        $scoreBreakdown = array_values($breakdown);
+
+        return [
+            'score' => $scoreValue,
+            'match_score' => $scoreValue,
+            'breakdown' => $breakdown,
+            'score_breakdown' => $scoreBreakdown,
+            'bonus' => $bonusEntries,
+            'eligible_for_bonus' => $eligibleForBonus,
+        ];
+    }
+
+    protected function extractAnswer(ProgramCustomField $field, array $answers): mixed
+    {
+        $key = $field->key;
+        if (array_key_exists($key, $answers)) {
+            return $answers[$key];
+        }
+
+        if (array_key_exists('custom_answers', $answers) && is_array($answers['custom_answers'])) {
+            return $this->extractAnswer($field, $answers['custom_answers']);
+        }
+
+        if (array_key_exists($field->id, $answers)) {
+            return $answers[$field->id];
+        }
+
+        return null;
+    }
+
+    protected function strategyFor(string $matchType): MatchTypeStrategy
+    {
+        return match ($matchType) {
+            'in_set' => new InSetMatchStrategy,
+            'range' => new RangeMatchStrategy,
+            'equals' => new EqualsMatchStrategy,
+            'provided' => new ProvidedMatchStrategy,
+            default => new ProvidedMatchStrategy,
+        };
+    }
 }
+
+interface MatchTypeStrategy
+{
+    public function evaluate(ProgramCustomField $field, mixed $answer, array $config): array;
+}
+
+class InSetMatchStrategy implements MatchTypeStrategy
+{
+    public function evaluate(ProgramCustomField $field, mixed $answer, array $config): array
+    {
+        $target = $this->normalizeList($config['target'] ?? []);
+        $selected = $this->normalizeList($answer);
+
+        if ($field->type === 'multi_select') {
+            $mode = $config['mode'] ?? 'any';
+            $intersection = array_values(array_intersect($selected, $target));
+            $match = match ($mode) {
+                'any' => count($intersection) > 0 ? 1.0 : 0.0,
+                'proportional' => count($target) > 0 ? (count($intersection) / count($target)) : 0.0,
+                'all' => count($target) > 0 && count(array_diff($target, $selected)) === 0 ? 1.0 : 0.0,
+                default => count($intersection) > 0 ? 1.0 : 0.0,
+            };
+
+            return ['match' => max(0, min(1, $match))];
+        }
+
+        $match = in_array((string) $answer, $target, true) ? 1.0 : 0.0;
+
+        return ['match' => $match];
+    }
+
+    protected function normalizeList(mixed $value): array
+    {
+        if (is_array($value)) {
+            return array_values(array_map(fn ($item) => (string) $item, $value));
+        }
+
+        if ($value === null || $value === '') {
+            return [];
+        }
+
+        if (is_string($value)) {
+            $decoded = json_decode($value, true);
+            if (is_array($decoded)) {
+                return array_values(array_map(fn ($item) => (string) $item, $decoded));
+            }
+
+            return array_values(array_filter(array_map('trim', preg_split('/[,;\n]+/', $value) ?: [])));
+        }
+
+        return [(string) $value];
+    }
+}
+
+class RangeMatchStrategy implements MatchTypeStrategy
+{
+    public function evaluate(ProgramCustomField $field, mixed $answer, array $config): array
+    {
+        $target = $config['target'] ?? [];
+        $min = $target['min'] ?? null;
+        $max = $target['max'] ?? null;
+
+        $value = $field->type === 'date' ? (string) ($answer ?? '') : (float) ($answer ?? 0);
+        if ($field->type === 'date' && ! empty($answer)) {
+            try {
+                $value = \Illuminate\Support\Carbon::parse($answer)->toDateString();
+                $min = $min ? \Illuminate\Support\Carbon::parse($min)->toDateString() : null;
+                $max = $max ? \Illuminate\Support\Carbon::parse($max)->toDateString() : null;
+            } catch (\Throwable $e) {
+                return ['match' => 0.0];
+            }
+        }
+
+        if ($answer === null || $answer === '' || $answer === []) {
+            return ['match' => 0.0];
+        }
+
+        if ($field->type === 'date') {
+            $match = (empty($min) || $value >= $min) && (empty($max) || $value <= $max) ? 1.0 : 0.0;
+            return ['match' => $match];
+        }
+
+        $match = ((empty($min) || $value >= $min) && (empty($max) || $value <= $max)) ? 1.0 : 0.0;
+
+        return ['match' => $match];
+    }
+}
+
+class EqualsMatchStrategy implements MatchTypeStrategy
+{
+    public function evaluate(ProgramCustomField $field, mixed $answer, array $config): array
+    {
+        if ($answer === null || $answer === '') {
+            return ['match' => 0.0];
+        }
+
+        $target = $config['target'] ?? null;
+        $normalized = is_bool($answer) ? $answer : filter_var($answer, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+        $expected = is_bool($target) ? $target : filter_var($target, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+
+        return ['match' => ($normalized === $expected) ? 1.0 : 0.0];
+    }
+}
+
+class ProvidedMatchStrategy implements MatchTypeStrategy
+{
+    public function evaluate(ProgramCustomField $field, mixed $answer, array $config): array
+    {
+        if ($answer === null) {
+            return ['match' => 0.0];
+        }
+
+        if (is_array($answer)) {
+            return ['match' => ! empty($answer) ? 1.0 : 0.0];
+        }
+
+        if ($answer instanceof \Illuminate\Http\UploadedFile) {
+            return ['match' => $answer->isValid() ? 1.0 : 0.0];
+        }
+
+        return ['match' => (string) $answer !== '' ? 1.0 : 0.0];
+    }
+}
+

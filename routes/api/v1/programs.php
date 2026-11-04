@@ -48,6 +48,13 @@ Route::prefix('/programs')->middleware(['program', 'program.response'])->group(f
     Route::get('public-programs', [ProgramController::class, 'public_programs']);
     Route::get('get_program/{id}', [ProgramController::class, 'get_program']);
 
+    Route::get('{program}/fields', [\App\Http\Controllers\Program\ProgramCustomFieldController::class, 'index']);
+    Route::post('{program}/fields', [\App\Http\Controllers\Program\ProgramCustomFieldController::class, 'store']);
+    Route::patch('fields/{field}', [\App\Http\Controllers\Program\ProgramCustomFieldController::class, 'update']);
+    Route::delete('fields/{field}', [\App\Http\Controllers\Program\ProgramCustomFieldController::class, 'destroy']);
+    Route::post('{program}/fields/reorder', [\App\Http\Controllers\Program\ProgramCustomFieldController::class, 'reorder']);
+    Route::put('{program}/info-values', [\App\Http\Controllers\Program\ProgramCustomFieldController::class, 'saveInfoValues']);
+
     Route::get('supplier-directory/providers', [SupplierDirectoryController::class, 'providers']);
 
     Route::get('{program_id}/applications', [ProgramApplicationController::class, 'index']);
