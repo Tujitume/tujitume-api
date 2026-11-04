@@ -15,6 +15,15 @@ class RoundHelperService
         $applicationId = $application->id;
         $roundId = $round->id;
 
+        // Where this round sits for the applicant. A record still "in progress" for a round they have left is an
+        // advance that was never closed (older data), and any round before the one they are in is behind them,
+        // so those rounds stay open to look at instead of showing as locked.
+        $isCurrent = (int) $application->current_round_id === (int) $roundId;
+        $outcome = RoundParticipation::outcome($historyRecord, $isCurrent);
+        $currentNumber = $application->currentRound?->round_number;
+        $isPast = ($historyRecord && in_array($outcome, ['advanced', 'not_selected', 'withdrawn', 'awarded'], true))
+            || (! $isCurrent && $currentNumber !== null && (int) $round->round_number < (int) $currentNumber);
+
         // =============================
         // QUESTIONS + ANSWERS
         // =============================
@@ -92,15 +101,15 @@ class RoundHelperService
             'open_date' => $round->open_date,
             'close_date' => $round->close_date,
 
-            'is_current' => $application->current_round_id === $roundId,
-            'is_past' => $historyRecord && in_array($historyRecord->outcome, ['advanced', 'not_selected', 'withdrawn', 'awarded']),
-            'is_upcoming' => !$historyRecord && $application->current_round_id !== $roundId,
+            'is_current' => $isCurrent,
+            'is_past' => (bool) $isPast,
+            'is_upcoming' => ! $isPast && ! $isCurrent && ! $historyRecord,
 
             'history' => $historyRecord ? [
                 'entered_at' => $historyRecord->entered_at,
                 'submitted_at' => $historyRecord->submitted_at,
                 'exited_at' => $historyRecord->exited_at,
-                'outcome' => $historyRecord->outcome,
+                'outcome' => $outcome,
                 'outcome_label' => $historyRecord->outcome_label,
                 'average_score' => $historyRecord->average_score,
                 'rank_in_round' => $historyRecord->rank_in_round,
