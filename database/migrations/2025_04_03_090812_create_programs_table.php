@@ -32,7 +32,6 @@ return new class extends Migration
             $table->date('application_start_date')->nullable();
             $table->date('application_deadline')->nullable();
             $table->boolean('require_kyc_verification_to_apply')->default(false);
-            $table->unsignedTinyInteger('match_score_limit')->nullable();
 
             $table->enum('status', [
                 'draft',
@@ -56,6 +55,8 @@ return new class extends Migration
             $table->foreign('program_industry_id')->references('id')->on('program_industries')->nullOnDelete();
 
             $table->timestamps();
+            $table->unsignedTinyInteger('match_score_limit')->nullable();
+            $table->ulid('public_id')->nullable()->default(null)->unique();
         });
     }
 

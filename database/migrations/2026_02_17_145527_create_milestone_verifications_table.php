@@ -24,7 +24,7 @@ return new class extends Migration
             $table->text('additional_declarations')->nullable();
             $table->text('document')->nullable();
 
-            $table->enum('verification_type', ['mprv', 'mid_milestone'])->default('mprv');
+            $table->enum('verification_type', ['mprv', 'mid_milestone', 'final_approval'])->default('mprv');
 
             // Program owner decision — approve / reject / audit (NO voting, section 8)
             $table->enum('decision', [
@@ -55,6 +55,7 @@ return new class extends Migration
                 ->references('id')->on('users')->onDelete('set null');
 
             $table->timestamps();
+            $table->json('answers')->nullable();
         });
     }
 

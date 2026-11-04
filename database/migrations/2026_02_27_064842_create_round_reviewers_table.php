@@ -28,6 +28,7 @@ return new class extends Migration
             $table->json('expertise_tags')->nullable(); // ['agri', 'tech', 'energy']
 
             $table->decimal('reviewer_fee', 10, 2)->nullable();
+            $table->enum('fee_type', ['flat', 'per_application'])->default('flat');
             $table->enum('fee_currency', ['kes', 'usd'])->default('kes');
             
 
@@ -39,6 +40,7 @@ return new class extends Migration
             $table->timestamps();
 
             $table->unique(['round_id', 'user_id']);
+            $table->index('user_id', 'round_reviewers_user_index');
         });
     }
 

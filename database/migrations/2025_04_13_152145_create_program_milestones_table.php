@@ -105,6 +105,7 @@ return new class extends Migration
             $table->unique(['app_id', 'sequence_order']);
 
             $table->timestamps();
+            $table->json('verification_questions')->nullable();
         });
     }
 

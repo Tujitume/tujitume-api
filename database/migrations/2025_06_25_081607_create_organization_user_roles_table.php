@@ -25,6 +25,10 @@ return new class extends Migration
             // users.organization_id currently limits a user to one organization;
             // each membership therefore has exactly one organization role.
             $table->unique(['organization_id', 'user_id']);
+            $table->index(
+                ['organization_id', 'status', 'role_id'],
+                'organization_user_roles_reviewer_lookup_index',
+            );
         });
     }
 

@@ -40,6 +40,7 @@ return new class extends Migration
 
             $table->enum('status', ['draft', 'published', 'closed', 'in_review', 'finalized'])->default('draft');
             $table->timestamps();
+            $table->json('confirmed_steps')->nullable();
 
             $table->unique(['program_id', 'round_number']);
         });

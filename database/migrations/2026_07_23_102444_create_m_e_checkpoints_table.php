@@ -16,7 +16,7 @@ return new class extends Migration
             $table->foreignId('app_id')->constrained('program_applications')->onDelete('cascade');
             $table->foreignId('program_id')->constrained('programs')->onDelete('cascade');
             $table->string('checkpoint_name');
-            $table->enum('type', ['monitoring', 'reporting']);
+            $table->string('type', 40);
             $table->date('due_date')->nullable();
             $table->text('requirement')->nullable();
             $table->text('checkpoint_description')->nullable();
@@ -31,6 +31,9 @@ return new class extends Migration
             $table->integer('display_order')->default(0);
             $table->boolean('should_notify_applicant')->default(false);
             $table->timestamps();
+            $table->timestamp('sent_at')->nullable();
+            $table->string('respondent', 30)->default('applicant');
+            $table->foreignId('assigned_to')->nullable()->constrained('users')->nullOnDelete();
         });
     }
 

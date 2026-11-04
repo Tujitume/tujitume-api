@@ -47,7 +47,8 @@ return new class extends Migration
             $table->string('stripe_connect_id')->nullable();        // Stripe Connect
             $table->string('stripe_customer_id')->nullable();
             
-            $table->unsignedBigInteger('organization_id')->nullable(); // ← no constrained()
+            $table->unsignedBigInteger('organization_id')->nullable(); // Constrained after organizations is created.
+            $table->index(['organization_id', 'user_type_id'], 'users_organization_type_index');
 
             $table->timestamp('invited_at')->nullable();
             $table->string('invitation_token_hash', 64)->nullable()->unique();

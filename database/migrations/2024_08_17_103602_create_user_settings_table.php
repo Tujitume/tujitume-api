@@ -14,7 +14,7 @@ return new class extends Migration
         Schema::create('user_settings', function (Blueprint $table) {
             $table->id();
             $table->foreignId('user_id')->unique()->constrained('users')->onDelete('cascade');
-            $table->enum('theme', ['default', 'ocean', 'forest', 'sunset', 'minimal'])->default('default');
+            $table->string('theme', 30)->default('default');
             $table->enum('mode', ['light', 'dark', 'system'])->default('system');
             $table->string('accent_color', 20)->default('#14532d'); // hex color
             $table->string('logo', 300)->nullable();           // profile/org logo

@@ -77,6 +77,10 @@ return new class extends Migration
                 'completed'           // Fully approved and execution-ready
 
             ])->default('not_started');
+            $table->enum('revision_requested_by', ['program_owner', 'applicant'])->nullable();
+            $table->text('revision_notes')->nullable();
+            $table->json('revision_checklist')->nullable();
+            $table->timestamp('revision_requested_at')->nullable();
 
             $table->enum('knockout_status', ['pending', 'passed', 'failed'])->default('pending');
             

@@ -23,6 +23,7 @@ return new class extends Migration
             $table->string('location')->nullable();
             $table->decimal('gps_lat', 10, 7)->nullable();
             $table->decimal('gps_lng', 10, 7)->nullable();
+            $table->boolean('confirm_location')->default(false);
             $table->text('objective')->nullable();
             $table->json('kpi_targets')->nullable();        // [{kpi, target, actual}]
             $table->json('data_collection_fields')->nullable();

@@ -15,6 +15,7 @@ return new class extends Migration
             $table->id();
             $table->foreignId('round_id')->constrained('program_rounds')->onDelete('cascade');
             $table->foreignId('reviewer_id')->constrained('users')->onDelete('cascade');
+            $table->foreignId('reviewer_order_id')->nullable()->constrained('reviewer_orders')->nullOnDelete();
             $table->foreignId('application_id')->constrained('program_applications')->onDelete('cascade');
 
             $table->enum('status', [
@@ -31,6 +32,7 @@ return new class extends Migration
             $table->timestamps();
 
             $table->unique(['round_id', 'application_id']); // one reviewer per app per round
+            $table->index('reviewer_order_id');
         });
     }
 

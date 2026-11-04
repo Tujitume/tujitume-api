@@ -28,6 +28,12 @@ return new class extends Migration
             $table->tinyInteger('paid')->nullable();
             $table->string('method', 255)->nullable();
             $table->timestamps(); // created_at and updated_at, nullable by default
+            $table->unsignedBigInteger('offer_id')->nullable();
+            $table->decimal('agreed_price', 10, 2)->nullable();
+            $table->boolean('is_offer_booking')->default(false);
+            $table->enum('delivery_status', ['pending', 'delivered', 'accepted', 'rejected'])->nullable();
+            $table->text('delivery_note')->nullable();
+            $table->text('rejection_note')->nullable();
         });
     }
 

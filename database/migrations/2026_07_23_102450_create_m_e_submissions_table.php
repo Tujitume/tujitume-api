@@ -26,6 +26,7 @@ return new class extends Migration
             $table->timestamp('reviewed_at')->nullable();
             $table->timestamp('submitted_at')->nullable();
             $table->timestamps();
+            $table->json('flagged_items')->nullable();
         });
     }
 

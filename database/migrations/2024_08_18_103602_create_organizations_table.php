@@ -85,6 +85,13 @@ return new class extends Migration
 
             $table->timestamps();
         });
+
+        Schema::table('users', function (Blueprint $table) {
+            $table->foreign('organization_id')
+                ->references('id')
+                ->on('organizations')
+                ->onDelete('set null');
+        });
     }
 
     /**
@@ -92,6 +99,10 @@ return new class extends Migration
      */
     public function down(): void
     {
+        Schema::table('users', function (Blueprint $table) {
+            $table->dropForeign(['organization_id']);
+        });
+
         Schema::dropIfExists('organizations');
     }
 };

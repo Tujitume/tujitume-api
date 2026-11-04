@@ -18,14 +18,19 @@ return new class extends Migration
         $table->foreignId('program_id')->constrained('programs')->onDelete('cascade');
         $table->enum('order_type', ['round_review', 'site_visit']);
         $table->foreignId('round_id')->nullable()->constrained('program_rounds')->onDelete('set null');
+        $table->foreignId('round_reviewer_id')->nullable()->constrained('round_reviewers')->nullOnDelete();
         $table->foreignId('site_visit_id')->nullable()->constrained('m_e_site_visits')->onDelete('set null');
         $table->decimal('fee_amount', 10, 2)->default(0);
+        $table->enum('fee_type', ['flat', 'per_application'])->default('flat');
+        $table->unsignedInteger('minimum_apps_to_get_paid')->nullable();
         $table->decimal('fee_kes', 10, 2)->nullable();
         $table->enum('currency', ['KES', 'USD'])->default('KES');
         $table->enum('work_status', [
             'pending','assigned', 'in_progress', 'delivered',
             'modification_requested', 'approved', 'rejected',
         ])->default('assigned');
+        $table->enum('acceptance_status', ['pending', 'accepted', 'declined'])->default('pending');
+        $table->timestamp('accepted_at')->nullable();
         $table->text('delivery_note')->nullable();
         $table->text('modification_note')->nullable();
         $table->text('rejection_reason')->nullable();
@@ -39,6 +44,11 @@ return new class extends Migration
         $table->string('leg2_reference')->nullable();
         $table->timestamp('paid_at')->nullable();
         $table->timestamps();
+        $table->json('flagged_items')->nullable();
+        $table->decimal('proposed_fee', 12, 2)->nullable();
+        $table->string('fee_status', 30)->nullable();
+        $table->text('fee_proposal_note')->nullable();
+        $table->timestamp('fee_proposed_at')->nullable();
 
         //$table->unique(['reviewer_id', 'round_id'], 'unique_reviewer_round');
         //$table->unique(['reviewer_id', 'site_visit_id'], 'unique_reviewer_site_visit');

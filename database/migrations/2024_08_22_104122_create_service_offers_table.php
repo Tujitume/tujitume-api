@@ -27,13 +27,6 @@ return new class extends Migration
         });
 
         Schema::table('service_bookings', function (Blueprint $table) {
-            $table->unsignedBigInteger('offer_id')->nullable();
-            $table->decimal('agreed_price', 10, 2)->nullable();
-            $table->boolean('is_offer_booking')->default(false);
-            $table->enum('delivery_status', ['pending', 'delivered', 'accepted', 'rejected'])->nullable();
-            $table->text('delivery_note')->nullable();
-            $table->text('rejection_note')->nullable();
-
             $table->foreign('offer_id')->references('id')->on('service_offers')->onDelete('set null');
         });
     }
@@ -45,14 +38,6 @@ return new class extends Migration
     {
         Schema::table('service_bookings', function (Blueprint $table) {
             $table->dropForeign(['offer_id']);
-            $table->dropColumn([
-                'offer_id',
-                'agreed_price',
-                'is_offer_booking',
-                'delivery_status',
-                'delivery_note',
-                'rejection_note',
-            ]);
         });
 
         Schema::dropIfExists('service_offers');

@@ -18,9 +18,11 @@ return new class extends Migration
             $table->unsignedBigInteger('from_id');
             $table->tinyInteger('is_new')->default(1);
             $table->timestamps();
+            $table->unsignedBigInteger('sent_by_id')->nullable();
 
             $table->foreign('to_id')->references('id')->on('users')->onDelete('cascade');
             $table->foreign('from_id')->references('id')->on('users')->onDelete('cascade');
+            $table->foreign('sent_by_id')->references('id')->on('users')->nullOnDelete();
         });
     }
 

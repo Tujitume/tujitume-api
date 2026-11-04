@@ -35,7 +35,7 @@ return new class extends Migration
 
             $table->text('notes')->nullable();
 
-            $table->foreign('program_id')->references('id')->on('programs')->onDelete('restrict');
+            $table->foreign('program_id')->references('id')->on('programs')->onDelete('cascade');
             $table->foreign('application_id')
                 ->references('id')->on('program_applications')->onDelete('set null');
 
