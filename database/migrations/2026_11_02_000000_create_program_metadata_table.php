@@ -8,18 +8,25 @@ return new class extends Migration
 {
     public function up(): void
     {
-        // Existing installations may have created this legacy table with an
-        // integer ID instead of the bigint defined by the current migration.
-        // MySQL requires the FK column width and signedness to match exactly.
-        $industryIdType = strtolower(Schema::getColumnType('program_industries', 'id'));
+        // Existing installations may have a legacy industry ID definition.
+        // MySQL requires the foreign-key column's width and signedness to match.
+        $industryIdDefinition = strtolower(Schema::getColumnType('program_industries', 'id', true));
 
-        Schema::create('program_metadata', function (Blueprint $table) use ($industryIdType) {
+        Schema::create('program_metadata', function (Blueprint $table) use ($industryIdDefinition) {
             $table->id();
-            if (in_array($industryIdType, ['integer', 'int'], true)) {
-                $table->unsignedInteger('program_industry_id')->nullable();
-            } else {
-                $table->unsignedBigInteger('program_industry_id')->nullable();
-            }
+            $industryIdColumn = match (true) {
+                preg_match('/^bigint\\b/', $industryIdDefinition) === 1 => str_contains($industryIdDefinition, 'unsigned')
+                    ? $table->unsignedBigInteger('program_industry_id')
+                    : $table->bigInteger('program_industry_id'),
+                preg_match('/^mediumint\\b/', $industryIdDefinition) === 1 => $table->mediumInteger('program_industry_id')->unsigned(str_contains($industryIdDefinition, 'unsigned')),
+                preg_match('/^(?:int|integer)\\b/', $industryIdDefinition) === 1 => str_contains($industryIdDefinition, 'unsigned')
+                    ? $table->unsignedInteger('program_industry_id')
+                    : $table->integer('program_industry_id'),
+                preg_match('/^smallint\\b/', $industryIdDefinition) === 1 => $table->smallInteger('program_industry_id')->unsigned(str_contains($industryIdDefinition, 'unsigned')),
+                preg_match('/^tinyint\\b/', $industryIdDefinition) === 1 => $table->tinyInteger('program_industry_id')->unsigned(str_contains($industryIdDefinition, 'unsigned')),
+                default => throw new RuntimeException("Unsupported program_industries.id type: {$industryIdDefinition}"),
+            };
+            $industryIdColumn->nullable();
             $table->foreign('program_industry_id')
                 ->references('id')
                 ->on('program_industries')
