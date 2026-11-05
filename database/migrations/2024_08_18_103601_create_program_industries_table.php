@@ -9,6 +9,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('program_industries', function (Blueprint $table) {
+            $table->engine = 'InnoDB';
             $table->id();
             $table->string('name')->unique();
             $table->string('url')->nullable()->unique();

@@ -8,11 +8,8 @@ return new class extends Migration
 {
     public function up(): void
     {
-        // Existing installations may have a legacy industry ID definition.
-        // MySQL requires the foreign-key column's width and signedness to match.
-        $industryIdDefinition = strtolower(Schema::getColumnType('program_industries', 'id', true));
-
         Schema::create('program_metadata', function (Blueprint $table) {
+            $table->engine = 'InnoDB';
             $table->id();
 
             $table->foreignId('program_industry_id')
