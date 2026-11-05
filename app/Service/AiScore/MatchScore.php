@@ -176,16 +176,8 @@ class InSetMatchStrategy implements MatchTypeStrategy
         $selected = $this->normalizeList($answer);
 
         if ($field->type === 'multi_select') {
-            $mode = $config['mode'] ?? 'any';
             $intersection = array_values(array_intersect($selected, $target));
-            $match = match ($mode) {
-                'any' => count($intersection) > 0 ? 1.0 : 0.0,
-                'proportional' => count($target) > 0 ? (count($intersection) / count($target)) : 0.0,
-                'all' => count($target) > 0 && count(array_diff($target, $selected)) === 0 ? 1.0 : 0.0,
-                default => count($intersection) > 0 ? 1.0 : 0.0,
-            };
-
-            return ['match' => max(0, min(1, $match))];
+            return ['match' => count($intersection) > 0 ? 1.0 : 0.0];
         }
 
         $match = in_array((string) $answer, $target, true) ? 1.0 : 0.0;
@@ -285,4 +277,3 @@ class ProvidedMatchStrategy implements MatchTypeStrategy
         return ['match' => (string) $answer !== '' ? 1.0 : 0.0];
     }
 }
-

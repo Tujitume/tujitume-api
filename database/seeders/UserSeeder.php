@@ -2,11 +2,8 @@
 
 namespace Database\Seeders;
 
-use App\Models\Auth\User;
-use App\Models\Capital\CapitalProfile;
-use Faker\Factory as Faker;
 use Illuminate\Database\Seeder;
-use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\DB;
 
 class UserSeeder extends Seeder
 {
@@ -15,215 +12,470 @@ class UserSeeder extends Seeder
      */
     public function run(): void
     {
-        $faker = Faker::create();
-
-        try {
-            // 1. Business Owner (user_type_id = 1)
-            User::updateOrCreate([
-                'email' => 'tottenham266@gmail.com',
-            ], [
-                'first_name' => 'Harry',
-                'last_name' => 'Kane',
-                'gender' => 'M',
-                'dob' => $faker->date('Y-m-d'),
-                'user_type_id' => 1,
-                'email' => 'tottenham266@gmail.com',
-                'email_verified_at' => now(),
-                'password' => Hash::make('11111111'),
-                'country' => $faker->countryCode,
-                'city' => $faker->city,
-                'website' => $faker->url,
-                'phone' => $faker->phoneNumber,
-                'stripe_connect_id' => null,
-                'stripe_customer_id' => null,
-                'completed_onboarding' => $faker->numberBetween(0, 1),
-                'image' => "https://randomuser.me/api/portraits/" . (rand(0, 1) ? 'men' : 'women') . "/" . rand(1, 99) . ".jpg",
-            ]);
-        } catch (\Exception $e) {
-            dd("Error on Business Owner create:", $e->getMessage(), $e->getTraceAsString());
-        }
-
-        try {
-            // 2. Investor (user_type_id = 2)
-            $investor = User::updateOrCreate([
-                'email' => 'pep.guardiola@gmail.com',
-            ], [
-                'first_name' => 'Pep',
-                'last_name' => 'Guardiola',
-                'gender' => 'M',
-                'dob' => $faker->date('Y-m-d'),
-                'user_type_id' => 2,
-                'email' => 'pep.guardiola@gmail.com',
-                'email_verified_at' => now(),
-                'password' => Hash::make('11111111'),
-                'country' => $faker->countryCode,
-                'city' => $faker->city,
-                'website' => $faker->url,
-                'phone' => $faker->phoneNumber,
-                'stripe_connect_id' => null,
-                'stripe_customer_id' => null,
-                'completed_onboarding' => $faker->numberBetween(0, 1),
-                'image' => "https://randomuser.me/api/portraits/" . (rand(0, 1) ? 'men' : 'women') . "/" . rand(1, 99) . ".jpg",
-            ]);
-
-            // Create investor profile with investment details
-            $investor->investor_profile()->create([
-                'inv_range' => ['10000-100000', '100000-250000'],
-                'turnover_range' => ['100000-500000', '500000-1000000'],
-                'interested_sectors' => ['Education', 'Technology', 'Agriculture'],
-                'stage' => ['Idea', 'Seed', 'Growth'],
-                'social_impact_areas' => ['Education', 'Gender-led', 'Youth-led'],
-                'regions_focus' => [$faker->country, $faker->country],
-                'past_investment' => $faker->sentence,
-            ]);
-        } catch (\Exception $e) {
-            dd("Error on Investor create:", $e->getMessage(), $e->getTraceAsString());
-        }
-
-        try {
-            // 3. Service Provider (user_type_id = 3)
-            User::updateOrCreate([
-                'email' => 'mikel.arteta@gmail.com',
-            ], [
-                'first_name' => 'Mikel',
-                'last_name' => 'Arteta',
-                'gender' => 'M',
-                'dob' => $faker->date('Y-m-d'),
-                'user_type_id' => 3,
-                'email' => 'mikel.arteta@gmail.com',
-                'email_verified_at' => now(),
-                'password' => Hash::make('11111111'),
-                'country' => $faker->countryCode,
-                'city' => $faker->city,
-                'website' => $faker->url,
-                'phone' => $faker->phoneNumber,
-                'stripe_connect_id' => null,
-                'stripe_customer_id' => null,
-                'completed_onboarding' => $faker->numberBetween(0, 1),
-                'image' => "https://randomuser.me/api/portraits/" . (rand(0, 1) ? 'men' : 'women') . "/" . rand(1, 99) . ".jpg",
-            ]);
-        } catch (\Exception $e) {
-            dd("Error on Service Provider create:", $e->getMessage(), $e->getTraceAsString());
-        }
-
-        try {
-            // 4. Organization Owner (user_type_id = 4)
-            User::updateOrCreate([
-                'email' => 'viva.malan166@gmail.com',
-            ], [
-                'first_name' => 'Viva',
-                'last_name' => 'Malan',
-                'gender' => 'M',
-                'dob' => $faker->date('Y-m-d'),
-                'user_type_id' => 4,
-                'email' => 'viva.malan166@gmail.com',
-                'email_verified_at' => now(),
-                'password' => Hash::make('11111111'),
-                'country' => $faker->countryCode,
-                'city' => $faker->city,
-                'website' => $faker->url,
-                'phone' => $faker->phoneNumber,
-                'stripe_connect_id' => null,
-                'stripe_customer_id' => null,
-                'completed_onboarding' => $faker->numberBetween(0, 1),
-                'image' => "https://randomuser.me/api/portraits/" . (rand(0, 1) ? 'men' : 'women') . "/" . rand(1, 99) . ".jpg",
-            ]);
-        } catch (\Exception $e) {
-            dd("Error on Organization Owner create:", $e->getMessage(), $e->getTraceAsString());
-        }
-
-        try {
-            // 5. Admin (user_type_id = 5)
-            User::updateOrCreate([
-                'email' => 'admin@tujitume.com',
-            ], [
-                'first_name' => $faker->firstName,
-                'last_name' => $faker->lastName,
-                'gender' => $faker->randomElement(['M', 'F']),
-                'dob' => $faker->date('Y-m-d'),
-                'user_type_id' => 5,
-                'email' => 'admin@tujitume.com',
-                'email_verified_at' => now(),
-                'password' => Hash::make('password'),
-                'country' => $faker->countryCode,
-                'city' => $faker->city,
-                'website' => $faker->url,
-                'phone' => $faker->phoneNumber,
-                'stripe_connect_id' => null,
-                'stripe_customer_id' => null,
-                'completed_onboarding' => 1,
-                'image' => "https://randomuser.me/api/portraits/" . (rand(0, 1) ? 'men' : 'women') . "/" . rand(1, 99) . ".jpg",
-            ]);
-        } catch (\Exception $e) {
-            dd("Error on Admin create:", $e->getMessage(), $e->getTraceAsString());
-        }
-
-        try {
-            // 6. External Reviewer (user_type_id = 6)
-            User::updateOrCreate([
-                'email' => 'reviewer@tujitume.com',
-            ], [
-                'first_name' => $faker->firstName,
-                'last_name' => $faker->lastName,
-                'gender' => $faker->randomElement(['M', 'F']),
-                'dob' => $faker->date('Y-m-d'),
-                'user_type_id' => 6,
-                'email' => 'reviewer@tujitume.com',
-                'email_verified_at' => now(),
-                'password' => Hash::make('password'),
-                'country' => $faker->countryCode,
-                'city' => $faker->city,
-                'website' => $faker->url,
-                'phone' => $faker->phoneNumber,
-                'stripe_connect_id' => null,
-                'stripe_customer_id' => null,
-                'completed_onboarding' => 1,
-                'image' => "https://randomuser.me/api/portraits/" . (rand(0, 1) ? 'men' : 'women') . "/" . rand(1, 99) . ".jpg",
-            ]);
-        } catch (\Exception $e) {
-            dd("Error on Reviewer create:", $e->getMessage(), $e->getTraceAsString());
-        }
-
-        // Insert additional random users
-        try {
-            for ($i = 0; $i < 3; $i++) {
-                $user = User::updateOrCreate([
-                    'email' => $faker->unique()->safeEmail,
-                ], [
-                    'first_name' => $faker->firstName,
-                    'last_name' => $faker->lastName,
-                    'gender' => $faker->randomElement(['M', 'F']),
-                    'dob' => $faker->date('Y-m-d'),
-                    'user_type_id' => $faker->numberBetween(1, 3),
-                    'email_verified_at' => now(),
-                    'password' => Hash::make('password'),
-                    'country' => $faker->countryCode,
-                    'city' => $faker->city,
-                    'website' => $faker->url,
-                    'phone' => $faker->phoneNumber,
+        DB::transaction(function (): void {
+            $users = [
+                [
+                    'id' => 2,
+                    'first_name' => 'Steve',
+                    'last_name' => 'Monitor',
+                    'display_name' => 'Monitor International',
+                    'email' => 'stevemonitoring.gathirus@gmail.com',
+                    'phone' => '16825544794',
+                    'image' => 'https://tujitume-files-prod.s3.us-east-1.amazonaws.com/images/users/548b1fcb-1850-42de-ac57-431411e3e549.png',
+                    'gender' => null,
+                    'dob' => null,
+                    'password' => '$2y$12$hvwuQPFw6xmCEKNg/LYg3.F2498JFQ8DWe2aqDHP8wbkMJxqvJJRa',
+                    'token' => null,
+                    'remember_token' => null,
+                    'email_verified_at' => null,
+                    'user_type_id' => 4,
+                    'completed_onboarding' => 0,
+                    'country' => null,
+                    'city' => null,
+                    'website' => null,
+                    'lipr_wallet' => 'tujitume-v11',
                     'stripe_connect_id' => null,
                     'stripe_customer_id' => null,
-                    'completed_onboarding' => $faker->numberBetween(0, 1),
-                    'image' => "https://randomuser.me/api/portraits/" . (rand(0, 1) ? 'men' : 'women') . "/" . rand(1, 99) . ".jpg",
-                ]);
+                    'organization_id' => null,
+                    'invited_at' => null,
+                    'invitation_token_hash' => null,
+                    'invitation_expires_at' => null,
+                    'created_at' => '2026-10-02 16:49:37',
+                    'updated_at' => '2026-10-02 18:41:30',
+                ],
+                [
+                    'id' => 3,
+                    'first_name' => 'Stephen',
+                    'last_name' => 'Waruta',
+                    'display_name' => 'Stephen Waruta',
+                    'email' => 'gathiru.stevew@gmail.com',
+                    'phone' => '0721601031',
+                    'image' => 'https://tujitume-files-prod.s3.us-east-1.amazonaws.com/images/users/03803e83-f44f-41b5-9f0f-ca1a684c1a1a.png',
+                    'gender' => 'Male',
+                    'dob' => '2000-10-04',
+                    'password' => '$2y$12$RUtnswJ9343Yca/gn8Fc.OqBtiaV8fcsYsE9EN7TnijANugPlvAVG',
+                    'token' => null,
+                    'remember_token' => null,
+                    'email_verified_at' => null,
+                    'user_type_id' => 3,
+                    'completed_onboarding' => 0,
+                    'country' => null,
+                    'city' => null,
+                    'website' => null,
+                    'lipr_wallet' => 'tujitume-u11',
+                    'stripe_connect_id' => null,
+                    'stripe_customer_id' => null,
+                    'organization_id' => null,
+                    'invited_at' => null,
+                    'invitation_token_hash' => null,
+                    'invitation_expires_at' => null,
+                    'created_at' => '2026-10-02 17:36:39',
+                    'updated_at' => '2026-10-31 17:06:06',
+                ],
+                [
+                    'id' => 4,
+                    'first_name' => 'Richard',
+                    'last_name' => 'Branson',
+                    'display_name' => null,
+                    'email' => 'ofulakelvin@gmail.com',
+                    'phone' => '254786377886',
+                    'image' => null,
+                    'gender' => 'Male',
+                    'dob' => '03-02-1974',
+                    'password' => '$2y$12$/1Sa7eKPwEc.4ZW3ioei4eOggfLEHQc0QYyP6ewQnIq.mPA9Rq55S',
+                    'token' => null,
+                    'remember_token' => null,
+                    'email_verified_at' => null,
+                    'user_type_id' => 1,
+                    'completed_onboarding' => 0,
+                    'country' => 'KE',
+                    'city' => null,
+                    'website' => null,
+                    'lipr_wallet' => null,
+                    'stripe_connect_id' => null,
+                    'stripe_customer_id' => null,
+                    'organization_id' => null,
+                    'invited_at' => null,
+                    'invitation_token_hash' => null,
+                    'invitation_expires_at' => null,
+                    'created_at' => '2026-10-02 17:56:03',
+                    'updated_at' => '2026-10-02 17:56:03',
+                ],
+                [
+                    'id' => 7,
+                    'first_name' => 'Owen',
+                    'last_name' => 'Smith',
+                    'display_name' => 'Owen Smith',
+                    'email' => 'owensmith31588@gmail.com',
+                    'phone' => '254721601031',
+                    'image' => 'https://tujitume-files-prod.s3.us-east-1.amazonaws.com/images/users/e6a81159-cc5a-4cc6-86a7-4d8000daf5b4.png',
+                    'gender' => 'Male',
+                    'dob' => '02-03-2006',
+                    'password' => '$2y$12$r9j41Eizo1CQ3DwHxQF5Ce5MkeSweCJb7bYIRi1x8gPZGyfmkM8v2',
+                    'token' => null,
+                    'remember_token' => null,
+                    'email_verified_at' => null,
+                    'user_type_id' => 1,
+                    'completed_onboarding' => 0,
+                    'country' => 'KE',
+                    'city' => 'KE',
+                    'website' => 'https://tujitume.com',
+                    'lipr_wallet' => 'tujitume-021',
+                    'stripe_connect_id' => null,
+                    'stripe_customer_id' => null,
+                    'organization_id' => null,
+                    'invited_at' => null,
+                    'invitation_token_hash' => null,
+                    'invitation_expires_at' => null,
+                    'created_at' => '2026-10-05 22:45:33',
+                    'updated_at' => '2026-10-08 22:52:16',
+                ],
+                [
+                    'id' => 8,
+                    'first_name' => 'Sitijewelry',
+                    'last_name' => 'SMITH',
+                    'display_name' => 'Amari',
+                    'email' => 'owen31588@gmail.com',
+                    'phone' => '254721601031',
+                    'image' => 'https://tujitume-files-prod.s3.us-east-1.amazonaws.com/images/users/03859d64-17d0-41fd-b283-d21d158695a3.png',
+                    'gender' => null,
+                    'dob' => null,
+                    'password' => '$2y$12$YyGVNMVZ.CNiFelmAXHhYO.epQTrhsbvhyWBi1u3jQagABtyWiVGK',
+                    'token' => null,
+                    'remember_token' => null,
+                    'email_verified_at' => null,
+                    'user_type_id' => 4,
+                    'completed_onboarding' => 0,
+                    'country' => 'KE',
+                    'city' => 'Nairobi, Nairobi County, Kenya',
+                    'website' => 'https://one-touch-mobiles.vercel.app/',
+                    'lipr_wallet' => 'tujitume-z11',
+                    'stripe_connect_id' => null,
+                    'stripe_customer_id' => null,
+                    'organization_id' => null,
+                    'invited_at' => null,
+                    'invitation_token_hash' => null,
+                    'invitation_expires_at' => null,
+                    'created_at' => '2026-10-05 23:50:53',
+                    'updated_at' => '2026-11-04 07:08:24',
+                ],
+                [
+                    'id' => 10,
+                    'first_name' => 'James',
+                    'last_name' => 'Mwangi',
+                    'display_name' => 'James Mwangi',
+                    'email' => 'tujitume0@gmail.com',
+                    'phone' => null,
+                    'image' => 'https://tujitume-files-prod.s3.us-east-1.amazonaws.com/images/users/e2006977-3cc9-4a3f-b99b-c497488ce5e7.png',
+                    'gender' => 'Male',
+                    'dob' => '05-02-2001',
+                    'password' => '$2y$12$oCRC8JXQb5nOWhSC/0jZgeAhEAlXihQoy3/HyBd.hVKOL7FNtEiLy',
+                    'token' => null,
+                    'remember_token' => null,
+                    'email_verified_at' => null,
+                    'user_type_id' => 3,
+                    'completed_onboarding' => 0,
+                    'country' => null,
+                    'city' => null,
+                    'website' => null,
+                    'lipr_wallet' => 'tujitume-321',
+                    'stripe_connect_id' => null,
+                    'stripe_customer_id' => null,
+                    'organization_id' => null,
+                    'invited_at' => null,
+                    'invitation_token_hash' => null,
+                    'invitation_expires_at' => null,
+                    'created_at' => '2026-10-09 16:20:58',
+                    'updated_at' => '2026-10-09 17:28:31',
+                ],
+                [
+                    'id' => 14,
+                    'first_name' => 'Mwanasiti',
+                    'last_name' => 'Maalim',
+                    'display_name' => 'Maalim',
+                    'email' => 'wycliffeonyiego83@gmail.com',
+                    'phone' => '254721601031',
+                    'image' => 'https://tujitume-files-prod.s3.us-east-1.amazonaws.com/images/users/b47875d4-b358-4c3e-84c4-18acc1a05353.jpeg',
+                    'gender' => null,
+                    'dob' => null,
+                    'password' => '$2y$12$MpF1p2XL0eFBPdqafa.b9OM/OdEr6UDalnO/8iz5YufmCfOkYyY9S',
+                    'token' => null,
+                    'remember_token' => null,
+                    'email_verified_at' => null,
+                    'user_type_id' => 6,
+                    'completed_onboarding' => 0,
+                    'country' => null,
+                    'city' => null,
+                    'website' => null,
+                    'lipr_wallet' => 'tujitume-421',
+                    'stripe_connect_id' => null,
+                    'stripe_customer_id' => null,
+                    'organization_id' => null,
+                    'invited_at' => '2026-10-10 18:12:12',
+                    'invitation_token_hash' => null,
+                    'invitation_expires_at' => null,
+                    'created_at' => '2026-10-10 18:12:12',
+                    'updated_at' => '2026-10-11 07:02:22',
+                ],
+                [
+                    'id' => 18,
+                    'first_name' => 'Adam',
+                    'last_name' => 'Smith',
+                    'display_name' => 'Maalim',
+                    'email' => 'symonmyles13@gmail.com',
+                    'phone' => '254721601031',
+                    'image' => 'https://tujitume-files-prod.s3.us-east-1.amazonaws.com/images/users/4d2a00d0-0a4c-42e6-b063-c1b1c487ad54.png',
+                    'gender' => null,
+                    'dob' => null,
+                    'password' => '$2y$12$fjRNTeNBvbVcU2PKq.DvsuxVNiFALrtizv9yMMq4XFBJQfaboTLUy',
+                    'token' => null,
+                    'remember_token' => null,
+                    'email_verified_at' => null,
+                    'user_type_id' => 4,
+                    'completed_onboarding' => 0,
+                    'country' => null,
+                    'city' => null,
+                    'website' => null,
+                    'lipr_wallet' => 'tujitume-g21',
+                    'stripe_connect_id' => null,
+                    'stripe_customer_id' => null,
+                    'organization_id' => null,
+                    'invited_at' => null,
+                    'invitation_token_hash' => null,
+                    'invitation_expires_at' => null,
+                    'created_at' => '2026-10-10 18:29:01',
+                    'updated_at' => '2026-10-19 15:53:01',
+                ],
+                [
+                    'id' => 21,
+                    'first_name' => 'Nurul',
+                    'last_name' => 'Kabir',
+                    'display_name' => null,
+                    'email' => 'tottenham266@gmail.com',
+                    'phone' => '8801343434343',
+                    'image' => null,
+                    'gender' => 'Male',
+                    'dob' => '05-04-2006',
+                    'password' => '$2y$12$Et/MZWLDwvqUniMd6okUEeXx3vlZU81/7zXwsujYVE0NI9zkf3x16',
+                    'token' => null,
+                    'remember_token' => null,
+                    'email_verified_at' => null,
+                    'user_type_id' => 1,
+                    'completed_onboarding' => 0,
+                    'country' => 'BD',
+                    'city' => null,
+                    'website' => null,
+                    'lipr_wallet' => 'tujitume-f21',
+                    'stripe_connect_id' => null,
+                    'stripe_customer_id' => null,
+                    'organization_id' => null,
+                    'invited_at' => null,
+                    'invitation_token_hash' => null,
+                    'invitation_expires_at' => null,
+                    'created_at' => '2026-10-19 14:43:39',
+                    'updated_at' => '2026-10-19 14:53:39',
+                ],
+            ];
 
-                // If it's an investor, create investor profile
-                if ($user->user_type_id === 2) {
-                    $user->investor_profile()->updateOrCreate([
-                        'user_id' => $user->id,
-                    ], [
-                        'inv_range' => [$faker->randomElement(['10000-100000', '100000-250000', '250000-500000'])],
-                        'turnover_range' => [$faker->randomElement(['100000-500000', '500000-1000000', '1000000+'])],
-                        'interested_sectors' => $faker->randomElements(['Education', 'Technology', 'Agriculture', 'Health', 'Energy'], 2),
-                        'stage' => $faker->randomElements(['Idea', 'Seed', 'Growth', 'Series A'], 2),
-                        'social_impact_areas' => $faker->randomElements(['Education', 'Gender-led', 'Youth-led', 'Environment'], 2),
-                        'regions_focus' => [$faker->country, $faker->country],
-                        'past_investment' => $faker->sentence,
-                    ]);
-                }
-            }
-        } catch (\Exception $e) {
-            dd("Error on Random users create:", $e->getMessage(), $e->getTraceAsString());
-        }
+            DB::table('users')->upsert(
+                $users,
+                ['id'],
+                array_values(array_diff(array_keys($users[0]), ['id']))
+            );
+
+            $now = now();
+            DB::table('organizations')->upsert([
+                [
+                    'id' => 1,
+                    'owner_user_id' => 2,
+                    'name' => 'Monitor International',
+                    'display_name' => 'Monitor International',
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ],
+                [
+                    'id' => 2,
+                    'owner_user_id' => 8,
+                    'name' => 'Amari',
+                    'display_name' => 'Amari',
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ],
+            ], ['id'], ['owner_user_id', 'name', 'display_name', 'updated_at']);
+
+            DB::table('users')->whereIn('id', [2])->update(['organization_id' => 1]);
+            DB::table('users')->whereIn('id', [8, 14, 18])->update(['organization_id' => 2]);
+
+            $kycTimestamp = now();
+            DB::table('kyc_verifications')->upsert([
+                [
+                    'user_id' => 2,
+                    'organization_id' => 1,
+                    'verification_type' => 'organization',
+                    'status' => 'verified',
+                    'submitted_at' => $kycTimestamp,
+                    'reviewed_at' => $kycTimestamp,
+                    'reviewed_by_user_id' => null,
+                    'rejection_reason' => null,
+                    'created_at' => $kycTimestamp,
+                    'updated_at' => $kycTimestamp,
+                ],
+                [
+                    'user_id' => 3,
+                    'organization_id' => null,
+                    'verification_type' => 'service_provider',
+                    'status' => 'verified',
+                    'submitted_at' => $kycTimestamp,
+                    'reviewed_at' => $kycTimestamp,
+                    'reviewed_by_user_id' => null,
+                    'rejection_reason' => null,
+                    'created_at' => $kycTimestamp,
+                    'updated_at' => $kycTimestamp,
+                ],
+                [
+                    'user_id' => 4,
+                    'organization_id' => null,
+                    'verification_type' => 'entrepreneur',
+                    'status' => 'verified',
+                    'submitted_at' => $kycTimestamp,
+                    'reviewed_at' => $kycTimestamp,
+                    'reviewed_by_user_id' => null,
+                    'rejection_reason' => null,
+                    'created_at' => $kycTimestamp,
+                    'updated_at' => $kycTimestamp,
+                ],
+                [
+                    'user_id' => 7,
+                    'organization_id' => null,
+                    'verification_type' => 'entrepreneur',
+                    'status' => 'verified',
+                    'submitted_at' => $kycTimestamp,
+                    'reviewed_at' => $kycTimestamp,
+                    'reviewed_by_user_id' => null,
+                    'rejection_reason' => null,
+                    'created_at' => $kycTimestamp,
+                    'updated_at' => $kycTimestamp,
+                ],
+                [
+                    'user_id' => 8,
+                    'organization_id' => 2,
+                    'verification_type' => 'organization',
+                    'status' => 'verified',
+                    'submitted_at' => $kycTimestamp,
+                    'reviewed_at' => $kycTimestamp,
+                    'reviewed_by_user_id' => null,
+                    'rejection_reason' => null,
+                    'created_at' => $kycTimestamp,
+                    'updated_at' => $kycTimestamp,
+                ],
+                [
+                    'user_id' => 10,
+                    'organization_id' => null,
+                    'verification_type' => 'service_provider',
+                    'status' => 'verified',
+                    'submitted_at' => $kycTimestamp,
+                    'reviewed_at' => $kycTimestamp,
+                    'reviewed_by_user_id' => null,
+                    'rejection_reason' => null,
+                    'created_at' => $kycTimestamp,
+                    'updated_at' => $kycTimestamp,
+                ],
+                [
+                    'user_id' => 14,
+                    'organization_id' => null,
+                    'verification_type' => 'service_provider',
+                    'status' => 'verified',
+                    'submitted_at' => $kycTimestamp,
+                    'reviewed_at' => $kycTimestamp,
+                    'reviewed_by_user_id' => null,
+                    'rejection_reason' => null,
+                    'created_at' => $kycTimestamp,
+                    'updated_at' => $kycTimestamp,
+                ],
+                [
+                    'user_id' => 18,
+                    'organization_id' => 2,
+                    'verification_type' => 'organization',
+                    'status' => 'verified',
+                    'submitted_at' => $kycTimestamp,
+                    'reviewed_at' => $kycTimestamp,
+                    'reviewed_by_user_id' => null,
+                    'rejection_reason' => null,
+                    'created_at' => $kycTimestamp,
+                    'updated_at' => $kycTimestamp,
+                ],
+                [
+                    'user_id' => 21,
+                    'organization_id' => null,
+                    'verification_type' => 'entrepreneur',
+                    'status' => 'verified',
+                    'submitted_at' => $kycTimestamp,
+                    'reviewed_at' => $kycTimestamp,
+                    'reviewed_by_user_id' => null,
+                    'rejection_reason' => null,
+                    'created_at' => $kycTimestamp,
+                    'updated_at' => $kycTimestamp,
+                ],
+            ], ['user_id', 'verification_type'], [
+                'organization_id',
+                'status',
+                'submitted_at',
+                'reviewed_at',
+                'reviewed_by_user_id',
+                'rejection_reason',
+                'updated_at',
+            ]);
+
+            DB::table('user_balances')->upsert([
+                [
+                    'id' => 1,
+                    'user_id' => 2,
+                    'balance' => '30.00',
+                    'currency' => 'KES',
+                    'created_at' => '2026-10-02 18:42:55',
+                    'updated_at' => '2026-10-15 16:41:29',
+                ],
+                [
+                    'id' => 2,
+                    'user_id' => 8,
+                    'balance' => '1.39',
+                    'currency' => 'KES',
+                    'created_at' => '2026-10-11 03:10:43',
+                    'updated_at' => '2026-10-31 16:16:54',
+                ],
+                [
+                    'id' => 3,
+                    'user_id' => 18,
+                    'balance' => '10.00',
+                    'currency' => 'KES',
+                    'created_at' => '2026-10-20 12:56:19',
+                    'updated_at' => '2026-10-20 12:56:19',
+                ],
+                [
+                    'id' => 4,
+                    'user_id' => 14,
+                    'balance' => '40.00',
+                    'currency' => 'KES',
+                    'created_at' => '2026-10-20 13:38:20',
+                    'updated_at' => '2026-10-31 16:34:48',
+                ],
+                [
+                    'id' => 5,
+                    'user_id' => 10,
+                    'balance' => '478.00',
+                    'currency' => 'KES',
+                    'created_at' => '2026-10-20 13:38:28',
+                    'updated_at' => '2026-10-27 16:57:30',
+                ],
+                [
+                    'id' => 6,
+                    'user_id' => 3,
+                    'balance' => '549.00',
+                    'currency' => 'KES',
+                    'created_at' => '2026-10-27 15:24:54',
+                    'updated_at' => '2026-10-31 16:24:32',
+                ],
+            ], ['id'], ['user_id', 'balance', 'currency', 'created_at', 'updated_at']);
+        });
     }
 }

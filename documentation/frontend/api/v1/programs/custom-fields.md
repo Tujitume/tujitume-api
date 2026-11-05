@@ -58,8 +58,7 @@ Field keys are immutable after creation. They are the names used in `custom_answ
     "enabled": true,
     "weight": 20,
     "match_type": "in_set",
-    "target": ["Niagara", "London"],
-    "mode": "proportional"
+    "target": ["Niagara", "London"]
   },
   "is_bonus": false,
   "display_order": 1,
@@ -93,8 +92,7 @@ Field keys are immutable after creation. They are the names used in `custom_answ
       "enabled": true,
       "weight": 20,
       "match_type": "in_set",
-      "target": ["Niagara", "London"],
-      "mode": "proportional"
+      "target": ["Niagara", "London"]
     },
     "is_bonus": false,
     "display_order": 1,
@@ -256,8 +254,7 @@ IDs, timestamps, and `created_by` are assigned by the server. The key shown assu
           "enabled": true,
           "weight": 20,
           "match_type": "in_set",
-          "target": ["Niagara", "London"],
-          "mode": "proportional"
+          "target": ["Niagara", "London"]
         },
         "is_bonus": false,
         "display_order": 1,

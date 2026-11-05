@@ -40,8 +40,7 @@ First authenticate as the owning organization and ensure `program_industry_id` e
         "enabled": true,
         "weight": 20,
         "match_type": "in_set",
-        "target": ["Niagara", "London"],
-        "mode": "proportional"
+        "target": ["Niagara", "London"]
       }
     },
     {
@@ -111,21 +110,23 @@ For these answers:
 
 | Field | Applicant answer | Target / rule | Match |
 |---|---|---|---:|
-| Interested places | `["Niagara","NY"]` | Target is `["Niagara","London"]`, proportional | `1 / 2 = 0.5` |
+| Interested places | `["Niagara","NY"]` | Target is `["Niagara","London"]`; at least one overlap | `1` |
 | Business age (years) | `6` | Inclusive range `2`–`10` | `1` |
 | Business plan PDF | Uploaded PDF | `provided` | `1` |
 
 The total non-bonus weight is `20 + 30 + 10 = 60`. Normalize:
 
 ```text
-Interested places:     20 / 60 × 100 = 33.33; earned 33.33 × 0.5 = 16.67
+Interested places:     20 / 60 × 100 = 33.33; earned 33.33 × 1.0 = 33.33
 Business age (years):  30 / 60 × 100 = 50.00; earned 50.00 × 1.0 = 50.00
 Business plan PDF:     10 / 60 × 100 = 16.67; earned 16.67 × 1.0 = 16.67
-Base score:            16.67 + 50.00 + 16.67 = 83.34
-Stored integer score:  83 (half-up rounding)
+Base score:            33.33 + 50.00 + 16.67 = 100.00
+Stored integer score:  100 (half-up rounding)
 ```
 
-`POST /api/v1/programs/match-score/12` uses the same server-side engine for preview and returns only the integer score plus applicant-safe status values. It does not expose weights, targets, or the full breakdown.
+If the applicant selected only `["NY"]` against that same target, the Interested places match would be `0`; the answer does not overlap the target. If the PO target were `["Niagara","NY","London"]`, selecting only `["NY"]` would be a full match (`1`) because one target value overlaps.
+
+`POST /api/v1/programs/match-score/12` uses the same server-side engine for preview and returns only the integer score plus applicant-safe status values inside the standard program response envelope. It does not expose weights, targets, or the full breakdown.
 
 The PO's intended historic breakdown records each field's match, answer, target, configured and normalized weights, and earned points. The existing application serializer currently hides `score_breakdown` from all callers and does not add custom answers to the response; see [Match-score engine](match-score-engine.md#applicant-vs-program-owner-resources) for this known API gap.
 

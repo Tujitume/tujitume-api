@@ -76,8 +76,7 @@ Custom-field definitions are created inline only when the program is created. Fo
         "enabled": true,
         "weight": 20,
         "match_type": "in_set",
-        "target": ["Niagara", "London"],
-        "mode": "proportional"
+        "target": ["Niagara", "London"]
       }
     },
     {

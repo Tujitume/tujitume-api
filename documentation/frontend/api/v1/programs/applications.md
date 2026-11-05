@@ -94,7 +94,7 @@ The keys in this sample are generated from labels. Fetch `application_fields` or
     "business_id": 84,
     "startup_name": "Northstar Foods",
     "total_amount_requested": "40000.00",
-    "match_score": 83,
+    "match_score": 100,
     "status": "pending",
     "current_round_id": 7
   }
@@ -125,12 +125,17 @@ The endpoint returns an applicant-safe status per scoring field:
 
 ```json
 {
-  "match_score": 83,
-  "breakdown_for_applicant": [
-    {"field_id": 41, "key": "interested-places", "label": "Interested places", "status": "partial"},
-    {"field_id": 42, "key": "business-age-years", "label": "Business age (years)", "status": "matched"},
-    {"field_id": 43, "key": "business-plan-pdf", "label": "Business plan PDF", "status": "matched"}
-  ]
+  "success": true,
+  "message": "Request completed.",
+  "data": {
+    "match_score": 100,
+    "breakdown_for_applicant": [
+      {"field_id": 41, "key": "interested-places", "label": "Interested places", "status": "matched"},
+      {"field_id": 42, "key": "business-age-years", "label": "Business age (years)", "status": "matched"},
+      {"field_id": 43, "key": "business-plan-pdf", "label": "Business plan PDF", "status": "matched"}
+    ]
+  },
+  "status": 200
 }
 ```
 

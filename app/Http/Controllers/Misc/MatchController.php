@@ -14,7 +14,7 @@ class MatchController extends Controller
 
         $applicantBreakdown = collect($computed['breakdown'] ?? [])
             ->map(function ($item) {
-                $status = ($item['match'] ?? 0) >= 1 ? 'matched' : (($item['match'] ?? 0) > 0 ? 'partial' : 'not matched');
+                $status = ($item['match'] ?? 0) >= 1 ? 'matched' : 'not matched';
                 return [
                     'field_id' => $item['field_id'] ?? null,
                     'key' => $item['key'] ?? null,

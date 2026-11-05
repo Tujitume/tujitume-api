@@ -11,8 +11,7 @@ Set `is_scoring: true` and provide `scoring` on an application field:
   "enabled": true,
   "weight": 20,
   "match_type": "in_set",
-  "target": ["Niagara", "London"],
-  "mode": "proportional"
+  "target": ["Niagara", "London"]
 }
 ```
 
@@ -22,20 +21,18 @@ Set `is_scoring: true` and provide `scoring` on an application field:
 
 | `match_type` | Allowed field types | Target | Evaluation |
 |---|---|---|---|
-| `in_set` | `select`, `multi_select` | Non-empty list of option values | Select: `1` when the selected value is in the target set, else `0`. Multi-select supports `any`, `proportional`, and `all` |
+| `in_set` | `select`, `multi_select` | Non-empty list of option values | Select: `1` when the selected value is in the target set, else `0`. Multi-select: `1` when at least one applicant answer overlaps the target set; otherwise `0` |
 | `range` | `number`, `date` | `{ "min": ..., "max": ... }`; at least one bound | `1` when answer is within the inclusive range, else `0` |
 | `equals` | `boolean` | `true` or `false` | `1` when answer equals target, else `0` |
 | `provided` | Any field type | None | `1` when a non-empty answer/file exists, else `0` |
 
 Text, textarea, and URL fields may only use `provided`.
 
-### Multi-select `mode`
+### Multi-select matching
 
-| Mode | Match result |
-|---|---|
-| `any` | `1` if at least one answer overlaps the target; otherwise `0` |
-| `proportional` | `count(answer ∩ target) / count(target)` |
-| `all` | `1` only if every target value is present in the answer; otherwise `0` |
+For multi-select scoring, any shared value between the applicant's answer and the PO's target earns full credit for that field. The applicant does not need to select every target value. No overlap earns zero. For example, answer `["Niagara","NY"]` against target `["Niagara","London"]` earns a match of `1`, not `0.5`; answer `["NY"]` against target `["Niagara","London"]` earns `0`.
+
+The optional `mode` property is accepted in existing scoring definitions for backward compatibility, but it no longer changes the result. Stored `any`, `proportional`, or `all` modes all use the same overlap rule. Remove `mode` from new definitions to avoid implying partial credit.
 
 ## Base score and bonuses
 
@@ -57,7 +54,7 @@ Definitions:
 
 | Field | Weight | Scoring definition |
 |---|---:|---|
-| Interested places | 20 | `in_set`, `proportional`; target `["Niagara","London"]` |
+| Interested places | 20 | `in_set`; target `["Niagara","London"]` |
 | Business age (years) | 30 | `range`; target `{"min":2,"max":10}` |
 | Business plan PDF | 10 | `provided` |
 
@@ -65,12 +62,12 @@ Suppose the applicant answers `["Niagara","NY"]`, `6`, and uploads the PDF:
 
 | Field | Match | Normalized weight | Earned base points |
 |---|---:|---:|---:|
-| Interested places | `1 / 2 = 0.5` | `20 / 60 × 100 = 33.33` | `33.33 × 0.5 = 16.67` |
+| Interested places | `1` | `20 / 60 × 100 = 33.33` | `33.33` |
 | Business age (years) | `1` | `30 / 60 × 100 = 50.00` | `50.00` |
 | Business plan PDF | `1` | `10 / 60 × 100 = 16.67` | `16.67` |
-| **Total** |  | **100.00** | **83.34 → 83** |
+| **Total** |  | **100.00** | **100.00 → 100** |
 
-The score is `83` after half-up integer rounding. If Niagara and London were both selected, the first match would be `1`, producing a base score of `100`.
+The score is `100` after half-up integer rounding. Selecting just one of the target places is a full match; selecting no target place earns zero for that field.
 
 ## Preview endpoint
 
@@ -90,27 +87,32 @@ The score is `83` after half-up integer rounding. If Niagara and London were bot
 
 ```json
 {
-  "match_score": 83,
-  "breakdown_for_applicant": [
-    {
-      "field_id": 41,
-      "key": "interested-places",
-      "label": "Interested places",
-      "status": "partial"
-    },
-    {
-      "field_id": 42,
-      "key": "business-age-years",
-      "label": "Business age (years)",
-      "status": "matched"
-    },
-    {
-      "field_id": 43,
-      "key": "business-plan-pdf",
-      "label": "Business plan PDF",
-      "status": "matched"
-    }
-  ]
+  "success": true,
+  "message": "Request completed.",
+  "data": {
+    "match_score": 100,
+    "breakdown_for_applicant": [
+      {
+        "field_id": 41,
+        "key": "interested-places",
+        "label": "Interested places",
+        "status": "matched"
+      },
+      {
+        "field_id": 42,
+        "key": "business-age-years",
+        "label": "Business age (years)",
+        "status": "matched"
+      },
+      {
+        "field_id": 43,
+        "key": "business-plan-pdf",
+        "label": "Business plan PDF",
+        "status": "matched"
+      }
+    ]
+  },
+  "status": 200
 }
 ```
 
@@ -128,8 +130,8 @@ On application submission, the server stores `match_score` as an integer and the
   "match_type": "in_set",
   "weight": 20,
   "normalized_weight": 33.33,
-  "match": 0.5,
-  "earned_points": 16.67,
+  "match": 1,
+  "earned_points": 33.33,
   "answer": ["Niagara", "NY"],
   "target": ["Niagara", "London"]
 }
@@ -143,7 +145,7 @@ The snapshot is historical evidence. Editing scoring configuration later must no
 |---|---|---|
 | Application-form metadata | Public active fields: label, key, type, options, required flag, help text, validation | Full field definitions through `GET /{program}/fields` |
 | Weights and targets | Never exposed | Available in field management and full score breakdown |
-| Match preview | Numeric match score and field status (`matched`, `partial`, `not matched`) | Not a substitute for application detail |
+| Match preview | Numeric match score and field status (`matched`, `not matched`) | Not a substitute for application detail |
 | Submitted custom answers | Applicant's own answers, subject to resource contract | Field ID/key/label/type and saved value |
 | Historic score breakdown | Applicant-safe result only | Full server-calculated snapshot |
 
