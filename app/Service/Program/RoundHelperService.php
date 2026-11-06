@@ -35,6 +35,7 @@ class RoundHelperService
             ->where('round_id', $roundId)
             ->get()
             ->keyBy('question_id');
+        $showKnockoutRules = ! app(ProgramAccess::class)->isApplicant(auth()->user(), $application);
 
         $regular = [];
         $knockout = [];
@@ -56,7 +57,9 @@ class RoundHelperService
             ];
 
             if ($q->question_type === 'knockout') {
-                $data['knockout_fail_value'] = $q->knockout_fail_value;
+                if ($showKnockoutRules) {
+                    $data['knockout_fail_value'] = $q->knockout_fail_value;
+                }
                 $knockout[] = $data;
             } else {
                 $regular[] = $data;
@@ -189,6 +192,10 @@ class RoundHelperService
                     ]
                 );
             }
+        }
+
+        if ((int) $round->round_number === 1) {
+            app(RoundMatchScore::class)->recalculateApplication($application);
         }
 
         $knockoutEvaluator->evaluate($application);

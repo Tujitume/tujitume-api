@@ -25,7 +25,6 @@ use App\Service\File\ImageUploadService;
 use App\Service\Misc\ErrorLogService;
 use App\Service\Notification\NotificationService;
 use App\Service\Organization\TeamMemberNotifier;
-use App\Service\Program\ProgramCustomFieldService;
 use Hash;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
@@ -112,22 +111,7 @@ class ProgramController extends Controller
 
                 $program->liked = $user_id ? $program->liked()->where('user_id', $user_id)->exists() : false;
                 $program->owner_website = $program->owner->website ?? null;
-                $program->application_fields = $program->customFields()->where('audience', 'application')->where('is_archived', false)->where('visibility', 'public')->orderBy('display_order')->get()->map(function ($field) {
-                    return [
-                        'id' => $field->id,
-                        'key' => $field->key,
-                        'label' => $field->label,
-                        'type' => $field->type,
-                        'options' => $field->options,
-                        'is_required' => $field->is_required,
-                        'help_text' => $field->help_text,
-                        'validation' => $field->validation,
-                    ];
-                })->values();
-                $program->info = $program->customFields()->where('audience', 'info')->where('is_archived', false)->orderBy('display_order')->get()->map(function ($field) {
-                    $value = $field->values()->where('entity_type', 'program')->where('entity_id', $program->id)->first();
-                    return ['id' => $field->id, 'key' => $field->key, 'label' => $field->label, 'value' => $value?->value_text ?? $value?->value_json ?? $value?->value_number ?? $value?->value_bool ?? $value?->value_date];
-                })->values();
+                $program->organization_name = $program->owner?->display_name;
 
                 $program->status = ApiContract::statusMeta('program', $program->status);
             }
@@ -155,22 +139,7 @@ class ProgramController extends Controller
                 $program->pitch_count = $program->applications_count ?? 0;
                 $program->liked = $user_id ? $program->liked()->where('user_id', $user_id)->exists() : false;
                 $program->owner_website = $program->owner->website ?? null;
-                $program->application_fields = $program->customFields()->where('audience', 'application')->where('is_archived', false)->where('visibility', 'public')->orderBy('display_order')->get()->map(function ($field) {
-                    return [
-                        'id' => $field->id,
-                        'key' => $field->key,
-                        'label' => $field->label,
-                        'type' => $field->type,
-                        'options' => $field->options,
-                        'is_required' => $field->is_required,
-                        'help_text' => $field->help_text,
-                        'validation' => $field->validation,
-                    ];
-                })->values();
-                $program->info = $program->customFields()->where('audience', 'info')->where('is_archived', false)->orderBy('display_order')->get()->map(function ($field) {
-                    $value = $field->values()->where('entity_type', 'program')->where('entity_id', $program->id)->first();
-                    return ['id' => $field->id, 'key' => $field->key, 'label' => $field->label, 'value' => $value?->value_text ?? $value?->value_json ?? $value?->value_number ?? $value?->value_bool ?? $value?->value_date];
-                })->values();
+                $program->organization_name = $program->owner?->display_name;
                 $program->status = ApiContract::statusMeta('program', $program->status);
             }
             return ApiContract::listResponse('Programs fetched successfully.', $programs, $page, ['programs']);
@@ -205,15 +174,27 @@ class ProgramController extends Controller
                 'application_start_date' => 'required|date|after_or_equal:today',
                 'application_deadline' => 'required|date|after:application_start_date',
                 'require_kyc_verification_to_apply' => 'nullable|boolean',
+                'use_match_score' => 'nullable|boolean',
                 'match_score_limit' => 'nullable|integer|min:1|max:100',
+                'application_round' => 'nullable|array',
+                'application_round.round_name' => 'nullable|string|max:100',
+                'application_round.open_date' => 'nullable|date',
+                'application_round.close_date' => 'nullable|date',
+                'application_round.review_period_end' => 'nullable|date',
+                'application_round.announcement_date' => 'nullable|date',
+                'application_round.rubric_mode' => 'nullable|in:weighted,simple_total,pass_fail',
+                'application_round.scoring_criteria' => 'nullable|array',
+                'application_round.advancement_mode' => 'nullable|in:manual,score_threshold,fixed_quota',
+                'application_round.score_threshold' => 'nullable|numeric|min:0|max:100',
+                'application_round.max_advancing' => 'nullable|integer|min:1',
+                'application_round.tie_breaker_rule' => 'nullable|in:allow_over_cap,secondary_metric,manual',
+                'application_round.assignment_type' => 'nullable|in:owner_only,internal,external,both',
+                'application_round.assignment_method' => 'nullable|in:manual,round_robin,load_balanced',
+                'application_round.min_reviewers_required' => 'nullable|integer|min:1',
+                'application_round.required_documents' => 'nullable|array',
+                'application_round.knockout_questions' => 'nullable|array',
                 'status' => 'nullable|in:draft,published,open,closed,under_review,awarded,cancelled,completed',
                 'visible' => 'nullable|boolean',
-                'custom_fields' => 'sometimes|array',
-                'custom_fields.*.label' => 'required|string|max:150',
-                'custom_fields.*.type' => 'nullable|in:text,textarea,number,boolean,date,select,multi_select,file,url',
-                'custom_fields.*.is_required' => 'nullable|boolean',
-                'custom_fields.*.is_scoring' => 'nullable|boolean',
-                'custom_fields.*.is_bonus' => 'nullable|boolean',
             ]);
 
             $orgUser = User::with('organization')->find(Auth::id());
@@ -243,19 +224,38 @@ class ProgramController extends Controller
             $validated['status'] = $validated['status'] ?? 'draft';
             $validated['visible'] = $validated['visible'] ?? true;
             $validated['currency'] = $validated['currency'] ?? 'KES';
+            $validated['use_match_score'] = $request->has('use_match_score')
+                ? $request->boolean('use_match_score')
+                : true;
+            if (! $validated['use_match_score']) {
+                $validated['match_score_limit'] = null;
+            }
             $validated['available_amount'] = $validated['available_amount'] ?? $validated['total_program_amount'];
             $validated['max_awardees'] = $validated['max_awardees'] ?? (int) floor($validated['total_program_amount'] / max($validated['funding_per_business'], 1));
             $validated['program_type'] = $validated['program_type'] ?? 'single_round';
 
-            if (! Program::supportsMatchScoreLimit()) {
-                unset($validated['match_score_limit']);
-            }
-
-            $program = Program::create(Arr::except($validated, ['custom_fields']));
-
-            if (! empty($validated['custom_fields'] ?? [])) {
-                app(ProgramCustomFieldService::class)->createForProgram($program, $validated['custom_fields']);
-            }
+            $programAttributes = Arr::except($validated, ['application_round']);
+            $program = Program::create($programAttributes);
+            $roundConfig = $validated['application_round'] ?? [];
+            $firstRound = $program->rounds()->create([
+                'round_name' => $roundConfig['round_name'] ?? 'Application Round',
+                'round_number' => 1,
+                'open_date' => $roundConfig['open_date'] ?? $program->application_start_date,
+                'close_date' => $roundConfig['close_date'] ?? $program->application_deadline,
+                'review_period_end' => $roundConfig['review_period_end'] ?? null,
+                'announcement_date' => $roundConfig['announcement_date'] ?? null,
+                'rubric_mode' => $roundConfig['rubric_mode'] ?? 'weighted',
+                'scoring_criteria' => $roundConfig['scoring_criteria'] ?? null,
+                'required_documents' => $roundConfig['required_documents'] ?? null,
+                'knockout_questions' => $roundConfig['knockout_questions'] ?? null,
+                'assignment_type' => $roundConfig['assignment_type'] ?? 'owner_only',
+                'assignment_method' => $roundConfig['assignment_method'] ?? 'manual',
+                'min_reviewers_required' => $roundConfig['min_reviewers_required'] ?? 1,
+                'advancement_mode' => $roundConfig['advancement_mode'] ?? 'manual',
+                'score_threshold' => $roundConfig['score_threshold'] ?? null,
+                'max_advancing' => $roundConfig['max_advancing'] ?? null,
+                'tie_breaker_rule' => $roundConfig['tie_breaker_rule'] ?? null,
+            ]);
 
             $wallet['total_deposited'] = 0.00; $wallet['total_disbursed'] = 0.00;
             $wallet['total_reserved'] = 0.00;  $wallet['balance'] = 0.00;
@@ -270,6 +270,8 @@ class ProgramController extends Controller
             return response()->json([
                 'message' => 'Program created successfully',
                 'program' => $program,
+                'firstRound' => $firstRound,
+                'rounds' => [$firstRound],
             ], 200);
         }
         catch ( ValidationException $e) {
@@ -315,45 +317,7 @@ class ProgramController extends Controller
             $newProgram->application_deadline = null;
             $newProgram->push();
 
-            // 5. Duplicate custom-field definitions and information values, but not answers.
-            $fieldMap = [];
-            foreach ($program->customFields()->get() as $field) {
-                $clone = $field->replicate([
-                    'program_id',
-                    'created_at',
-                    'updated_at',
-                ]);
-                $clone->program_id = $newProgram->id;
-                $clone->key = $field->key;
-                $clone->is_archived = false;
-                $clone->save();
-                $fieldMap[$field->id] = $clone->id;
-            }
-
-            foreach ($program->customFields()->with('values')->get() as $field) {
-                if ($field->audience !== 'info') {
-                    continue;
-                }
-
-                $newFieldId = $fieldMap[$field->id] ?? null;
-                if (! $newFieldId) {
-                    continue;
-                }
-
-                foreach ($field->values()->where('entity_type', 'program')->where('entity_id', $program->id)->get() as $value) {
-                    $newValue = $value->replicate([
-                        'field_id',
-                        'entity_id',
-                        'created_at',
-                        'updated_at',
-                    ]);
-                    $newValue->field_id = $newFieldId;
-                    $newValue->entity_id = $newProgram->id;
-                    $newValue->save();
-                }
-            }
-
-            // 6. Duplicate rounds + questions
+            // 5. Duplicate rounds + questions.
             foreach ($program->rounds as $round) {
 
                 // A copy starts fresh: every round is a draft and none of its setup steps count as confirmed
@@ -375,6 +339,11 @@ class ProgramController extends Controller
                     ]);
 
                     $newQuestion->round_id = $newRound->id;
+                    if ((int) $newRound->round_number !== 1) {
+                        $newQuestion->use_in_match_score = false;
+                        $newQuestion->match_points = null;
+                        $newQuestion->match_answers = null;
+                    }
                     $newQuestion->save();
                 }
             }
@@ -485,12 +454,6 @@ class ProgramController extends Controller
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
-        if ($request->has('custom_fields')) {
-            throw ValidationException::withMessages([
-                'custom_fields' => ['Program custom fields must be managed through the program field endpoints.'],
-            ]);
-        }
-
         DB::beginTransaction();
         try {
             $validated = $request->validate([
@@ -507,13 +470,20 @@ class ProgramController extends Controller
                 'application_start_date' => 'sometimes|required|date|after_or_equal:today',
                 'application_deadline' => 'sometimes|required|date|after:application_start_date',
                 'require_kyc_verification_to_apply' => 'sometimes|nullable|boolean',
+                'use_match_score' => 'sometimes|required|boolean',
                 'match_score_limit' => 'sometimes|nullable|integer|min:1|max:100',
                 'status' => 'sometimes|required|in:draft,published,open,closed,under_review,awarded,cancelled,completed',
                 'visible' => 'sometimes|nullable|boolean',
             ]);
 
-            if (! Program::supportsMatchScoreLimit()) {
-                unset($validated['match_score_limit']);
+            if (array_key_exists('use_match_score', $validated)) {
+                $validated['use_match_score'] = $request->boolean('use_match_score');
+            }
+            if (array_key_exists('use_match_score', $validated) && ! $validated['use_match_score']) {
+                $validated['match_score_limit'] = null;
+            }
+            if (($validated['use_match_score'] ?? $program->use_match_score) === false) {
+                $validated['match_score_limit'] = null;
             }
 
             if (($validated['program_type'] ?? $program->program_type) === 'multi_round' && (($validated['total_rounds'] ?? $program->total_rounds) < 2)) {
@@ -529,6 +499,9 @@ class ProgramController extends Controller
             }
 
             $program->update($validated);
+            if (array_key_exists('use_match_score', $validated)) {
+                app(\App\Service\Program\RoundMatchScore::class)->recalculateProgram($program->fresh());
+            }
 
             DB::commit();
 
@@ -598,11 +571,6 @@ class ProgramController extends Controller
                 $wallet->delete();
             }
 
-            // Delete program brief file if exists
-            if (! empty($program->program_brief_pdf) && is_string($program->program_brief_pdf) && file_exists($program->program_brief_pdf)) {
-                unlink($program->program_brief_pdf);
-            }
-
             // Delete rounds (cascade will handle round_reviewers, round_custom_questions, etc.)
             $program->rounds()->delete();
 
@@ -659,23 +627,11 @@ class ProgramController extends Controller
 
             //  No extra query (use loaded relation)
             $round1 = $program->rounds->first();
-            $program->application_fields = $program->customFields()->where('audience', 'application')->where('is_archived', false)->where('visibility', 'public')->orderBy('display_order')->get()->map(function ($field) {
-                return [
-                    'id' => $field->id,
-                    'key' => $field->key,
-                    'label' => $field->label,
-                    'type' => $field->type,
-                    'options' => $field->options,
-                    'is_required' => $field->is_required,
-                    'help_text' => $field->help_text,
-                    'validation' => $field->validation,
-                ];
-            })->values();
-            $program->info = $program->customFields()->where('audience', 'info')->where('is_archived', false)->orderBy('display_order')->get()->map(function ($field) {
-                $value = $field->values()->where('entity_type', 'program')->where('entity_id', $program->id)->first();
-                return ['id' => $field->id, 'key' => $field->key, 'label' => $field->label, 'value' => $value?->value_text ?? $value?->value_json ?? $value?->value_number ?? $value?->value_bool ?? $value?->value_date];
-            })->values();
-
+            if ($round1 && $round1->relationLoaded('questions')) {
+                $round1->setRelation('questions', $round1->questions->map(
+                    fn (\App\Models\Programs\Rounds\RoundCustomQuestion $question) => $question->applicantView()
+                ));
+            }
             //  Better naming (no overwrite)
             if (Auth::check()) {
                 $program->liked = $program->liked()
@@ -818,10 +774,6 @@ class ProgramController extends Controller
                 //Delete Programs/files/pitches/bookings/Messages
                 $programs = Program::where('user_id', $user->id)->get();
                 foreach ($programs as $program) {
-                    $filePath = public_path($program->program_brief_pdf);
-                    if (file_exists($filePath)) {
-                        unlink($filePath);
-                    }
                     $program->delete();
                 }
 

@@ -1,337 +1,185 @@
-# Program custom fields
+# Round custom questions
 
-Custom fields let a program owner define application questions and program information without adding program-specific database columns. Field definitions are stored per program; application answers and info values are stored separately.
+The filename is retained for existing documentation links; program-level custom fields have been removed. Applicant questions and match-score configuration are stored on `round_custom_questions`, attached to a program round.
 
-All endpoints are under `/api/v1/programs`. Authenticate with Sanctum. Field mutations require access to the owning program.
+All question-management routes require an authenticated program owner.
 
 ## Endpoints
 
 | Method | Endpoint | Purpose |
 |---|---|---|
-| `GET` | `/{program}/fields` | List fields, scoring config, archive state, usage counts, and scoring summary |
-| `POST` | `/{program}/fields` | Create one field; its key is generated from its label |
-| `PATCH` | `/fields/{field}` | Edit allowed properties |
-| `DELETE` | `/fields/{field}` | Delete an unused field or archive a field that has values |
-| `POST` | `/{program}/fields/reorder` | Set display order |
-| `PUT` | `/{program}/info-values` | Save values for program info fields; use multipart for files |
+| `POST` | `/api/v1/programs/rounds/{round}/questions` | Create one question |
+| `GET` | `/api/v1/programs/rounds/{round}/questions` | List a round's questions |
+| `PATCH` | `/api/v1/programs/questions/{question}` | Update a question |
+| `DELETE` | `/api/v1/programs/questions/{question}` | Delete a question |
 
-`custom_fields` may also be sent as an array when creating a program. Program updates do not accept field definitions; use these endpoints instead.
+Use one request per question. Question options, score settings, and accepted answers are configured on the question—not on the program or round setup request.
 
-## Field definition
+## Request fields
 
-| Property | Required | Type | Notes |
+| Field | Required | Type | Notes |
 |---|---:|---|---|
-| `label` | Yes | string | Maximum 150 characters. Key is slugged from the label and de-duplicated |
-| `type` | Yes | string | `text`, `textarea`, `number`, `boolean`, `date`, `select`, `multi_select`, `file`, `url` |
-| `audience` | No | string | `application` (default) or `info` |
-| `help_text` | No | string or `null` | Helper content shown with the question |
-| `is_required` | No | boolean | Defaults to `false` |
-| `options` | Conditional | array | Option list for `select`/`multi_select`; each option is `{value,label}` |
-| `validation` | No | object | Type-specific constraints, for example `{min,max}`, `{max_length}`, or `{mimes,max_kb}` |
-| `is_scoring` | No | boolean | Only application fields may be scoring fields |
-| `scoring` | Conditional | object | Scoring definition; see [Match-score engine](match-score-engine.md) |
-| `is_bonus` | No | boolean | If true, weight is bonus points rather than normalized base weight |
-| `display_order` | No | integer | Controls form order |
-| `visibility` | No | string | Info-field visibility: `public` or `owner_only`; defaults to `public` |
+| `question_text` | Yes | string | Maximum 500 characters |
+| `question_type` | Yes | string | A supported round question type; see the [match-type matrix](match-score-engine.md#question-type-and-scoring-matrix) |
+| `is_required` | No | boolean | Defaults to `false`; must be `true` for a scored question |
+| `options` | No | string array or `null` | Type-specific values; matrix uses `row:Label` and `col:Label` strings |
+| `display_order` | Yes | integer | Starts at `1` |
+| `knockout_fail_value` | No | string or `null` | Only used for a knockout question |
+| `use_in_match_score` | No | boolean | Defaults to `false`; allowed only in Round 1 when program scoring is enabled |
+| `match_points` | Conditional | integer or `null` | Required when scored; `1`–`100`; total scored points in Round 1 cannot exceed `100` |
+| `match_answers` | Conditional | object, array, or `null` | Type-specific owner answer key; required where the scoring matrix says a key is required |
 
-Field keys are immutable after creation. They are the names used in `custom_answers` and `values` request objects.
+When `use_in_match_score` is false, the server stores `match_points` and `match_answers` as `null`. A question type change resets answers unless valid answers for the new type are included.
 
-## Create fields
+## Scored-question examples
 
-### Interested places
+These are complete Round 1 create payloads. The responses below show the question resource returned in `data`. Values and IDs are illustrative.
 
-**Request** `POST /api/v1/programs/12/fields`
+### Interested places — checkbox with full points for any matching place
+
+The old program-level `multi_select`/`in_set` configuration is not accepted. Use a checkbox question and give each target option the full question points; selected option points are summed and capped at `match_points`. Therefore selecting either Niagara or London earns the full 20 points.
+
+**Request** `POST /api/v1/programs/rounds/7/questions`
 
 ```json
 {
-  "label": "Interested places",
-  "audience": "application",
-  "type": "multi_select",
+  "question_text": "Interested places",
+  "question_type": "checkbox",
   "is_required": true,
-  "options": [
-    {"value": "Niagara", "label": "Niagara"},
-    {"value": "NY", "label": "NY"},
-    {"value": "London", "label": "London"}
-  ],
-  "is_scoring": true,
-  "scoring": {
-    "enabled": true,
-    "weight": 20,
-    "match_type": "in_set",
-    "target": ["Niagara", "London"]
-  },
-  "is_bonus": false,
+  "options": ["Niagara", "NY", "London"],
   "display_order": 1,
-  "visibility": "public"
+  "knockout_fail_value": null,
+  "use_in_match_score": true,
+  "match_points": 20,
+  "match_answers": {
+    "Niagara": 20,
+    "London": 20
+  }
 }
 ```
 
-**Response — 201 Created**
+**Response**
 
 ```json
 {
-  "success": true,
-  "message": "Program field created successfully.",
+  "message": "Question added successfully",
   "data": {
     "id": 41,
-    "program_id": 12,
-    "key": "interested-places",
-    "label": "Interested places",
-    "help_text": null,
-    "audience": "application",
-    "type": "multi_select",
+    "round_id": 7,
+    "question_text": "Interested places",
+    "question_type": "checkbox",
     "is_required": true,
-    "options": [
-      {"value": "Niagara", "label": "Niagara"},
-      {"value": "NY", "label": "NY"},
-      {"value": "London", "label": "London"}
-    ],
-    "validation": null,
-    "is_scoring": true,
-    "scoring": {
-      "enabled": true,
-      "weight": 20,
-      "match_type": "in_set",
-      "target": ["Niagara", "London"]
-    },
-    "is_bonus": false,
+    "options": ["Niagara", "NY", "London"],
     "display_order": 1,
-    "visibility": "public",
-    "is_archived": false,
-    "created_by": 7,
-    "created_at": "2026-11-04T17:10:00.000000Z",
-    "updated_at": "2026-11-04T17:10:00.000000Z"
+    "use_in_match_score": true,
+    "match_points": 20,
+    "match_answers": {"Niagara": 20, "London": 20}
   }
 }
 ```
 
-IDs, timestamps, and `created_by` are assigned by the server. The key shown assumes it is available; if a key collides, the server adds a suffix.
+### Business age (years) — number range
 
-### Business age (years)
-
-**Request** `POST /api/v1/programs/12/fields`
+**Request** `POST /api/v1/programs/rounds/7/questions`
 
 ```json
 {
-  "label": "Business age (years)",
-  "audience": "application",
-  "type": "number",
+  "question_text": "Business age (years)",
+  "question_type": "number",
   "is_required": true,
-  "is_scoring": true,
-  "scoring": {
-    "enabled": true,
-    "weight": 30,
-    "match_type": "range",
-    "target": {"min": 2, "max": 10}
-  },
-  "is_bonus": false,
+  "options": null,
   "display_order": 2,
-  "visibility": "public"
+  "knockout_fail_value": null,
+  "use_in_match_score": true,
+  "match_points": 30,
+  "match_answers": {"min": 2, "max": 10}
 }
 ```
 
-**Response — 201 Created**
+**Response**
 
 ```json
 {
-  "success": true,
-  "message": "Program field created successfully.",
+  "message": "Question added successfully",
   "data": {
     "id": 42,
-    "program_id": 12,
-    "key": "business-age-years",
-    "label": "Business age (years)",
-    "help_text": null,
-    "audience": "application",
-    "type": "number",
+    "round_id": 7,
+    "question_text": "Business age (years)",
+    "question_type": "number",
     "is_required": true,
     "options": null,
-    "validation": null,
-    "is_scoring": true,
-    "scoring": {
-      "enabled": true,
-      "weight": 30,
-      "match_type": "range",
-      "target": {"min": 2, "max": 10}
-    },
-    "is_bonus": false,
     "display_order": 2,
-    "visibility": "public",
-    "is_archived": false,
-    "created_by": 7,
-    "created_at": "2026-11-04T17:10:01.000000Z",
-    "updated_at": "2026-11-04T17:10:01.000000Z"
+    "use_in_match_score": true,
+    "match_points": 30,
+    "match_answers": {"min": 2, "max": 10}
   }
 }
 ```
 
-### Business plan PDF
+### Business plan PDF — required file upload
 
-**Request** `POST /api/v1/programs/12/fields`
+**Request** `POST /api/v1/programs/rounds/7/questions`
 
 ```json
 {
-  "label": "Business plan PDF",
-  "audience": "application",
-  "type": "file",
+  "question_text": "Business plan PDF",
+  "question_type": "file_upload",
   "is_required": true,
-  "validation": {
-    "mimes": ["pdf"],
-    "max_kb": 5120
-  },
-  "is_scoring": true,
-  "scoring": {
-    "enabled": true,
-    "weight": 10,
-    "match_type": "provided"
-  },
-  "is_bonus": false,
+  "options": ["document", "type:pdf"],
   "display_order": 3,
-  "visibility": "public"
+  "knockout_fail_value": null,
+  "use_in_match_score": true,
+  "match_points": 10,
+  "match_answers": null
 }
 ```
 
-**Response — 201 Created**
+**Response**
 
 ```json
 {
-  "success": true,
-  "message": "Program field created successfully.",
+  "message": "Question added successfully",
   "data": {
     "id": 43,
-    "program_id": 12,
-    "key": "business-plan-pdf",
-    "label": "Business plan PDF",
-    "help_text": null,
-    "audience": "application",
-    "type": "file",
+    "round_id": 7,
+    "question_text": "Business plan PDF",
+    "question_type": "file_upload",
     "is_required": true,
-    "options": null,
-    "validation": {"mimes": ["pdf"], "max_kb": 5120},
-    "is_scoring": true,
-    "scoring": {
-      "enabled": true,
-      "weight": 10,
-      "match_type": "provided"
-    },
-    "is_bonus": false,
+    "options": ["document", "type:pdf"],
     "display_order": 3,
-    "visibility": "public",
-    "is_archived": false,
-    "created_by": 7,
-    "created_at": "2026-11-04T17:10:02.000000Z",
-    "updated_at": "2026-11-04T17:10:02.000000Z"
+    "use_in_match_score": true,
+    "match_points": 10,
+    "match_answers": null
   }
 }
 ```
 
-## Read fields
+The file question restricts the applicant picker and server upload validation to PDF files. Together, the examples use `20 + 30 + 10 = 60` of the 100 available points.
 
-`GET /api/v1/programs/12/fields` returns all definitions, including archived fields and scoring configuration, for the program owner. Example:
+## Errors
 
-```json
-{
-  "success": true,
-  "message": "Program fields fetched successfully.",
-  "data": {
-    "fields": [
-      {
-        "id": 41,
-        "key": "interested-places",
-        "label": "Interested places",
-        "help_text": null,
-        "audience": "application",
-        "type": "multi_select",
-        "is_required": true,
-        "options": [
-          {"value": "Niagara", "label": "Niagara"},
-          {"value": "NY", "label": "NY"},
-          {"value": "London", "label": "London"}
-        ],
-        "validation": null,
-        "is_scoring": true,
-        "scoring": {
-          "enabled": true,
-          "weight": 20,
-          "match_type": "in_set",
-          "target": ["Niagara", "London"]
-        },
-        "is_bonus": false,
-        "display_order": 1,
-        "visibility": "public",
-        "is_archived": false,
-        "usage_count": 8
-      }
-    ],
-    "scoring_summary": {
-      "has_scoring_fields": true,
-      "normalized_weights": [
-        {"field_id": 41, "key": "interested-places", "weight": 20}
-      ]
-    }
-  }
-}
-```
+Validation errors use HTTP `422` and an `errors` object keyed to the responsible request field.
 
-The current `normalized_weights` response contains configured weights; it does not calculate normalized percentages in the list controller.
-
-## Update and lock rules
-
-`PATCH /api/v1/programs/fields/{field}` accepts these properties:
-
-| Property | Before submitted applications | After submitted applications |
-|---|---|---|
-| `label`, `help_text`, `display_order`, `visibility` | Allowed | Allowed |
-| `type`, `validation`, `is_scoring`, `scoring`, `is_bonus` | Allowed | Locked; request returns `422` |
-| `options` | Replace options | Append only; existing options and order must be preserved |
-| `is_required` | May change either way | May be relaxed (`true` to `false`), not tightened |
-| `is_archived` | Allowed | Allowed; archive removes field from new forms and scoring |
-| `key` | Never editable | Never editable |
-
-Example update:
-
-```json
-{
-  "label": "Primary places of interest",
-  "help_text": "Select all that apply.",
-  "display_order": 1
-}
-```
-
-After submissions exist, appending an option sends the complete existing list followed by new values:
-
-```json
-{
-  "options": [
-    {"value": "Niagara", "label": "Niagara"},
-    {"value": "NY", "label": "NY"},
-    {"value": "London", "label": "London"},
-    {"value": "Toronto", "label": "Toronto"}
-  ]
-}
-```
-
-## Delete, archive, reorder, and info values
-
-- `DELETE /fields/{field}` hard-deletes a definition with no stored values. If it has values, it sets `is_archived=true` so historic data remains.
-- `POST /{program}/fields/reorder` takes `{ "ordered_ids": [41, 42, 43] }`.
-- `PUT /{program}/info-values` takes `{ "values": { "key": "value" } }`. File info values require multipart form data.
-- Public application form projections exclude archived and `owner_only` fields. The owner list includes archived definitions.
-
-## Limits and errors
-
-| Limit / error | Rule |
+| Field | Example message / condition |
 |---|---|
-| Active definitions | Maximum 50 per program |
-| Options | Maximum 100 per field |
-| Label | Maximum 150 characters |
-| Text answer | Maximum 5000 characters |
-| Default file cap | 20 MB; default configured extensions are PDF, DOC, DOCX, PNG, JPG |
-| `401` | Authentication is missing or invalid |
-| `403` | Caller does not own/manage the program |
-| `404` | Program or field is not found |
-| `422` | Invalid field definition, field limit exceeded, or locked property changed after submissions |
+| `use_in_match_score` | “The match score only applies to Round 1.” |
+| `use_in_match_score` | “Turn on the match score for this program first.” |
+| `use_in_match_score` | Knockout question types cannot be scored |
+| `match_points` | “Only N points left. All scored questions together can't pass 100.” |
+| `match_points` | Must be an integer from `1` to `100` |
+| `match_answers` | Missing/invalid type-specific answer key or no remaining valid option/row |
+| `is_required` | Every scored question must be required |
+| `question_type` | Unsupported question type |
+| `options` | Invalid option list for a file, location, ranking, or matrix question |
 
-## Important implementation notes
+## Business rules
 
-The field schema supports per-field `validation` metadata, but the current application validator does not yet enforce every `min`/`max`/`mimes`/`max_kb` member. The current custom file validation also does not apply the configured MIME list, and its configured size rule needs correction. Custom file values need a durable upload/storage path before treating a saved file answer as durable. Do not rely on validation metadata alone as a security boundary until those runtime paths have been completed.
+- Match scoring belongs to Round 1 only. Round 2+ must not set score fields.
+- The program must have `use_match_score: true` before any question can be saved as scored.
+- `match_points` totals at most `100`. Unused points are allowed; scores are not rescaled.
+- Every scored question is required. An unanswered answer would score zero, but required questions must be completed to submit.
+- Knockout questions never score; the fail answer is evaluated separately.
+- Changing type resets `match_answers`. Ranking's correct order is always derived from its `options`.
+- Unknown/removed option keys are ignored when validating choice and matrix answer keys; at least one currently valid key must remain.
+- Deleting or changing scored Round 1 questions recalculates existing application scores. Turning program scoring off keeps question rules dormant but clears saved scores.
+- Round 2+ copies strip all three scoring fields.

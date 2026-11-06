@@ -17,11 +17,17 @@ class RoundCustomQuestion extends Model
         'is_required',
         'display_order',
         'knockout_fail_value',
+        'use_in_match_score',
+        'match_points',
+        'match_answers',
     ];
 
     protected $casts = [
         'options' => 'array',
         'is_required' => 'boolean',
+        'use_in_match_score' => 'boolean',
+        'match_points' => 'integer',
+        'match_answers' => 'array',
     ];
 
     public function round()
@@ -32,5 +38,10 @@ class RoundCustomQuestion extends Model
     public function responses()
     {
         return $this->hasMany(ApplicationRoundResponse::class, 'question_id');
+    }
+
+    public function applicantView(): array
+    {
+        return array_diff_key($this->toArray(), array_flip(['match_answers', 'match_points', 'knockout_fail_value']));
     }
 }

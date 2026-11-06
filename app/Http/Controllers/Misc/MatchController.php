@@ -4,27 +4,57 @@ namespace App\Http\Controllers\Misc;
 
 use App\Http\Controllers\Controller;
 use App\Service\AiScore\MatchScore;
+use App\Models\Programs\Program;
+use App\Models\Programs\Rounds\RoundCustomQuestion;
+use App\Service\Program\RoundMatchScore;
 use Illuminate\Http\Request;
 
 class MatchController extends Controller
 {
-    public function score(MatchScore $match, Request $request, $program_id)
+    public function score(Request $request, $program_id)
     {
-        $computed = $match->program($request, $program_id);
+        $validated = $request->validate([
+            'round_answers' => 'nullable|array',
+            'round_answers.*.question_id' => 'required_with:round_answers|integer',
+            'round_answers.*.response' => 'nullable',
+            'round_answers.*.file' => 'nullable|file|max:10240',
+        ]);
+        $program = Program::findOrFail($program_id);
+        $answers = $validated['round_answers'] ?? [];
+        $round = $program->rounds()->where('round_number', 1)->first();
+
+        if ($round) {
+            foreach ($answers as $index => &$answer) {
+                $question = RoundCustomQuestion::where('round_id', $round->id)
+                    ->findOrFail($answer['question_id']);
+                $file = $request->file("round_answers.{$index}.response")
+                    ?? $request->file("round_answers.{$index}.file");
+                if ($file) {
+                    if ($question->question_type !== 'file_upload' || $file->getSize() > 10 * 1024 * 1024
+                        || ! app(RoundMatchScore::class)->fileMatchesQuestionOptions($file, (array) ($question->options ?? []))) {
+                        abort(422, 'The uploaded file is not allowed for this question.');
+                    }
+                    $answer['response'] = $file;
+                }
+            }
+            unset($answer);
+        }
+
+        $computed = app(RoundMatchScore::class)->scoreRequest($program, $answers);
 
         $applicantBreakdown = collect($computed['breakdown'] ?? [])
             ->map(function ($item) {
-                $status = ($item['match'] ?? 0) >= 1 ? 'matched' : 'not matched';
+                $status = ($item['status'] ?? null) === 'matched' ? 'matched' : 'not matched';
                 return [
-                    'field_id' => $item['field_id'] ?? null,
-                    'key' => $item['key'] ?? null,
-                    'label' => $item['label'] ?? null,
+                    'question_id' => $item['question_id'] ?? null,
+                    'question_text' => $item['question_text'] ?? null,
                     'status' => $status,
                 ];
             })->values()->all();
 
         $payload = [
-            'match_score' => $computed['match_score'] ?? $computed['score'] ?? null,
+            'match_score' => $computed['match_score'],
+            'below_threshold' => $computed['below_threshold'],
             'breakdown_for_applicant' => $applicantBreakdown,
         ];
 

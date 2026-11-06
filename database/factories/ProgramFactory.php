@@ -23,6 +23,8 @@ class ProgramFactory extends Factory
             'application_start_date' => now()->toDateString(),
             'application_deadline' => now()->addDays(30)->toDateString(),
             'require_kyc_verification_to_apply' => false,
+            'use_match_score' => true,
+            'match_score_limit' => null,
             'status' => 'draft',
             'currency' => 'USD',
         ];

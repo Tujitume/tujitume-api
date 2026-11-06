@@ -25,6 +25,7 @@ class PublicProgramPreviewController extends Controller
             'program_title' => $program->program_title,
             'description' => $program->description ?: ($program->message ?? null),
             'organization_logo' => $program->organization_logo,
+            'organization_name' => $program->owner?->display_name,
             'owner_website' => $program->owner->website ?? null,
             'total_program_amount' => $program->total_program_amount,
             'funding_per_business' => $program->funding_per_business,
@@ -34,10 +35,6 @@ class PublicProgramPreviewController extends Controller
             'status' => $program->status,
             'application_start_date' => $program->application_start_date,
             'application_deadline' => $program->application_deadline,
-            'custom_info' => $program->customFields()->where('audience', 'info')->where('is_archived', false)->orderBy('display_order')->get()->map(function ($field) {
-                $value = $field->values()->where('entity_type', 'program')->where('entity_id', $program->id)->first();
-                return ['key' => $field->key, 'label' => $field->label, 'value' => $value?->value_text ?? $value?->value_json ?? $value?->value_number ?? $value?->value_bool ?? $value?->value_date];
-            })->values(),
             'rounds' => $program->rounds->map(fn ($round) => [
                 'round_number' => $round->round_number,
                 'round_name' => $round->round_name,

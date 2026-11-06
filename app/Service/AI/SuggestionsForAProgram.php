@@ -43,124 +43,27 @@ class SuggestionsForAProgram
             ->values();
     }
 
-    /**
-     * 🔢 Main scoring engine (0 – 100)
-     */
     protected function calculateScore(Program $program): float
     {
         $score = 0;
 
-        // 1️⃣ Category (30) / programFocusMatch
-        if ($this->programFocusMatch($program->program_focus)) {
-            $score += 33;
+        if (
+            $program->program_industry_id !== null
+            && $program->program_industry_id === $this->pivot->program_industry_id
+        ) {
+            $score += 60;
         }
 
-        // 2️⃣ Regions (30)
-        if ($this->locationScore($program->regions)) {
-            $score += 32;
+        if ($program->program_type === $this->pivot->program_type) {
+            $score += 15;
         }
 
-        // 3️⃣ Stage (20)
-        if ($this->stageMatch($program->startup_stage_focus)) {
-            $score += 20;
-        }
-
-
-        // 6️⃣ Social impact overlap (10)
-//        if ($this->socialImpactMatch($program->social_impact_areas)) {
-//            $score += 15;
-//        }
-
-        // 7️⃣ Funding normalization (15)
-        if ($program->funding_per_business > 1000) {
-            $score += min(15, floor($program->funding_per_business / 1000));
+        $candidateFunding = (float) $program->funding_per_business;
+        $pivotFunding = (float) $this->pivot->funding_per_business;
+        if ($candidateFunding > 0 && $pivotFunding > 0) {
+            $score += 25 * min($candidateFunding, $pivotFunding) / max($candidateFunding, $pivotFunding);
         }
 
         return round($score, 2);
     }
-
-
-    // HELPERS
-    protected function programFocusMatch($candidateFocus): bool
-    {
-        if (
-            empty($candidateFocus) ||
-            empty($this->pivot->program_focus)
-        ) {
-            return false;
-        }
-
-        $candidate = collect($candidateFocus);
-        $pivot = collect($this->pivot->program_focus);
-
-        return $candidate->intersect($pivot)->isNotEmpty();
-    }
-
-    protected function socialImpactMatch($candidateImpact): bool
-    {
-        if (
-            empty($candidateImpact) ||
-            empty($this->pivot->social_impact_areas)
-        ) {
-            return false;
-        }
-
-        $candidate = collect($candidateImpact);
-        $pivot = collect($this->pivot->social_impact_areas);
-
-        return $candidate->intersect($pivot)->isNotEmpty();
-    }
-
-    //Location score based on Haversine distance
-    protected function locationScore($candidateRegion): int
-    {
-        if (
-            empty($candidateRegion) ||
-            empty($this->pivot->regions)
-        ) {
-            return false;
-        }
-
-        $candidate = collect($candidateRegion);
-        $pivot = collect($this->pivot->regions);
-
-        return $candidate->intersect($pivot)->isNotEmpty();
-    }
-
-    protected function stageMatch($candidateStage): int
-    {
-        if (
-            empty($candidateStage) ||
-            empty($this->pivot->startup_stage_focus)
-        ) {
-            return false;
-        }
-
-        $candidate = collect($candidateStage);
-        $pivot = collect($this->pivot->startup_stage_focus);
-
-        return $candidate->intersect($pivot)->isNotEmpty();
-    }
-
-    /**
-     * Calculate Haversine distance (miles)
-     */
-    protected function haversineDistance(float $lat1, float $lng1, float $lat2, float $lng2): float
-    {
-        $rad = pi() / 180;
-        $lat1 *= $rad;
-        $lng1 *= $rad;
-        $lat2 *= $rad;
-        $lng2 *= $rad;
-
-        $dlng = $lng2 - $lng1;
-
-        $distance = acos(
-                sin($lat1) * sin($lat2) +
-                cos($lat1) * cos($lat2) * cos($dlng)
-            ) * 3958.8; // Earth radius in miles
-
-        return round($distance, 2);
-    }
 }
-

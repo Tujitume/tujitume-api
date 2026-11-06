@@ -8,6 +8,7 @@ use App\Models\Programs\Rounds\ApplicationRoundResponse;
 use App\Models\Programs\Rounds\ProgramRound;
 use App\Models\Programs\Rounds\RoundCustomQuestion;
 use App\Service\Program\KnockoutEvaluator;
+use App\Service\Program\RoundMatchScore;
 use App\Service\Misc\ErrorLogService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -22,6 +23,10 @@ class RoundQuestionController extends Controller
      */
     public function index(ProgramRound $round)
     {
+        if (! \App\Service\Program\ProgramAccess::owns($round->program)) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
         $questions = RoundCustomQuestion::where('round_id', $round->id)
             ->orderBy('display_order')
             ->get();
@@ -46,14 +51,19 @@ class RoundQuestionController extends Controller
         try {
             $validated = $request->validate([
                 'question_text'  => 'sometimes|required|string|max:500',
-                'question_type'  => 'sometimes|required|in:knockout,short_answer,long_text,long_answer,paragraph,multiple_choice,checkbox,checkboxes,dropdown,yes_no,true_false,rating,rating_scale,linear_scale,number,email,phone,phone_number,url,url_website,video_link,date,time,datetime,date_time,file_upload,address,currency,currency_money,percentage,matrix,matrix_grid,ranking,signature,budget_breakdown,knockout_yes_no',
+                'question_type'  => 'sometimes|required|in:knockout,short_answer,long_text,long_answer,paragraph,multiple_choice,checkbox,checkboxes,dropdown,yes_no,true_false,rating,rating_scale,linear_scale,number,email,phone,phone_number,url,url_website,video_link,date,time,datetime,date_time,file_upload,address,currency,currency_money,percentage,matrix,matrix_grid,ranking,signature,budget_breakdown,knockout_yes_no,location',
                 'options'        => 'nullable|array',
                 'is_required'    => 'nullable|boolean',
                 'display_order'  => 'sometimes|required|integer|min:1',
                 'knockout_fail_value' => 'nullable|string|max:45',
+                'use_in_match_score' => 'sometimes|boolean',
+                'match_points' => 'nullable|integer|min:1|max:100',
+                'match_answers' => 'nullable|array',
             ]);
 
+            $validated = app(RoundMatchScore::class)->prepareQuestionForSave($question->round, $validated, $question);
             $question->update($validated);
+            app(RoundMatchScore::class)->recalculateRound($question->round);
 
             DB::commit();
             return response()->json([
@@ -91,15 +101,19 @@ class RoundQuestionController extends Controller
         try {
             $validated = $request->validate([
                 'question_text' => 'required|string|max:500',
-                'question_type' => 'required|in:knockout,short_answer,long_text,long_answer,paragraph,multiple_choice,checkbox,checkboxes,dropdown,yes_no,true_false,rating,rating_scale,linear_scale,number,email,phone,phone_number,url,url_website,video_link,date,time,datetime,date_time,file_upload,address,currency,currency_money,percentage,matrix,matrix_grid,ranking,signature,budget_breakdown,knockout_yes_no',
+                'question_type' => 'required|in:knockout,short_answer,long_text,long_answer,paragraph,multiple_choice,checkbox,checkboxes,dropdown,yes_no,true_false,rating,rating_scale,linear_scale,number,email,phone,phone_number,url,url_website,video_link,date,time,datetime,date_time,file_upload,address,currency,currency_money,percentage,matrix,matrix_grid,ranking,signature,budget_breakdown,knockout_yes_no,location',
                 'options' => 'nullable|array', // For multiple choice
                 'is_required' => 'nullable|boolean',
                 'display_order' => 'required|integer|min:1',
                 'knockout_fail_value' => 'nullable|string|max:45',
+                'use_in_match_score' => 'sometimes|boolean',
+                'match_points' => 'nullable|integer|min:1|max:100',
+                'match_answers' => 'nullable|array',
             ]);
 
             $validated['round_id'] = $round->id;
             $validated['is_required'] = $validated['is_required'] ?? false;
+            $validated = app(RoundMatchScore::class)->prepareQuestionForSave($round, $validated);
 
             $question = RoundCustomQuestion::create($validated);
 
@@ -135,7 +149,9 @@ class RoundQuestionController extends Controller
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
+        $round = $question->round;
         $question->delete();
+        app(RoundMatchScore::class)->recalculateRound($round);
 
         return response()->json(['message' => 'Question deleted successfully']);
     }
@@ -183,24 +199,31 @@ class RoundQuestionController extends Controller
                 ->firstOrFail();
 
             // Handle file upload for file_upload question type
-            $filePath = null;
+            $filePath = ApplicationRoundResponse::where('application_id', $applicationId)
+                ->where('round_id', $roundId)
+                ->where('question_id', $question->id)
+                ->value('file_path');
             if ($question->question_type === 'file_upload' && $request->hasFile('file')) {
                 $file = $request->file('file');
+                if (! app(RoundMatchScore::class)->fileMatchesQuestionOptions($file, (array) ($question->options ?? []))) {
+                    throw ValidationException::withMessages([
+                        'file' => ['The uploaded file type is not allowed for this question.'],
+                    ]);
+                }
                 $path = "RoundAnswers/{$roundId}";
                 $filePath = $this->fileUpload->saveFile($file, $path);
+            } elseif ($request->hasFile('file')) {
+                throw ValidationException::withMessages([
+                    'file' => ['Files may only be submitted for file upload questions.'],
+                ]);
             }
 
-            // Create or update answer
-            $answer = ApplicationRoundResponse::updateOrCreate(
-                [
-                    'application_id' => $applicationId,
-                    'round_id' => $roundId,
-                    'question_id' => $validated['question_id'],
-                ],
-                [
-                    'response' => $validated['response'] ?? null,
-                    'file_path' => $filePath,
-                ]
+            $answer = app(RoundMatchScore::class)->saveAnswer(
+                $application,
+                $application->currentRound,
+                $question,
+                $validated['response'] ?? null,
+                $filePath
             );
 
             $knockoutService->evaluate($application);
@@ -285,6 +308,7 @@ class RoundQuestionController extends Controller
                 ->where('round_id', $roundId)
                 ->where('question_id', $questionId)
                 ->firstOrFail();
+            $round = ProgramRound::findOrFail($roundId);
 
             // Delete file if exists
             if ($answer->file_path && file_exists($answer->file_path)) {
@@ -292,6 +316,9 @@ class RoundQuestionController extends Controller
             }
 
             $answer->delete();
+            if ((int) $round->round_number === 1) {
+                app(RoundMatchScore::class)->recalculateApplication($application);
+            }
 
             DB::commit();
 

@@ -9,9 +9,6 @@ use App\Models\Auth\UserSetting;
 use App\Models\Programs\Rounds\ProgramRound;
 use App\Models\Organizations\Organization;
 use App\Models\Shared\Like;
-use App\Models\Programs\ProgramCustomField;
-use App\Models\Programs\ProgramCustomFieldValue;
-use App\Traits\HasS3Files;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
@@ -22,8 +19,6 @@ class Program extends Model
 
     protected static function newFactory() { return \Database\Factories\ProgramFactory::new(); }
 
-    use HasS3Files;
-
     protected static function booted(): void
     {
         static::creating(function (Program $program): void {
@@ -31,13 +26,6 @@ class Program extends Model
                 $program->public_id = (string) Str::ulid();
             }
         });
-    }
-
-    protected function privateFileFields(): array
-    {
-        return [
-            'program_brief_file',
-        ];
     }
 
     protected $guarded = [];
@@ -67,16 +55,10 @@ class Program extends Model
         return self::$organizationLogos[$ownerId];
     }
 
-    /** Has the programs table got the match_score_limit column yet? */
-    public static function supportsMatchScoreLimit(): bool
-    {
-        static $supported = null;
-        return $supported ??= \Illuminate\Support\Facades\Schema::hasColumn('programs', 'match_score_limit');
-    }
-
     protected $casts = [
         'visible' => 'boolean',
         'require_kyc_verification_to_apply' => 'boolean',
+        'use_match_score' => 'boolean',
         'application_start_date' => 'date',
         'application_deadline' => 'date',
     ];
@@ -92,17 +74,6 @@ class Program extends Model
 
     public function applications(){
         return $this->hasMany(ProgramApplication::class, 'program_id');
-    }
-
-    public function customFields()
-    {
-        return $this->hasMany(ProgramCustomField::class, 'program_id')->orderBy('display_order');
-    }
-
-    public function infoValues()
-    {
-        return $this->hasMany(ProgramCustomFieldValue::class, 'entity_id')
-            ->where('entity_type', 'program');
     }
 
     public function activeApplications(){

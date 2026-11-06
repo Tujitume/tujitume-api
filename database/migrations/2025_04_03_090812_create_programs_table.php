@@ -32,6 +32,7 @@ return new class extends Migration
             $table->date('application_start_date')->nullable();
             $table->date('application_deadline')->nullable();
             $table->boolean('require_kyc_verification_to_apply')->default(false);
+            $table->boolean('use_match_score')->default(true);
 
             $table->enum('status', [
                 'draft',

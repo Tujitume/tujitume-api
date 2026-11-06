@@ -1,85 +1,91 @@
 # Match-score engine
 
-The match-score engine evaluates submitted custom answers against active scoring definitions on the server. Client-provided scores are not authoritative. Applicants may see their numeric result and per-field match status; scoring weights and targets are PO-only.
-
-## Scoring configuration
-
-Set `is_scoring: true` and provide `scoring` on an application field:
-
-```json
-{
-  "enabled": true,
-  "weight": 20,
-  "match_type": "in_set",
-  "target": ["Niagara", "London"]
-}
-```
-
-`weight` must be greater than zero and at most 1000. Weights are relative; they do not have to sum to 100. A scoring field must have `audience: "application"`.
+The engine compares applicant answers to program-owner answer keys for scored Round 1 questions. The score is a server-calculated percentage from `0` to `100`; client scores are never trusted.
 
 ## Match-type matrix
 
-| `match_type` | Allowed field types | Target | Evaluation |
+Text comparison is trimmed and case-insensitive unless otherwise noted. An unanswered scored question earns `0`.
+
+| Question type | `options` | `match_answers` | How it scores |
 |---|---|---|---|
-| `in_set` | `select`, `multi_select` | Non-empty list of option values | Select: `1` when the selected value is in the target set, else `0`. Multi-select: `1` when at least one applicant answer overlaps the target set; otherwise `0` |
-| `range` | `number`, `date` | `{ "min": ..., "max": ... }`; at least one bound | `1` when answer is within the inclusive range, else `0` |
-| `equals` | `boolean` | `true` or `false` | `1` when answer equals target, else `0` |
-| `provided` | Any field type | None | `1` when a non-empty answer/file exists, else `0` |
+| `knockout`, `knockout_yes_no` | `null` or `[]` | Not scored | Knockout evaluator applies `knockout_fail_value`; scoring is rejected |
+| `short_answer`, `long_text`, `long_answer`, `paragraph`, `address` | `null` | `{"keywords":["Nairobi"]}` or `null` | With no keywords, any non-empty answer earns full points. Otherwise, any keyword must occur in the answer |
+| `yes_no` | `null` | `["yes"]` or `["no"]` | Exact normalized answer earns full points |
+| `true_false` | `null` | `["true"]` or `["false"]` | Exact normalized answer earns full points |
+| `dropdown`, `multiple_choice` | List of choices | `{"Registered":10,"In progress":5}` | Selected choice earns its configured points; an unconfigured choice earns zero |
+| `checkbox`, `checkboxes` | List of choices | `{"Women":6,"Youth":6,"People with disabilities":3}` | Sum points for selected choices, capped at the question's `match_points` |
+| `ranking` | Correct order, e.g. `["A","B","C"]` | Derived as `{"order":["A","B","C"]}` | Partial credit is based on normalized positional distance: `match_points × (1 − total rank displacement / maximum displacement)` |
+| `rating`, `rating_scale` | `null` | `{"min":4}` | Rating at least `min` earns full points; scale is 1–5 |
+| `number`, `currency`, `currency_money`, `percentage`, `linear_scale` | `null` | `{"min":5,"max":10}` | Inclusive range earns full points; either bound may be omitted |
+| `phone`, `phone_number` | `null` | `{"countries":["ke","ug"]}` | E.164 answer with `+` earns full points when its calling code matches an accepted country |
+| `email` | `null` | `{"domains":["company.com"]}` or `null` | Valid email earns full points when its domain matches; subdomains count. Null/empty domains accept any valid email |
+| `url`, `url_website` | `null` | `{"domains":["example.org"]}` or `null` | Valid URL earns full points when its host matches; subdomains count. Null/empty domains accept any valid URL |
+| `date` | `null` | `{"from":"2027-01-01","to":"2027-12-31"}` or `null` | Inclusive date window earns full points; format `YYYY-MM-DD` |
+| `time` | `null` | `{"from":"09:00","to":"17:00"}` or `null` | Inclusive time window earns full points; format `HH:mm` |
+| `datetime`, `date_time` | `null` | `{"from":"2027-01-01T09:00","to":"2027-12-31T17:00"}` or `null` | Inclusive datetime window earns full points; format `YYYY-MM-DDTHH:mm` |
+| `location` | Parts to collect, such as `["region","country","specific_location"]` | One or more accepted part lists | Full points if **any** configured part matches any accepted value; other unmatched parts do not reduce the score |
+| `matrix`, `matrix_grid` | `row:Label` and `col:Label` strings | `{"Records":"Ready","Staff":"Ready"}` | Points are shared equally across configured rows; each row with its expected column earns its share |
+| `file_upload` | Categories and/or accepted types | `null` | A valid uploaded file earns full points |
+| `signature` | `null` | `null` | A provided signature earns full points |
 
-Text, textarea, and URL fields may only use `provided`.
+`video_link` and `budget_breakdown` are not scoreable types. Knockout questions are never scored.
 
-### Multi-select matching
+### File-upload options
 
-For multi-select scoring, any shared value between the applicant's answer and the PO's target earns full credit for that field. The applicant does not need to select every target value. No overlap earns zero. For example, answer `["Niagara","NY"]` against target `["Niagara","London"]` earns a match of `1`, not `0.5`; answer `["NY"]` against target `["Niagara","London"]` earns `0`.
+`options` is a flat list of strings:
 
-The optional `mode` property is accepted in existing scoring definitions for backward compatibility, but it no longer changes the result. Stored `any`, `proportional`, or `all` modes all use the same overlap rule. Remove `mode` from new definitions to avoid implying partial credit.
+- Categories: `document`, `photo`, `video`, `beneficiary_list`, `other`; legacy combined category `photo_video` is also read.
+- File types use `type:` prefix: `pdf`, `doc`, `excel`, `powerpoint`, `csv`, `txt`, `rtf`, `image`, `svg`, `video`, `audio`, `zip`, `json`, `xml`, `html`, `code`, `cad`, `any`.
+- Legacy options without the prefix are accepted as file types where recognized.
+- When a category and a type are configured, both constraints must match. Multiple categories/types are alternatives within their respective group.
+- The frontend picker uses the same restrictions; the server validates every uploaded file independently.
 
-## Base score and bonuses
+## Worked scoring example
 
-1. Select active, non-archived application scoring fields.
-2. Score each field as a match fraction from `0` to `1`. An unanswered field is `0` but remains in the denominator.
-3. Exclude bonus fields from the base calculation. For non-bonus fields:
+The following Round 1 questions use exactly 100 points:
 
-   `base = (Σ(weight × match) / Σ(weight)) × 100`
+| Question | Points | Applicant answer | Earned |
+|---|---:|---|---:|
+| Location: East Africa or Kenya/Uganda/Tanzania | 20 | Kenya, even if region is not accepted | 20 |
+| Checkbox: Women 6, Youth 6, disability inclusion 3 | 15 | Women + Youth | 12 |
+| Annual revenue, minimum 500,000 | 15 | 800,000 | 15 |
+| Phone accepted in KE/UG/TZ | 10 | `+254712345678` | 10 |
+| Ranking A, B, C, D | 10 | A, B, D, C (one adjacent pair swapped) | 7.5 |
+| Matrix: Records=Ready, Staff=Ready | 10 | Records=Ready, Staff=Partly | 5 |
+| Rating, minimum 4 | 10 | 5 stars | 10 |
+| Required PDF or image | 10 | Uploaded PDF | 10 |
+| **Total** | **100** |  | **87** |
 
-4. Round the base/final result half-up to an integer, bounded from `0` to `100`.
-5. Add each matched bonus field's weight as points only when the base score meets `program.match_score_limit`. A `null` limit means bonus-eligible at any base score.
-6. Cap the final score at `100`.
+The location question gives full points because any configured part can match. Checkbox selection sums individual option points and is capped at 15. Ranking and matrix questions can award partial points. For four ranking options, swapping one adjacent pair has a total displacement of two against a maximum displacement of eight, so it earns `10 × (1 − 2/8) = 7.5`. Reversing all four has maximum displacement and earns zero. The total is `89.5`. A score is the plain sum; if an owner configures only 60 points, do not rescale those 60 points to 100.
 
-If there are no non-bonus scoring fields, there is no base score (`null`). A bonus field alone does not create a score.
+### Three common question configurations
 
-## Worked example: the three requested fields
+These are question-schema equivalents for common program form needs:
 
-Definitions:
+- **Interested places**, 20 points: a checkbox question with options `["Niagara","NY","London"]`, `match_answers: {"Niagara":20,"London":20}`. Any selected target place gives full 20; selecting both remains capped at 20.
+- **Business age (years)**, 30 points: a number question with `match_answers: {"min":2,"max":10}`.
+- **Business plan PDF**, 10 points: a required `file_upload` question with `options: ["document","type:pdf"]`, `match_answers: null`.
 
-| Field | Weight | Scoring definition |
-|---|---:|---|
-| Interested places | 20 | `in_set`; target `["Niagara","London"]` |
-| Business age (years) | 30 | `range`; target `{"min":2,"max":10}` |
-| Business plan PDF | 10 | `provided` |
-
-Suppose the applicant answers `["Niagara","NY"]`, `6`, and uploads the PDF:
-
-| Field | Match | Normalized weight | Earned base points |
-|---|---:|---:|---:|
-| Interested places | `1` | `20 / 60 × 100 = 33.33` | `33.33` |
-| Business age (years) | `1` | `30 / 60 × 100 = 50.00` | `50.00` |
-| Business plan PDF | `1` | `10 / 60 × 100 = 16.67` | `16.67` |
-| **Total** |  | **100.00** | **100.00 → 100** |
-
-The score is `100` after half-up integer rounding. Selecting just one of the target places is a full match; selecting no target place earns zero for that field.
+See [Round custom questions](custom-fields.md) for complete create payloads and responses.
 
 ## Preview endpoint
 
-**Request** `POST /api/v1/programs/match-score/{program_id}`
+**Request** `POST /api/v1/programs/match-score/{program_id}`. Send structured answers as JSON strings in `round_answers`; multipart is supported for file previews.
+
+| Field | Required | Type | Notes |
+|---|---:|---|---|
+| `round_answers` | No | array | Entries use `{question_id, response}`; a file may use `response` or `file` |
+| `round_answers.*.question_id` | Yes per entry | integer | Must belong to the program's Round 1 |
+| `round_answers.*.response` | No | string/file | Encode structured values as JSON text, e.g. `{"country":"Kenya"}` |
+
+**Example request**
 
 ```json
 {
-  "custom_answers": {
-    "interested-places": ["Niagara", "NY"],
-    "business-age-years": 6,
-    "business-plan-pdf": "present"
-  }
+  "round_answers": [
+    {"question_id": 41, "response": "[\"Niagara\",\"NY\"]"},
+    {"question_id": 42, "response": "6"}
+  ]
 }
 ```
 
@@ -87,85 +93,54 @@ The score is `100` after half-up integer rounding. Selecting just one of the tar
 
 ```json
 {
-  "success": true,
-  "message": "Request completed.",
-  "data": {
-    "match_score": 100,
-    "breakdown_for_applicant": [
-      {
-        "field_id": 41,
-        "key": "interested-places",
-        "label": "Interested places",
-        "status": "matched"
-      },
-      {
-        "field_id": 42,
-        "key": "business-age-years",
-        "label": "Business age (years)",
-        "status": "matched"
-      },
-      {
-        "field_id": 43,
-        "key": "business-plan-pdf",
-        "label": "Business plan PDF",
-        "status": "matched"
-      }
-    ]
-  },
-  "status": 200
+  "match_score": 50,
+  "below_threshold": false,
+  "breakdown_for_applicant": [
+    {"question_id": 41, "question_text": "Interested places", "status": "matched"},
+    {"question_id": 42, "question_text": "Business age (years)", "status": "not matched"}
+  ]
 }
 ```
 
-The preview output must never contain a weight, target, or raw scoring configuration. The route inherits API throttling. File previews require the server to receive a file or a trusted indication that a file is already present; do not send a local file path as an answer.
+The endpoint does not save answers. It never returns question points or accepted answers.
 
-## Stored score and PO breakdown
+## Score and threshold rules
 
-On application submission, the server stores `match_score` as an integer and the full `score_breakdown` snapshot on the application. A breakdown item has this shape:
+1. Use only Round 1 questions with `use_in_match_score: true`.
+2. Sum each question's earned points; cap the overall result at 100 and round to one decimal place.
+3. If there are no active scored questions, the result is `null`.
+4. If `use_match_score` is false, no score or below-threshold flag is calculated; stored application scores are cleared.
+5. If `match_score` is below `match_score_limit`, set `below_threshold: true` for program-owner review. Equal/above is false. Never reject or block submission based only on this threshold.
+6. Scores are recalculated when Round 1 answers change and when owners change scoring configuration or delete a scored question. Later round answers do not change the Round 1 score.
+7. `bonus_points` is ignored. Scored questions share the full 100-point budget.
 
-```json
-{
-  "field_id": 41,
-  "key": "interested-places",
-  "label": "Interested places",
-  "match_type": "in_set",
-  "weight": 20,
-  "normalized_weight": 33.33,
-  "match": 1,
-  "earned_points": 33.33,
-  "answer": ["Niagara", "NY"],
-  "target": ["Niagara", "London"]
-}
-```
+## Lock and validation rules
 
-The snapshot is historical evidence. Editing scoring configuration later must not cause old applications to be silently rescored.
+- Program-level `use_match_score` is the master switch. New programs default it on. The threshold is nullable only when omitted/disabled and otherwise must be an integer from 1 to 100.
+- Only Round 1 can have scored questions. The server rejects scoring fields for Round 2+; copying a question to a later round clears all scoring fields.
+- The program must have scoring enabled. Every scored question must be required, not knockout, use `match_points` from 1 to 100, and provide a valid type-specific `match_answers`.
+- Sum of Round 1 scored `match_points` cannot exceed 100. Lower totals are allowed.
+- Unscoring a question clears its `match_points` and `match_answers`. Disabling the program keeps existing question rules dormant so they work if scoring is re-enabled.
+- A question-type change invalidates its old accepted answers. Unknown/removed choice or matrix keys are ignored; at least one key valid for the current options must remain.
+- Knockout failure is evaluated independently of score and may affect application eligibility according to the knockout rules.
 
-## Applicant-vs-program-owner resources
+## Applicant versus program-owner data
 
-| Data | Applicant/public | Program owner |
+| Resource | Applicant/public | Program owner |
 |---|---|---|
-| Application-form metadata | Public active fields: label, key, type, options, required flag, help text, validation | Full field definitions through `GET /{program}/fields` |
-| Weights and targets | Never exposed | Available in field management and full score breakdown |
-| Match preview | Numeric match score and field status (`matched`, `not matched`) | Not a substitute for application detail |
-| Submitted custom answers | Applicant's own answers, subject to resource contract | Field ID/key/label/type and saved value |
-| Historic score breakdown | Applicant-safe result only | Full server-calculated snapshot |
+| Program score settings | `use_match_score`, `match_score_limit` may be present | Full program settings |
+| Question resource | Question, options, required flag; no `match_points` or `match_answers` | Full question including score settings and answer key |
+| Score preview | Numeric score, below-threshold status, question text/status only | Not an owner scoring-configuration endpoint |
+| Application | Applicant sees own saved `match_score`; no full score breakdown | Owner can inspect `below_threshold` and full server-calculated `score_breakdown` |
 
-### Current implementation gaps
+## Errors
 
-- `GET /{program}/fields` exposes the configured raw `weight` in a property named `normalized_weights`; it does not calculate normalized percentages.
-- The field-definition service does not yet fully validate weight bounds and all target/type/mode combinations described by the matrix; clients should still submit only valid combinations, but server validation must be completed.
-- `ProgramApplication` currently hides `score_breakdown` for every caller and the application controller does not append the `custom_answers` projection. Thus the PO-specific resource shape above is the required contract but is not yet realized by current serialization.
-- `application_fields` correctly omits the scoring properties, and `POST /match-score/{program_id}` strips the detailed engine output down to applicant-safe statuses.
-- Custom file preview/submission and validation metadata need a complete file-storage/validation path; consult [Custom fields](custom-fields.md#important-implementation-notes).
-
-## Errors and scoring rules
-
-| HTTP / result | Meaning |
+| HTTP / field | Meaning |
 |---|---|
-| `200`, `match_score: null` | No base scoring fields are configured |
-| `200`, integer `match_score` | Score computed from the current answer set |
-| `401` | Authentication missing or invalid |
-| `403` | Caller is not permitted to access the requested program operation |
-| `404` | Program does not exist |
-| `422` | Invalid answer or application does not satisfy program submission rules |
-
-Scoring config is PO-controlled and must be validated server-side. Option values are checked against the configured options. Never calculate or persist a score supplied by the browser.
+| `401` | Missing or invalid authentication |
+| `403` | Caller cannot operate on this program/application |
+| `404` | Program, round, or question does not exist |
+| `422 use_in_match_score` | Scoring is not Round 1 or program scoring is off |
+| `422 match_points` | Points are outside 1–100 or total exceeds 100 |
+| `422 match_answers` | Invalid/missing answer key for the question type |
+| `422 round_answers` | Invalid question reference or file type |

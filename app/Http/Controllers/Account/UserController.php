@@ -861,7 +861,6 @@ class UserController extends Controller
         Program::where('user_id', $userId)
             ->get()
             ->each(function (Program $program): void {
-                $this->deleteLocalFile($program->program_brief_pdf);
                 $program->delete();
             });
     }

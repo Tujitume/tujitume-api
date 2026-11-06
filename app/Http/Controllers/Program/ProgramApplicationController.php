@@ -7,7 +7,6 @@ use App\Models\ApplicationRoundHistory;
 use App\Models\Auth\User;
 use App\Models\Programs\Program;
 use App\Models\Programs\ProgramApplication;
-use App\Models\Programs\ProgramCustomField;
 use App\Models\Programs\ProgramMilestone;
 use App\Models\Programs\ProgramWatchlist;
 use App\Models\Programs\Rounds\ApplicationRoundResponse;
@@ -15,8 +14,8 @@ use App\Models\Programs\Rounds\ProgramRound;
 use App\Models\Programs\Rounds\ReviewerApplicationAssignment;
 use App\Models\Programs\Rounds\RoundCustomQuestion;
 use App\Models\Programs\Rounds\RoundRequiredDocument;
-use App\Service\Program\CustomFieldValueService;
 use App\Service\Program\ProgramAccess;
+use App\Service\Program\RoundMatchScore;
 use App\Service\Program\RoundHelperService;
 use App\Service\Program\RoundHistoryService;
 use App\Service\Misc\ErrorLogService;
@@ -26,7 +25,6 @@ use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
 class ProgramApplicationController extends Controller
@@ -44,11 +42,16 @@ class ProgramApplicationController extends Controller
 
         (new ProgramAccess())->authorizeProgramStaff(auth()->user(), Program::findOrFail($program_id));
 
-        $pitches = ProgramApplication::with('program_milestones')
+        $pitches = ProgramApplication::with([
+            'program_milestones',
+            'program:id,use_match_score,match_score_limit',
+        ])
             ->where('program_id', $program_id)->latest()->get();
 
 
         $apps = $pitches->map(function ($pitch) {
+            $pitch->setAttribute('below_threshold', $this->isBelowMatchThreshold($pitch));
+            $pitch->makeVisible('score_breakdown');
             return [
                 ...$pitch->toArray(),
                 'status' => [
@@ -67,11 +70,15 @@ class ProgramApplicationController extends Controller
         try {
             $pitch = ProgramApplication::with([
                 'program_milestones',
-                'program:id,program_title,program_type,status,total_rounds,funding_per_business,mid_milestone_required',
+                'program:id,program_title,program_type,status,total_rounds,funding_per_business,mid_milestone_required,use_match_score,match_score_limit',
                 'currentRound',
             ])->findOrFail($id);
 
             (new ProgramAccess())->authorizeApplication(auth()->user(), $pitch);
+            if (! (new ProgramAccess())->isApplicant(auth()->user(), $pitch)) {
+                $pitch->setAttribute('below_threshold', $this->isBelowMatchThreshold($pitch));
+                $pitch->makeVisible('score_breakdown');
+            }
 
             $roundData = null;
             $roundService = new RoundHelperService();
@@ -192,6 +199,15 @@ class ProgramApplicationController extends Controller
             }
 
             $round1 = $program->rounds()->with(['questions', 'knockoutQuestions'])->orderBy('id')->first();;
+            if ($round1) {
+                foreach (['questions', 'knockoutQuestions'] as $relation) {
+                    if ($round1->relationLoaded($relation)) {
+                        $round1->setRelation($relation, $round1->{$relation}->map(
+                            fn (RoundCustomQuestion $question) => $question->applicantView()
+                        ));
+                    }
+                }
+            }
 
             //  Better naming (no overwrite)
             if (Auth::check()) {
@@ -250,6 +266,13 @@ class ProgramApplicationController extends Controller
                     'round.uploadedDocuments',
                 ])->orderBy('round_number')
                 ->get();
+            $history->each(function (ApplicationRoundHistory $record): void {
+                if ($record->round && $record->round->relationLoaded('questions')) {
+                    $record->round->setRelation('questions', $record->round->questions->map(
+                        fn (RoundCustomQuestion $question) => $question->applicantView()
+                    ));
+                }
+            });
             return response()->json([ 'rounds' => $history ]);
         }
         catch (\Exception $e) {
@@ -269,6 +292,13 @@ class ProgramApplicationController extends Controller
                     'round.uploadedDocuments',
                 ])->orderBy('round_number')
                 ->get();
+            $history->each(function (ApplicationRoundHistory $record): void {
+                if ($record->round && $record->round->relationLoaded('questions')) {
+                    $record->round->setRelation('questions', $record->round->questions->map(
+                        fn (RoundCustomQuestion $question) => $question->applicantView()
+                    ));
+                }
+            });
             return response()->json([ 'history' => $history ]);
         }
         catch (\Exception $e) {
@@ -292,16 +322,7 @@ class ProgramApplicationController extends Controller
                 return response()->json(['message' => $closedReason], 422);
             }
 
-            $dynamicRules = [];
-            foreach ($program->customFields()->where('audience', 'application')->where('is_archived', false)->orderBy('display_order')->get() as $field) {
-                $key = 'custom_answers.' . $field->key;
-                $dynamicRules[$key] = $this->customFieldValidationRules($field);
-                if ($field->type === 'multi_select' && $field->options) {
-                    $dynamicRules[$key . '.*'] = ['nullable', 'string', Rule::in(array_map(fn ($option) => (string) ($option['value'] ?? $option['label'] ?? $option), $field->options ?? []))];
-                }
-            }
-
-            $validated = $request->validate(array_merge([
+            $validated = $request->validate([
                 'business_id' => 'required|exists:listings,id',
                 'startup_name' => 'required|string|max:255',
                 'contact_person_name' => 'required|string|max:100',
@@ -317,41 +338,17 @@ class ProgramApplicationController extends Controller
                 'pitch_video' => 'nullable|url',
                 'business_plan_file' => 'nullable|file|mimes:pdf,doc,docx|max:20480',
                 'social_impact_areas' => 'nullable|array',
-                'bonus_points' => 'nullable|string|max:300',
-                'custom_answers' => 'nullable|array',
-                'custom_answers.*' => 'nullable',
                 'round_answers' => 'nullable|array',
                 'round_answers.*.question_id' => 'required_with:round_answers|integer|exists:round_custom_questions,id',
-                'round_answers.*.response' => 'nullable|string|max:1000',
+                'round_answers.*.response' => 'nullable',
                 'round_documents' => 'nullable|array',
                 'round_documents.*.document_type' => 'required_with:round_documents|string|max:100',
                 'round_documents.*.file' => 'required_with:round_documents|file|max:20480',
-            ], $dynamicRules));
+            ]);
 
             if (! \App\Models\Business\Listing::where('id', $validated['business_id'])
                 ->where('user_id', auth()->id())->exists()) {
                 return response()->json(['message' => 'Business does not belong to the authenticated user.'], 403);
-            }
-
-            $customAnswers = $this->normalizeCustomAnswers($request, $program);
-
-            // Work the match score out again here instead of trusting the number the browser sent
-            try {
-                $scoringRequest = $request->duplicate();
-                $scoringRequest->merge(['custom_answers' => $customAnswers]);
-                $computed = (new \App\Service\AiScore\MatchScore())->program($scoringRequest, $program->id);
-
-                if (isset($computed['score'])) {
-                    $validated['match_score'] = $computed['score'];
-                    $validated['score_breakdown'] = $computed['score_breakdown'] ?? $computed['breakdown'] ?? [];
-                }
-            } catch (\Throwable $e) {
-                ErrorLogService::report($e, ['program_id' => $program->id]);
-            }
-
-            $programMatchLimit = $program->match_score_limit ?? null;
-            if ($programMatchLimit !== null && (($validated['match_score'] ?? 0) < (int) $programMatchLimit)) {
-                return response()->json(['message' => 'Your match score is ' . round($validated['match_score'] ?? 0) . '%, below the program threshold of ' . $programMatchLimit . '%.' ], 422);
             }
 
             // Auto-set fields
@@ -364,11 +361,41 @@ class ProgramApplicationController extends Controller
                 return response()->json(['message' => 'No round exists for the program.'], 422);
             }
 
+            $roundAnswers = collect($request->input('round_answers', []));
+            $roundQuestions = RoundCustomQuestion::where('round_id', $validated['current_round_id'])->get();
+            $answersById = $roundAnswers->keyBy('question_id');
+            $roundMatchScore = app(RoundMatchScore::class);
+            $missingRequired = $roundQuestions->filter(function (RoundCustomQuestion $question) use ($roundAnswers, $answersById, $request, $roundMatchScore) {
+                if (! $question->is_required) {
+                    return false;
+                }
+
+                $index = $roundAnswers->search(fn ($answer) => (int) ($answer['question_id'] ?? 0) === (int) $question->id);
+                $answer = $answersById->get($question->id, []);
+                $file = $index === false
+                    ? null
+                    : ($request->file("round_answers.{$index}.response") ?? $request->file("round_answers.{$index}.file"));
+                $response = $answer['response'] ?? null;
+                if ($response instanceof \Illuminate\Http\UploadedFile) {
+                    $file = $response;
+                    $response = null;
+                }
+                if ($roundMatchScore->answerIsProvided($question->question_type, $response, (bool) $file)) {
+                    return false;
+                }
+                return true;
+            });
+            if ($missingRequired->isNotEmpty()) {
+                throw ValidationException::withMessages([
+                    'round_answers' => ['All required round questions must be answered. Missing question IDs: ' . $missingRequired->pluck('id')->implode(', ') . '.'],
+                ]);
+            }
+
             // Knockout answer check
             $knockoutQuestionIds = RoundCustomQuestion::where('round_id', $validated['current_round_id'])
-                ->where('question_type', 'knockout')->pluck('id');
+                ->whereIn('question_type', ['knockout', 'knockout_yes_no'])->pluck('id');
 
-            $inputAnswers = collect($request->input('round_answers', []));
+            $inputAnswers = $roundAnswers;
             $answeredIds = $inputAnswers->filter(fn($a) => !empty($a['response']))->pluck('question_id');
             $missing = $knockoutQuestionIds->diff($answeredIds);
 
@@ -402,21 +429,18 @@ class ProgramApplicationController extends Controller
             }
 
             $application = ProgramApplication::create(
-                Arr::except($validated, ['round_answers', 'round_documents', 'custom_answers'])
+                Arr::except($validated, ['round_answers', 'round_documents'])
             );
-
-            if (! empty($customAnswers)) {
-                $this->saveCustomAnswers($application, $customAnswers);
-            }
 
             $doc_path = "files/programApps/{$program->id}/rounds/{$application->current_round_id}";
 
             // Save round document uploads & answers
             $this->handleRoundData($request, $application, $doc_path, $uploadedFiles, $validated['current_round_id']);
+            app(RoundMatchScore::class)->recalculateApplication($application);
 
             // check if knockout questions answered
             $ko_questionIds = RoundCustomQuestion::where('round_id', $application->current_round_id)
-                ->where('question_type', 'knockout')
+                ->whereIn('question_type', ['knockout', 'knockout_yes_no'])
                 ->pluck('id')->toArray();
 
             $answered = ApplicationRoundResponse::where('application_id', $application->id)
@@ -460,7 +484,7 @@ class ProgramApplicationController extends Controller
                     'application_id' => $application->id,
                     'business_name' => $application->startup_name,
                     'round_name' => $round?->round_name,
-                    'organization_name' => $program->owner?->display_name ?: $program->funder_name,
+                    'organization_name' => $program->owner?->display_name,
                     'announcement_date' => $round?->announcement_date?->format('j F Y'),
                     'submitted_at' => now()->format('j M Y, H:i'),
                     'recipientName' => $sme->first_name ?: $sme->display_name,
@@ -739,21 +763,69 @@ class ProgramApplicationController extends Controller
         return $user;
     }
 
+    private function isBelowMatchThreshold(ProgramApplication $application): bool
+    {
+        $program = $application->program;
+        return $program
+            && $program->use_match_score
+            && $program->match_score_limit !== null
+            && $application->match_score !== null
+            && (float) $application->match_score < (int) $program->match_score_limit;
+    }
+
     private function handleRoundData($request, $application, $path, &$uploadedFiles, $current_round_id)
     {
         // Entered on a round
         $this->roundHistory->create($current_round_id, $application->id, 1, 'in_progress');
 
         // Save answers
-        if ($request->filled('round_answers')) {
+        if ($request->has('round_answers')) {
             $inputAnswers = collect($request->input('round_answers'));
 
-            $answers = $inputAnswers->map(function ($answer) use ($application, $current_round_id) {
+            $answers = $inputAnswers->map(function ($answer, $index) use ($request, $application, $current_round_id, $path, &$uploadedFiles) {
+                $question = RoundCustomQuestion::where('id', $answer['question_id'])
+                    ->where('round_id', $current_round_id)
+                    ->first();
+                if (! $question) {
+                    throw ValidationException::withMessages([
+                        "round_answers.{$index}.question_id" => ['The selected question does not belong to the application round.'],
+                    ]);
+                }
+                $file = $request->file("round_answers.$index.response") ?? $request->file("round_answers.$index.file");
+                $filePath = null;
+                if ($file) {
+                    if ($question->question_type !== 'file_upload') {
+                        throw ValidationException::withMessages([
+                            "round_answers.{$index}.response" => ['Files may only be submitted for file upload questions.'],
+                        ]);
+                    }
+                    if (! app(RoundMatchScore::class)->fileMatchesQuestionOptions($file, (array) ($question->options ?? []))) {
+                        throw ValidationException::withMessages([
+                            "round_answers.{$index}.response" => ['The uploaded file type is not allowed for this question.'],
+                        ]);
+                    }
+                    $filePath = $this->fileUpload->saveFile($file, $path);
+                    $uploadedFiles[] = $filePath;
+                }
+
+                $response = $answer['response'] ?? null;
+                if ($question->question_type === 'file_upload' && ! $file && is_string($response) && trim($response) !== '') {
+                    throw ValidationException::withMessages([
+                        "round_answers.{$index}.response" => ['A file upload question requires an uploaded file.'],
+                    ]);
+                }
+                if ($response !== null && ! is_string($response)) {
+                    throw ValidationException::withMessages([
+                        "round_answers.{$index}.response" => ['Answers must be submitted as a string; encode structured answers as JSON.'],
+                    ]);
+                }
+
                 return [
                     'application_id' => $application->id,
                     'round_id' => $current_round_id,
                     'question_id' => $answer['question_id'],
-                    'response' => $answer['response'] ?? null,
+                    'response' => $response,
+                    'file_path' => $filePath,
                     'created_at' => now(),
                     'updated_at' => now(),
                 ];
@@ -906,80 +978,6 @@ class ProgramApplicationController extends Controller
             ]);
 
             throw $e;
-        }
-    }
-
-    protected function normalizeCustomAnswers(Request $request, Program $program): array
-    {
-        $answers = $request->input('custom_answers', []);
-        $files = $request->allFiles()['custom_answers'] ?? [];
-
-        if (is_array($files) && ! empty($files)) {
-            foreach ($files as $key => $file) {
-                $answers[$key] = $file;
-            }
-        }
-
-        if (! is_array($answers)) {
-            return [];
-        }
-
-        $normalized = [];
-        foreach ($answers as $key => $value) {
-            if ($key === '' || $value === null) {
-                continue;
-            }
-
-            $field = $program->customFields()->where('audience', 'application')->where('is_archived', false)->where('key', (string) $key)->first();
-            if (! $field) {
-                continue;
-            }
-
-            $normalized[$field->key] = $value;
-        }
-
-        return $normalized;
-    }
-
-    protected function customFieldValidationRules(ProgramCustomField $field): array
-    {
-        $base = [];
-        if ($field->is_required) {
-            $base[] = 'required';
-        } else {
-            $base[] = 'nullable';
-        }
-
-        $options = array_map(fn ($option) => (string) ($option['value'] ?? $option['label'] ?? $option), (array) ($field->options ?? []));
-
-        return match ($field->type) {
-            'text', 'textarea', 'url' => array_merge($base, ['string', 'max:' . (config('program_fields.text_answer_max_length', 5000))]),
-            'number' => array_merge($base, ['numeric']),
-            'boolean' => array_merge($base, ['boolean']),
-            'date' => array_merge($base, ['date']),
-            'select' => array_merge($base, ['string', Rule::in($options)]),
-            'multi_select' => array_merge($base, ['array']),
-            'file' => array_merge($base, ['file', 'max:' . (int) config('program_fields.file_max_size_kb', 20480) * 1024]),
-            default => $base,
-        };
-    }
-
-    protected function saveCustomAnswers(ProgramApplication $application, array $answers): void
-    {
-        $service = app(CustomFieldValueService::class);
-
-        foreach ($answers as $fieldKey => $value) {
-            $field = $application->program->customFields()
-                ->where('audience', 'application')
-                ->where('is_archived', false)
-                ->where('key', $fieldKey)
-                ->first();
-
-            if (! $field) {
-                continue;
-            }
-
-            $service->saveForEntity($field, 'application', $application->id, $value);
         }
     }
 

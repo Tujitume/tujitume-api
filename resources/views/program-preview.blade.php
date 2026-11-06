@@ -47,10 +47,10 @@
     <div class="layout">
         <div class="stack">
             <section class="card hero">
-                @if($program->organization_logo)<img class="brand" src="{{ $program->organization_logo }}" alt="{{ $program->funder_name ?: 'Program organization' }} logo">@endif
+                @if($program->organization_logo)<img class="brand" src="{{ $program->organization_logo }}" alt="{{ $program->owner?->display_name ?: 'Program organization' }} logo">@endif
                 <span class="status">{{ $isOpen ? 'Open for applications' : 'Applications closed' }}</span>
                 <h1>{{ $title }}</h1>
-                @if($program->funder_name)<p class="muted">Program by <strong>{{ $program->funder_name }}</strong></p>@endif
+                @if($program->owner?->display_name)<p class="muted">Program by <strong>{{ $program->owner->display_name }}</strong></p>@endif
                 @if($program->description ?? false)<p>{{ strip_tags($program->description) }}</p>@elseif($program->message ?? false)<p>{{ strip_tags($program->message) }}</p>@endif
                 <div class="stats">
                     <div class="stat"><strong>{{ $program->currency }} {{ number_format((float) $program->total_program_amount, 2) }}</strong><span>Total program amount</span></div>
@@ -60,33 +60,6 @@
                 </div>
             </section>
 
-            @if($program->eligibility_criteria)
-                <section class="card"><h2>Eligibility criteria</h2><p>{{ $program->eligibility_criteria }}</p></section>
-            @endif
-            @if($program->impact_objectives)
-                <section class="card"><h2>Impact objectives</h2><p>{{ $program->impact_objectives }}</p></section>
-            @endif
-            @if($program->evaluation_criteria)
-                <section class="card"><h2>Evaluation criteria</h2><p>{{ $program->evaluation_criteria }}</p></section>
-            @endif
-
-            @php
-                $profiles = [
-                    'Program focus areas' => $program->program_focus,
-                    'Social impact areas' => $program->social_impact_areas,
-                    'Eligible regions' => $program->regions,
-                    'Startup stage focus' => $program->startup_stage_focus,
-                    'Bonus points' => $program->bonus_points,
-                ];
-                $profiles = array_filter($profiles, fn ($items) => is_array($items) && count($items));
-            @endphp
-            @if(count($profiles))
-                <section class="card"><h2>Program profile</h2>
-                    @foreach($profiles as $label => $items)
-                        <p><strong>{{ $label }}:</strong> {{ collect($items)->map(fn ($item) => is_array($item) ? ($item['label'] ?? $item['name'] ?? '') : $item)->filter()->join(', ') }}</p>
-                    @endforeach
-                </section>
-            @endif
         </div>
 
         <aside class="stack sidebar">
@@ -106,13 +79,6 @@
             @endif
             @if($program->owner_website ?? false)
                 <section class="card"><h2>Organization website</h2><a class="external" href="{{ $program->owner_website }}" rel="noopener noreferrer">{{ $program->owner_website }}</a></section>
-            @endif
-            @php $brief = $program->customFields()->where('audience', 'info')->where('type', 'file')->where('is_archived', false)->first(); @endphp
-            @if($brief)
-                @php $briefValue = $brief->values()->where('entity_type', 'program')->where('entity_id', $program->id)->first()?->value_text; @endphp
-                @if($briefValue)
-                    <section class="card"><h2>Program brief</h2><a class="external" href="{{ \Illuminate\Support\Str::startsWith($briefValue, ['http://', 'https://']) ? $briefValue : asset($briefValue) }}" target="_blank" rel="noopener noreferrer">View program brief (PDF)</a></section>
-                @endif
             @endif
         </aside>
     </div>

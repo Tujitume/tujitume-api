@@ -1,48 +1,48 @@
 # Program applications
 
-All routes below are under `/api/v1/programs` and require Sanctum authentication. A business-owner account submits an application against the program's first open round.
+Routes are under `/api/v1/programs` and require Sanctum authentication. Applicants must use an account with business-owner type and submit a business listing they own. A new application enters the program's first round.
 
 ## Endpoints
 
 | Method | Endpoint | Purpose |
 |---|---|---|
-| `POST` | `/{program}/applications` | Submit an application |
+| `POST` | `/{program}/applications` | Submit a new application |
 | `GET` | `/{program_id}/applications` | Program staff list applications |
-| `GET` | `/{program_id}/applications/awarded` | List awarded applications |
-| `GET` | `/applications/{id}` | Get application detail and current round data |
+| `GET` | `/applications/{id}` | View application and current-round data |
 | `GET` | `/my-applications` | List applications visible to the caller |
-| `GET` | `/{program_id}/sme/applications` | Get applicant-facing program/application information |
-| `POST` | `/match-score/{program_id}` | Preview a match score without submitting |
+| `GET` | `/{program_id}/sme/applications` | Fetch public program form and applicant-safe Round 1 questions |
+| `POST` | `/match-score/{program_id}` | Preview a server-calculated Round 1 score |
 
 ## Submit an application
 
 **Request** `POST /api/v1/programs/{program}/applications`
 
-Send JSON for scalar and array answers. Use `multipart/form-data` when a custom file answer or another file is uploaded. Custom answers are keyed by the immutable field `key`; custom file inputs use `custom_answers[key]`.
+Send JSON for text answers. Use `multipart/form-data` when a question has a file answer or round documents are required.
 
 | Field | Required | Type | Notes |
 |---|---:|---|---|
-| `business_id` | Yes | integer | Must identify a business listing owned by the authenticated user |
+| `business_id` | Yes | integer | Must be a listing owned by the authenticated applicant |
 | `startup_name` | Yes | string | Maximum 255 characters |
 | `contact_person_name` | Yes | string | Maximum 100 characters |
 | `contact_person_email` | Yes | email | Maximum 100 characters |
-| `sector` | Yes | string | Maximum 100 characters; application/business property, not a program column |
+| `sector` | Yes | string | Application/business detail, not a match-score field |
 | `headquarters_location` | Yes | string | Maximum 255 characters |
-| `total_amount_requested` | Yes | number | At least `0` and no greater than the program's `funding_per_business` |
-| `custom_answers` | Conditional | object | Active application fields keyed by field key; required fields depend on each definition |
-| `round_answers` | Conditional | array | `{question_id, response}` entries for first-round questions; knockout questions must be answered |
-| `round_documents` | No | array | `{document_type, file}` entries; each file is required within its entry and limited by the round-document rule |
-| `stage` | No | string | Maximum 100 characters |
+| `total_amount_requested` | Yes | number | `0` through the program's `funding_per_business` |
+| `round_answers` | Conditional | array | `{question_id, response}` entries for Round 1. Required questions and knockout answers must be supplied |
+| `round_answers.*.question_id` | Yes per entry | integer | Question must belong to the program's first round |
+| `round_answers.*.response` | Conditional | string/file | Structured answers (checkbox, ranking, location, matrix) are JSON-encoded strings; file upload answers use a multipart file |
+| `round_documents` | No | array | Owner-configured round documents, each `{document_type, file}` |
+| `stage` | No | string | Existing application detail |
 | `revenue_last_12_months` | No | number | At least `0` |
 | `team_experience_avg_years` | No | integer | At least `0` |
-| `traction_kpis` | No | string | Existing application field |
-| `pitch_deck_file` | No | file | PDF, PPT, or PPTX; max 20 MB |
-| `business_plan_file` | No | file | PDF, DOC, or DOCX; max 20 MB |
-| `pitch_video` | No | URL | Existing application field |
-| `match_score` | No | number | Deprecated client value; ignored and recomputed by the server |
-| `score_breakdown` | No | array | Deprecated client value; ignored and recomputed by the server |
+| `traction_kpis` | No | string | Existing application detail |
+| `pitch_deck_file` | No | file | PDF, PPT, PPTX; max 20 MB |
+| `business_plan_file` | No | file | PDF, DOC, DOCX; max 20 MB |
+| `pitch_video` | No | URL | Existing application detail |
+| `match_score` | No | number | Ignored; server calculates score from saved Round 1 answers |
+| `score_breakdown` | No | array | Ignored; client cannot set a score or breakdown |
 
-Do not send the replaced fixed **program** fields as application answers. If the program asks for one of those values, use its active `custom_answers` key.
+Program questions are round-scoped. Do not send legacy program custom answers or program-level scoring fields.
 
 **Example JSON payload**
 
@@ -55,17 +55,15 @@ Do not send the replaced fixed **program** fields as application answers. If the
   "sector": "Food processing",
   "headquarters_location": "Nairobi, Kenya",
   "total_amount_requested": 40000,
-  "custom_answers": {
-    "interested-places": ["Niagara", "NY"],
-    "business-age-years": 6
-  },
   "round_answers": [
-    {"question_id": 17, "response": "We will use the funding to expand production."}
+    {"question_id": 41, "response": "[\"Niagara\",\"NY\"]"},
+    {"question_id": 42, "response": "6"},
+    {"question_id": 43, "response": "{\"region\":\"East Africa\",\"country\":\"Kenya\"}"}
   ]
 }
 ```
 
-For the required Business plan PDF field, submit multipart data:
+**Example multipart file answer**
 
 ```text
 business_id=84
@@ -75,15 +73,13 @@ contact_person_email=amina@example.test
 sector=Food processing
 headquarters_location=Nairobi, Kenya
 total_amount_requested=40000
-custom_answers[interested-places][]=Niagara
-custom_answers[interested-places][]=NY
-custom_answers[business-age-years]=6
-custom_answers[business-plan-pdf]=<PDF file>
+round_answers[0][question_id]=43
+round_answers[0][response]=<attach a PDF file>
 ```
 
-The keys in this sample are generated from labels. Fetch `application_fields` or the PO field list and use the exact returned keys; do not generate keys independently.
+The file must match both the file question's accepted categories and `type:` restrictions. The server validates the upload and stores the file reference on that question's Round 1 response.
 
-**Example response — current implementation**
+**Example response**
 
 ```json
 {
@@ -93,15 +89,14 @@ The keys in this sample are generated from labels. Fetch `application_fields` or
     "program_id": 12,
     "business_id": 84,
     "startup_name": "Northstar Foods",
-    "total_amount_requested": "40000.00",
-    "match_score": 100,
+    "match_score": "89.5",
     "status": "pending",
     "current_round_id": 7
   }
 }
 ```
 
-The example omits unrelated application columns. Current response serialization hides `score_breakdown` and does not append a `custom_answers` projection; see [resource differences and implementation notes](match-score-engine.md#applicant-vs-program-owner-resources).
+The saved score is recalculated from submitted Round 1 answers before returning the application.
 
 ## Match-score preview
 
@@ -109,60 +104,65 @@ The example omits unrelated application columns. Current response serialization 
 
 | Field | Required | Type | Notes |
 |---|---:|---|---|
-| `custom_answers` | No | object | Preview answers keyed by active custom-field key |
+| `round_answers` | No | array | Same question-answer structure as application submission |
+| `round_answers.*.question_id` | Yes per entry | integer | Must identify a question in Round 1 |
+| `round_answers.*.response` | No | string/file | Structured answers are JSON strings; file answers are multipart uploads |
+
+**Example request**
 
 ```json
 {
-  "custom_answers": {
-    "interested-places": ["Niagara", "NY"],
-    "business-age-years": 6,
-    "business-plan-pdf": "uploaded-file-reference"
-  }
+  "round_answers": [
+    {"question_id": 41, "response": "[\"Niagara\",\"NY\"]"},
+    {"question_id": 42, "response": "6"}
+  ]
 }
 ```
 
-The endpoint returns an applicant-safe status per scoring field:
+**Example applicant-safe response**
 
 ```json
 {
-  "success": true,
-  "message": "Request completed.",
-  "data": {
-    "match_score": 100,
-    "breakdown_for_applicant": [
-      {"field_id": 41, "key": "interested-places", "label": "Interested places", "status": "matched"},
-      {"field_id": 42, "key": "business-age-years", "label": "Business age (years)", "status": "matched"},
-      {"field_id": 43, "key": "business-plan-pdf", "label": "Business plan PDF", "status": "matched"}
-    ]
-  },
-  "status": 200
+  "match_score": 50,
+  "below_threshold": false,
+  "breakdown_for_applicant": [
+    {"question_id": 41, "question_text": "Interested places", "status": "matched"},
+    {"question_id": 42, "question_text": "Business age (years)", "status": "not matched"}
+  ]
 }
 ```
 
-The preview is read-only. It does not save answers or a historic score snapshot. The route is covered by the API-wide throttle middleware; use the preview only when the applicant changes answers, not on every keystroke.
-
-## Errors
-
-| HTTP | Condition | Client action |
-|---:|---|---|
-| `401` | Caller is unauthenticated | Authenticate and retry |
-| `403` | Caller is not a business owner or does not own the selected business | Select an owned business and authenticate as its owner |
-| `404` | Program, business, or referenced round question does not exist | Refresh the resource |
-| `422` | Invalid/missing base answer, required custom answer, invalid option, unanswered knockout question, closed program, or score below a configured threshold | Show field errors or the returned closure/threshold message |
-| `500` | Unexpected server error | Retry safely; avoid duplicate submissions |
-
-## Business rules
-
-- The program must be published, have an open first round, and be within its deadline.
-- The submitted `business_id` must belong to the authenticated user.
-- Only active application fields are validated and saved. Archived fields are not part of the application form.
-- Multi-select answers are arrays of option values. Select answers use one option value. File fields are multipart uploads.
-- The server calculates the score from the submitted `custom_answers`. Client-supplied `match_score` and `score_breakdown` never establish the saved score.
-- The server stores an integer match score when scoring fields exist. If the program has no base scoring fields, there is no base score to calculate.
-- `match_score_limit` controls bonus eligibility only; it is not a general application minimum.
-- Round questions/documents are a separate feature from program custom fields. Use `round_answers` and `round_documents` for those round-specific inputs.
-- Historic score snapshots should not be recalculated when a PO later edits scoring definitions.
+Preview does not persist answers or score. It never includes question points or accepted answer keys.
 
 ## Resource visibility
 
-The intended response contract is: applicants receive their `match_score` and an applicant-safe status breakdown, while the PO can inspect submitted custom answers and the full scoring breakdown. Neither public nor applicant-facing resources may expose scoring weights or targets. Current serialization gaps are documented in [Match-score engine](match-score-engine.md#applicant-vs-program-owner-resources).
+| Resource value | Applicant | Program owner/staff |
+|---|---|---|
+| `match_score` | Own saved score | Application score |
+| `below_threshold` | Not used to block application | Included when scoring is on and a threshold exists |
+| Full `score_breakdown` | Hidden | Available in application list/detail |
+| Round question `match_answers`, `match_points` | Omitted from applicant form/history | Returned by question management |
+| Preview `breakdown_for_applicant` | Question ID/text and matched status only | No weights/answer key in preview response |
+
+## Errors
+
+| HTTP / field | Condition |
+|---|---|
+| `401` | Missing or invalid authentication |
+| `403` | Not a business owner or business does not belong to caller |
+| `404` | Program, business, or Round 1 question does not exist |
+| `422 business_id` / other required field | Missing or invalid application data |
+| `422 round_answers` | Required question unanswered, unknown question/round, or invalid encoded answer |
+| `422 round_answers.*.response` | File submitted for a non-file question, invalid file category/type, or oversized file |
+| `422` | Program is closed or has no application round |
+| `500` | Unexpected server error; confirm whether submission succeeded before retrying |
+
+## Business rules
+
+- The program must be open for applications and a Round 1 must exist.
+- The server checks question ownership against that Round 1 and enforces required answers.
+- Knockout questions are required and evaluated independently; a failed knockout is not a match-score deduction.
+- Match score is based on the server's current Round 1 question rules. Client `match_score` and `score_breakdown` are ignored.
+- An application below `match_score_limit` is still accepted; the owner receives a `below_threshold` flag.
+- Disabling program scoring clears saved scores and suppresses threshold flags.
+- Answers in later rounds do not recalculate Round 1 match scores.

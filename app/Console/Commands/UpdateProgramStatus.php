@@ -21,7 +21,7 @@ class UpdateProgramStatus extends Command
      *
      * @var string
      */
-    protected $description = 'It updates program statuses based on their start_date and application_deadline. Programs that have reached their start_date will be marked as "open", while those that have passed their application_deadline will be marked as "closed".';
+    protected $description = 'It updates program statuses based on their application_start_date and application_deadline.';
 
     /**
      * Execute the console command.
@@ -30,18 +30,8 @@ class UpdateProgramStatus extends Command
     {
         $notificationService = new ProgramNotificationService();
 
-        /* Open programs that reached start_date
-        Program::where('status', 'published')->whereDate('start_date', '<=', now())
-            ->update(['status' => 'open']);
-
-        // Close programs that passed deadline
-        Program::where('status', 'open')->whereDate('application_deadline', '<', now())
-            ->update(['status' => 'closed']);
-        */
-
-
         // Open programs % rounds
-        $openedPrograms = Program::where('status', 'published')->whereDate('start_date', '<=', now())->get();
+        $openedPrograms = Program::where('status', 'published')->whereDate('application_start_date', '<=', now())->get();
         foreach ($openedPrograms as $program) {
             $program->update(['status' => 'open']);
             $notificationService->send('program.opened', [$program->user], [

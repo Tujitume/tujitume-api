@@ -367,10 +367,6 @@ class AdminController extends Controller
 
                 $programs = Program::where('user_id', $id)->get();
                 foreach ($programs as $program) {
-                    $filePath = public_path($program->program_brief_pdf);
-                    if (file_exists($filePath)) {
-                        unlink($filePath);
-                    }
                     $program->delete();
                 }
 

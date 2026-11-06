@@ -2,20 +2,26 @@
 
 **Base URL:** `/api/v1/programs`
 
-Unless a route explicitly permits public access, authenticate with Sanctum. Program API writes may return endpoint-specific envelopes; refer to the endpoint page for exact response examples.
+Unless a route explicitly permits public access, authenticate with Sanctum. Program owners must be authorized for the program; applicants may only submit and view their own applications.
 
 ## Endpoint index
 
 | Area | Reference |
 |---|---|
-| Program CRUD and removed-field migration | [Programs](programs.md), [Migration notes](migration-notes.md) |
-| Custom field definition and info values | [Custom fields](custom-fields.md) |
-| Application submission and retrieval | [Applications](applications.md) |
-| Scoring configuration and preview | [Match-score engine](match-score-engine.md) |
-| End-to-end create/apply/score example | [How program application match score works](how-program-application-matchScore-works.md) |
-| Rounds and round-specific questions | [Round documentation](rounds/rounds.md), [Questions and answers](rounds/questions-answers.md) |
+| Program creation and score settings | [Programs](programs.md) |
+| Round questions and match-score configuration | [Custom fields / round questions](custom-fields.md) |
+| Application payload, preview, and responses | [Applications](applications.md) |
+| Scoring matrix, rules, and lifecycle | [Match-score engine](match-score-engine.md) |
+| Frontend migration checklist | [Migration notes](migration-notes.md) |
+| Full create/apply/score walkthrough | [How program application match score works](how-program-application-matchScore-works.md) |
+| Round setup and review | [Rounds](rounds/rounds.md), [Questions and answers](rounds/questions-answers.md) |
 | Wallet and payments | [Wallet](wallet.md), [Payments](../payments/README.md) |
-| Monitoring and analytics | [Monitoring](monitoring/analytics.md) |
+
+## Match-score architecture
+
+The score is configured on the program with `use_match_score` and `match_score_limit`, but individual scored questions belong to Round 1 in `round_custom_questions`. There is no program-level custom-field scoring endpoint or `custom_fields` create payload. Round 2 and later use reviewer rubric scores only.
+
+Applicant-facing question resources omit `match_points` and `match_answers`; program-owner question-management responses include them. See the [match-score engine](match-score-engine.md) for all scoring and visibility rules.
 
 ## User types
 
@@ -27,16 +33,3 @@ Unless a route explicitly permits public access, authenticate with Sanctum. Prog
 | 4 | organization | Own and operate programs |
 | 5 | admin | Administrative access where configured |
 | 6 | external_reviewer | Score assigned rounds and site visits |
-
-## Status colors
-
-| Value | Color | Meaning |
-|---|---|---|
-| draft, pending, submitted | info | Awaiting the next action |
-| under_review, changes_requested, modification_requested, processing | warning | Being reviewed or changed |
-| approved, awarded, completed, verified, agreed | success | Successfully accepted |
-| rejected, not_selected, failed, cancelled, final_rejected | danger | Denied or stopped |
-
-Status metadata may be represented as `{"value":"pending","color":"info"}`.
-
-Messages, contact cards, meetings, notification reads and payment-provider changes are documented under [Communication](../communication/README.md), [Accounts](../accounts/README.md), and [Payments](../payments/README.md). Organization provider management is in [Organizations](../organizations/README.md).

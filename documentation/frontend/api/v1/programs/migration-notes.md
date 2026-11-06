@@ -1,27 +1,25 @@
-# Custom-field migration notes for existing frontends
+# Match-score frontend migration notes
 
-This page lists the frontend changes needed when moving from fixed program properties to custom field definitions.
+This migration replaces program-level custom fields with Round 1 questions and server-calculated question scoring.
 
-## Removed program properties
+## Removed program fields and endpoints
 
-Do not read or send the following as program attributes:
+Do not read or submit removed fixed program properties such as `eligibility_criteria`, `required_documents`, `program_focus`, `regions`, `startup_stage_focus`, `impact_objectives`, `social_impact_areas`, `bonus_points`, `evaluation_criteria`, `funder_type`, `program_brief_pdf`, `start_date`, or `end_date` as persisted program properties. `program_industry_id` remains a core field. Use `application_start_date` and `application_deadline` for program dates.
 
-`eligibility_criteria`, `required_documents`, `program_focus`, `regions`, `startup_stage_focus`, `impact_objectives`, `social_impact_areas`, `bonus_points`, `evaluation_criteria`, `funder_name`, `funder_type`, `program_brief_pdf`, `start_date`, and `end_date`.
+Do not call program custom-field endpoints or submit a `custom_fields` array. The former program custom-field model, values, and API have been removed. Configure questions through the round endpoints; questions belong to a round rather than the program.
 
-| Old UI concept | New location |
+| Old UI / payload concept | New location |
 |---|---|
-| Eligibility, focus, region, stage, impact, and similar applicant questions | `program_custom_fields` definitions with `audience: "application"`; answers submitted under `custom_answers` |
-| Program description or other owner-authored information | `program_custom_fields` with `audience: "info"`; values written to `PUT /{program}/info-values` |
+| Application form fields or eligibility questions | `POST /rounds/{round}/questions`; initial applicant form questions belong to Round 1 |
+| Program-level match score or bonus considerations | Program `use_match_score` and Round 1 question `use_in_match_score`/`match_points`/`match_answers` |
+| Round-specific file requirements | `application_round.required_documents` and `round_documents` |
+| Knockout screening | Round question type `knockout` / `knockout_yes_no`; never score it |
 | Program open date | `application_start_date` |
 | Application close date | `application_deadline` |
-| Industry classification | `program_industry_id` remains a core system field |
-| Round-specific required documents/questions | Round APIs, not program custom fields |
-
-Use the program's `application_fields` response to render public questions. It includes field `key`, label, type, options, required flag, help text, and validation metadata, but not scoring configuration.
 
 ## New application payload
 
-Submit custom answers keyed by the exact immutable field key:
+Keep the existing required application identity/business fields and send the dynamic form answers through `round_answers`. Do not send `custom_answers`.
 
 ```json
 {
@@ -32,32 +30,38 @@ Submit custom answers keyed by the exact immutable field key:
   "sector": "Food processing",
   "headquarters_location": "Nairobi, Kenya",
   "total_amount_requested": 40000,
-  "custom_answers": {
-    "interested-places": ["Niagara", "NY"],
-    "business-age-years": 6
-  }
+  "round_answers": [
+    {"question_id": 41, "response": "[\"Niagara\",\"NY\"]"},
+    {"question_id": 42, "response": "6"},
+    {"question_id": 43, "response": "{\"region\":\"East Africa\",\"country\":\"Kenya\"}"}
+  ]
 }
 ```
 
-For file fields, use `multipart/form-data` and the input name `custom_answers[field-key]`. For multi-select fields, submit an array of option `value`s. Round questions and documents remain separate inputs (`round_answers`, `round_documents`).
+Send structured checkbox, ranking, location, and matrix answers as JSON-encoded strings. Use multipart form data for file question answers:
 
-## Client score values are ignored
+```text
+round_answers[0][question_id]=43
+round_answers[0][response]=<attach the file>
+```
 
-Do not calculate or submit a score as an authoritative value. `match_score` and `score_breakdown` sent by older clients are ignored; the backend computes scores from the current server-side definitions and submitted custom answers. The preview endpoint is `POST /match-score/{program_id}` with `{ "custom_answers": { ... } }`.
+The uploaded file must satisfy the question's `options`. The frontend file picker and backend both enforce the accepted file types.
 
-Applicant-facing resources must not expose scoring weights or targets. The PO's field-management response contains scoring definitions; never reuse that response in a public form.
+## Client match scores are ignored
+
+Do not calculate or submit a score as authoritative. `match_score` and `score_breakdown` in a request are ignored. The backend computes and stores the score from Round 1 answers. The preview endpoint is `POST /match-score/{program_id}` and accepts `round_answers`; it returns only the score, threshold status, and applicant-safe question match statuses.
+
+The threshold is informative for the program owner. It does not prevent application submission or automatically reject an applicant. Hide the match-score preview when the program has scoring disabled. The preview can be calculated before submission but is optional.
 
 ## Frontend rollout checklist
 
-- [ ] Remove form bindings and payload properties for removed fixed program fields.
-- [ ] Read `application_fields` to render dynamic questions and preserve returned field keys.
-- [ ] Submit answers in `custom_answers` and upload custom files using multipart field names.
-- [ ] Keep round-question answers/documents on the existing round-specific API.
+- [ ] Remove program field bindings and payload properties for removed columns; do not send `custom_fields` or `custom_answers`.
+- [ ] Read `application_round.questions` from the program application-info response to build the question form.
+- [ ] Render matrix rows and columns from `row:` and `col:` option values.
+- [ ] Restrict file upload pickers to the configured file categories/types and submit one file per file question.
+- [ ] Serialize structured answers as JSON strings in `round_answers`.
+- [ ] Include the question ID on each answer and send knockout answers in the same round-answer list.
 - [ ] Stop treating client-side match score or breakdown as authoritative.
-- [ ] Use `application_start_date` / `application_deadline` for program date display.
-- [ ] Test archived fields, required fields, option values, and the open/closed application state.
-- [ ] Do not rely on custom file `validation` metadata as a security boundary until the runtime file path enforces it.
-
-## Known server-side follow-up
-
-The application controller currently continues to validate some legacy **application-level** columns such as `sector`, `headquarters_location`, and `social_impact_areas`; these are distinct from removed `programs` table columns. Custom field `validation` metadata is not fully enforced, custom file upload persistence needs completion, and the PO application serializer currently hides the score breakdown and omits the `custom_answers` projection. Coordinate a frontend release with those API follow-ups; see [Applications](applications.md) and [Match-score engine](match-score-engine.md).
+- [ ] Allow submission whether the optional preview has been calculated or not, and regardless of whether the score is below threshold.
+- [ ] Do not render `match_points` or `match_answers` in applicant form/question resources.
+- [ ] Use `application_start_date` and `application_deadline` for program date display.

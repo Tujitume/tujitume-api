@@ -46,7 +46,7 @@ return new class extends Migration
             $table->decimal('awarded_amount', 15, 2)->nullable();        // new: actual amount awarded
 
             // Scoring
-            $table->unsignedInteger('match_score')->nullable();
+            $table->decimal('match_score', 5, 1)->nullable();
             $table->json('score_breakdown')->nullable();                  // was string(100) → json
             $table->text('reviewer_notes')->nullable();                   // new: internal reviewer notes
 

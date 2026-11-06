@@ -19,6 +19,7 @@ use App\Support\ApiContract;
 use App\Service\Program\RoundHelperService;
 use App\Service\Program\RoundParticipation;
 use App\Service\Program\RoundHistoryService;
+use App\Service\Program\RoundMatchScore;
 use App\Service\Misc\ErrorLogService;
 use App\Service\Notification\ProgramNotificationService;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -477,6 +478,16 @@ class ProgramRoundController extends Controller
             $averageScore = $history?->average_score;
         }
 
+        if ((new ProgramAccess())->isApplicant(auth()->user(), $application)) {
+            foreach (['questions', 'knockoutQuestions'] as $relation) {
+                if ($round->relationLoaded($relation)) {
+                    $round->setRelation($relation, $round->{$relation}->map(
+                        fn (RoundCustomQuestion $question) => $question->applicantView()
+                    ));
+                }
+            }
+        }
+
         $roundData = $round->toArray();
 
         return [
@@ -558,11 +569,14 @@ class ProgramRoundController extends Controller
                 // Question
                 'round_questions' => 'nullable|array',
                 'round_questions.*.question_text' => 'nullable|string|max:255',
-                'round_questions.*.question_type' => 'required|in:knockout,short_answer,long_text,long_answer,paragraph,multiple_choice,checkbox,checkboxes,dropdown,yes_no,true_false,rating,rating_scale,linear_scale,number,email,phone,phone_number,url,url_website,video_link,date,time,datetime,date_time,file_upload,address,currency,currency_money,percentage,matrix,matrix_grid,ranking,signature,budget_breakdown,knockout_yes_no',
+                'round_questions.*.question_type' => 'required|in:knockout,short_answer,long_text,long_answer,paragraph,multiple_choice,checkbox,checkboxes,dropdown,yes_no,true_false,rating,rating_scale,linear_scale,number,email,phone,phone_number,url,url_website,video_link,date,time,datetime,date_time,file_upload,address,currency,currency_money,percentage,matrix,matrix_grid,ranking,signature,budget_breakdown,knockout_yes_no,location',
                 'round_questions.*.options' => 'nullable|array',
                 'round_questions.*.is_required' => 'nullable|boolean',
                 'round_questions.*.display_order' => 'nullable|integer|min:1',
                 'round_questions.*.knockout_fail_value' => 'nullable|string|max:45',
+                'round_questions.*.use_in_match_score' => 'sometimes|boolean',
+                'round_questions.*.match_points' => 'nullable|integer|min:1|max:100',
+                'round_questions.*.match_answers' => 'nullable|array',
 
                 'knockout_questions' => 'nullable|array',
                 'knockout_questions.*.text' => 'required|string|max:500',
@@ -606,10 +620,9 @@ class ProgramRoundController extends Controller
                 RoundCustomQuestion::where('round_id', $round->id)->delete();
             }
 
-            // Normal questions
-            $questionsToInsert = [];
+            $matchScore = app(RoundMatchScore::class);
             foreach ($validated['round_questions'] ?? [] as $index => $q) {
-                $questionsToInsert[] = [
+                $questionData = [
                     'round_id' => $round->id,
                     'question_text' => $q['question_text'] ?? '',
                     'question_type' => $q['question_type'],
@@ -617,27 +630,26 @@ class ProgramRoundController extends Controller
                     'is_required' => $q['is_required'] ?? true,
                     'display_order' => $q['display_order'] ?? ($index + 1),
                     'knockout_fail_value' => $q['knockout_fail_value'] ?? null,
-                    'created_at' => now(),
                 ];
+                $questionData = $matchScore->prepareQuestionForSave($round, $questionData + array_intersect_key($q, array_flip([
+                    'use_in_match_score', 'match_points', 'match_answers',
+                ])));
+                RoundCustomQuestion::create($questionData);
             }
 
             // Knockout questions
             foreach ($validated['knockout_questions'] ?? [] as $index => $q) {
-                $questionsToInsert[] = [
+                RoundCustomQuestion::create([
                     'round_id' => $round->id,
                     'question_text' => $q['text'] ?? '',
                     'question_type' => 'knockout',
                     'is_required' => true,
                     'display_order' => count($validated['round_questions'] ?? []) + $index + 1,
                     'knockout_fail_value' => $q['disqualify_if'] ?? null,
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ];
-            }
-
-            // Single DB query instead of many
-            if (!empty($questionsToInsert)) {
-                RoundCustomQuestion::insert($questionsToInsert);
+                    'use_in_match_score' => false,
+                    'match_points' => null,
+                    'match_answers' => null,
+                ]);
             }
 
             if($max_rounds == $validated['round_number']){
@@ -689,12 +701,16 @@ class ProgramRoundController extends Controller
 
                 // Question
                 'round_questions' => 'nullable|array',
+                'round_questions.*.id' => 'nullable|integer',
                 'round_questions.*.question_text' => 'nullable|string|max:255',
-                'round_questions.*.question_type' => 'required|in:knockout,short_answer,long_text,long_answer,paragraph,multiple_choice,checkbox,checkboxes,dropdown,yes_no,true_false,rating,rating_scale,linear_scale,number,email,phone,phone_number,url,url_website,video_link,date,time,datetime,date_time,file_upload,address,currency,currency_money,percentage,matrix,matrix_grid,ranking,signature,budget_breakdown,knockout_yes_no',
+                'round_questions.*.question_type' => 'required|in:knockout,short_answer,long_text,long_answer,paragraph,multiple_choice,checkbox,checkboxes,dropdown,yes_no,true_false,rating,rating_scale,linear_scale,number,email,phone,phone_number,url,url_website,video_link,date,time,datetime,date_time,file_upload,address,currency,currency_money,percentage,matrix,matrix_grid,ranking,signature,budget_breakdown,knockout_yes_no,location',
                 'round_questions.*.options' => 'nullable|array',
                 'round_questions.*.is_required' => 'nullable|boolean',
                 'round_questions.*.display_order' => 'nullable|integer|min:1',
                 'round_questions.*.knockout_fail_value' => 'nullable|string|max:45',
+                'round_questions.*.use_in_match_score' => 'sometimes|boolean',
+                'round_questions.*.match_points' => 'nullable|integer|min:1|max:100',
+                'round_questions.*.match_answers' => 'nullable|array',
 
                 'knockout_questions' => 'nullable|array',
                 'knockout_questions.*.text' => 'required|string|max:500',
@@ -717,17 +733,18 @@ class ProgramRoundController extends Controller
 
             $round->update($validated);
 
-            // Q insert — clear existing first to prevent duplicates
-            $questionsToInsert = [];
-
-            //if (!empty($validated['round_questions']) || !empty($validated['knockout_questions'])) {
-                //RoundCustomQuestion::where('round_id', $round->id)->where('question_type', 'knockout')->delete();
-            //}
-
-            // Normal questions
+            $matchScore = app(RoundMatchScore::class);
             foreach ($validated['round_questions'] ?? [] as $index => $q) {
-                $questionsToInsert[] = [
-                    'id' => $q['id'] ?? null, // IMPORTANT
+                $question = isset($q['id'])
+                    ? RoundCustomQuestion::where('round_id', $round->id)->find($q['id'])
+                    : null;
+                if (isset($q['id']) && ! $question) {
+                    throw ValidationException::withMessages([
+                        "round_questions.{$index}.id" => ['The selected question does not belong to this round.'],
+                    ]);
+                }
+
+                $questionData = [
                     'round_id' => $round->id,
                     'question_text' => $q['question_text'] ?? '',
                     'question_type' => $q['question_type'],
@@ -735,43 +752,40 @@ class ProgramRoundController extends Controller
                     'is_required' => $q['is_required'] ?? true,
                     'display_order' => $q['display_order'] ?? ($index + 1),
                     'knockout_fail_value' => $q['knockout_fail_value'] ?? null,
-                    'updated_at' => now(),
-                    'created_at' => now(),
                 ];
+                $questionData = $matchScore->prepareQuestionForSave($round, array_merge(
+                    $questionData,
+                    array_intersect_key($q, array_flip(['use_in_match_score', 'match_points', 'match_answers']))
+                ), $question);
+                $question ? $question->update($questionData) : RoundCustomQuestion::create($questionData);
             }
 
             // Knockout questions
             foreach ($validated['knockout_questions'] ?? [] as $index => $q) {
-                $questionsToInsert[] = [
-                    'id' => $q['id'] ?? null, // IMPORTANT
+                $question = isset($q['id'])
+                    ? RoundCustomQuestion::where('round_id', $round->id)->find($q['id'])
+                    : null;
+                if (isset($q['id']) && ! $question) {
+                    throw ValidationException::withMessages([
+                        "knockout_questions.{$index}.id" => ['The selected question does not belong to this round.'],
+                    ]);
+                }
+
+                $questionData = [
                     'round_id' => $round->id,
                     'question_text' => $q['text'] ?? '',
                     'question_type' => 'knockout',
                     'is_required' => true,
                     'display_order' => count($validated['round_questions'] ?? []) + $index + 1,
                     'knockout_fail_value' => $q['disqualify_if'] ?? null,
-                    'created_at' => now(),
-                    'updated_at' => now(),
+                    'use_in_match_score' => false,
+                    'match_points' => null,
+                    'match_answers' => null,
                 ];
+                $question ? $question->update($questionData) : RoundCustomQuestion::create($questionData);
             }
 
-            // Single DB query instead of many
-            if (!empty($questionsToInsert)) {
-                RoundCustomQuestion::upsert(
-                    $questionsToInsert,
-                    ['id'], // unique key
-                    [
-                        'round_id',
-                        'question_text',
-                        'question_type',
-                        'options',
-                        'is_required',
-                        'display_order',
-                        'knockout_fail_value',
-                        'updated_at'
-                    ]
-                );
-            }
+            $matchScore->recalculateRound($round);
 
             DB::commit();
 
@@ -1766,7 +1780,7 @@ class ProgramRoundController extends Controller
                     'business_name' => $application->startup_name,
                     'round_name' => $round?->round_name,
                     'round_submission' => true,
-                    'organization_name' => $program?->owner?->display_name ?: $program?->funder_name,
+                    'organization_name' => $program?->owner?->display_name,
                     'announcement_date' => $round?->announcement_date?->format('j F Y'),
                     'submitted_at' => now()->format('j M Y, H:i'),
                     'recipientName' => auth()->user()->first_name ?: auth()->user()->display_name,

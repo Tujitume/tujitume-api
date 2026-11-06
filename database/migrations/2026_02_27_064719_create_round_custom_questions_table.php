@@ -21,12 +21,15 @@ return new class extends Migration
                 'number', 'email', 'phone', 'url', 'date', 'time', 'datetime', 'address', 'currency',
                 'percentage', 'matrix', 'ranking', 'signature',
                 'long_answer', 'checkboxes', 'knockout_yes_no', 'rating_scale', 'phone_number',
-                'url_website', 'video_link', 'date_time', 'currency_money', 'matrix_grid',
+                'url_website', 'video_link', 'date_time', 'currency_money', 'matrix_grid', 'location',
             ]);
             $table->json('options')->nullable(); // For multiple choice
             $table->boolean('is_required')->default(false);
             $table->integer('display_order');
             $table->string('knockout_fail_value', 45)->nullable();
+            $table->boolean('use_in_match_score')->default(false);
+            $table->unsignedSmallInteger('match_points')->nullable();
+            $table->json('match_answers')->nullable();
             $table->timestamps();
         });
     }

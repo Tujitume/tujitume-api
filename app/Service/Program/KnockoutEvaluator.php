@@ -17,7 +17,7 @@ class KnockoutEvaluator
 
         // Get knockout questions
         $knockoutQuestions = RoundCustomQuestion::where('round_id', $round->id)
-            ->where('question_type', 'knockout')
+            ->whereIn('question_type', ['knockout', 'knockout_yes_no'])
             ->get();
 
         if ($knockoutQuestions->isEmpty()) {
