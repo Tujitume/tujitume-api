@@ -323,7 +323,7 @@ class ProgramApplicationController extends Controller
             }
 
             $validated = $request->validate([
-                'business_id' => 'required|exists:listings,id',
+                //'business_id' => 'required|exists:listings,id',
                 'startup_name' => 'required|string|max:255',
                 'contact_person_name' => 'required|string|max:100',
                 'contact_person_email' => 'required|email|max:100',
@@ -346,10 +346,10 @@ class ProgramApplicationController extends Controller
                 'round_documents.*.file' => 'required_with:round_documents|file|max:20480',
             ]);
 
-            if (! \App\Models\Business\Listing::where('id', $validated['business_id'])
-                ->where('user_id', auth()->id())->exists()) {
-                return response()->json(['message' => 'Business does not belong to the authenticated user.'], 403);
-            }
+            // if (! \App\Models\Business\Listing::where('id', $validated['business_id'])
+            //     ->where('user_id', auth()->id())->exists()) {
+            //     return response()->json(['message' => 'Business does not belong to the authenticated user.'], 403);
+            // }
 
             // Auto-set fields
             $validated['program_id'] = $program->id;  $validated['program_owner_id'] = $program->user_id;
