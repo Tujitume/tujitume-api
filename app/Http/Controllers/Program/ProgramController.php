@@ -498,6 +498,10 @@ class ProgramController extends Controller
                 ]);
             }
 
+            if (array_key_exists('total_program_amount', $validated)) {
+                $validated['available_amount'] = $validated['total_program_amount'];
+            }
+
             $program->update($validated);
             if (array_key_exists('use_match_score', $validated)) {
                 app(\App\Service\Program\RoundMatchScore::class)->recalculateProgram($program->fresh());
