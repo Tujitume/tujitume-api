@@ -12,6 +12,14 @@ class ApplicationRoundResponse extends Model
 
     protected $guarded = [];
 
+    protected $casts = ['file_paths' => 'array'];
+
+    /** Every file of this answer (older answers only have `file_path`). */
+    public function allFilePaths(): array
+    {
+        return $this->file_paths ?: ($this->file_path ? [$this->file_path] : []);
+    }
+
     public function application()
     {
         return $this->belongsTo(ProgramApplication::class);

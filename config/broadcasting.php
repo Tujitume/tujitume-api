@@ -45,6 +45,12 @@ return [
                     CURLOPT_SSL_VERIFYPEER => 0,
                 ]                            // false because SSL terminates at Apache
             ],
+            // What a browser needs to open the real-time connection. Public values only: never the secret or the app id.
+            'client' => [
+                'host' => env('PUSHER_HOST'),
+                'port' => (int) env('PUSHER_PORT', 443),
+                'scheme' => env('PUSHER_SCHEME', 'https'),
+            ],
             'client_options' => [
                 // Guzzle client options: https://docs.guzzlephp.org/en/stable/request-options.html
             ],

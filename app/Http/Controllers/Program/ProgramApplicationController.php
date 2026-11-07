@@ -341,6 +341,8 @@ class ProgramApplicationController extends Controller
                 'round_answers' => 'nullable|array',
                 'round_answers.*.question_id' => 'required_with:round_answers|integer|exists:round_custom_questions,id',
                 'round_answers.*.response' => 'nullable',
+                'round_answers.*.files' => 'nullable|array|max:'.RoundMatchScore::MAX_FILES_PER_QUESTION,
+                'round_answers.*.files.*' => 'file|max:20480',
                 'round_documents' => 'nullable|array',
                 'round_documents.*.document_type' => 'required_with:round_documents|string|max:100',
                 'round_documents.*.file' => 'required_with:round_documents|file|max:20480',
@@ -374,7 +376,8 @@ class ProgramApplicationController extends Controller
                 $answer = $answersById->get($question->id, []);
                 $file = $index === false
                     ? null
-                    : ($request->file("round_answers.{$index}.response") ?? $request->file("round_answers.{$index}.file"));
+                    : ($request->file("round_answers.{$index}.response") ?? $request->file("round_answers.{$index}.file")
+                        ?? (($request->file("round_answers.{$index}.files") ?? [])[0] ?? null));
                 $response = $answer['response'] ?? null;
                 if ($response instanceof \Illuminate\Http\UploadedFile) {
                     $file = $response;
@@ -436,7 +439,16 @@ class ProgramApplicationController extends Controller
 
             // Save round document uploads & answers
             $this->handleRoundData($request, $application, $doc_path, $uploadedFiles, $validated['current_round_id']);
-            app(RoundMatchScore::class)->recalculateApplication($application);
+            $scoreResult = app(RoundMatchScore::class)->recalculateApplication($application);
+
+            // The program's minimum match score is checked here, on the score the server just worked out from the answers
+            // (never one sent by the browser), so it cannot be bypassed by calling the API directly. Rolls everything back.
+            $minimum = $program->match_score_limit;
+            if ($program->use_match_score && $minimum !== null && $scoreResult['match_score'] !== null && (float) $scoreResult['match_score'] < (float) $minimum) {
+                throw ValidationException::withMessages([
+                    'match_score' => ["Your match score of {$scoreResult['match_score']}% is below this program's minimum of {$minimum}%, so the application cannot be submitted. Improve your answers and try again."],
+                ]);
+            }
 
             // check if knockout questions answered
             $ko_questionIds = RoundCustomQuestion::where('round_id', $application->current_round_id)
@@ -499,8 +511,17 @@ class ProgramApplicationController extends Controller
             ], 201);
         }
         catch (ValidationException $e) {
+            // Nothing from a refused application is kept: not the rows, not the files already saved
+            DB::rollBack();
+            foreach ($uploadedFiles as $file) {
+                if ($file && file_exists(public_path($file))) {
+                    unlink(public_path($file));
+                }
+            }
+            $errors = $e->errors();
             return response()->json([
-                'message' => 'Validation failed.', 'errors'  => $e->errors()
+                'message' => isset($errors['match_score']) ? $errors['match_score'][0] : 'Validation failed.',
+                'errors'  => $errors,
             ], 422);
         }
         catch (\Exception $e) {
@@ -791,21 +812,32 @@ class ProgramApplicationController extends Controller
                         "round_answers.{$index}.question_id" => ['The selected question does not belong to the application round.'],
                     ]);
                 }
-                $file = $request->file("round_answers.$index.response") ?? $request->file("round_answers.$index.file");
+                // One file (response / file) or several (files[]): a file-upload question takes as many as its owner allowed
+                $files = [];
+                foreach (["round_answers.$index.response", "round_answers.$index.file"] as $key) {
+                    if ($single = $request->file($key)) {
+                        $files[] = $single;
+                    }
+                }
+                foreach ((array) $request->file("round_answers.$index.files") as $many) {
+                    $files[] = $many;
+                }
+                $file = $files[0] ?? null;
                 $filePath = null;
-                if ($file) {
+                $filePaths = [];
+                if ($files) {
                     if ($question->question_type !== 'file_upload') {
                         throw ValidationException::withMessages([
                             "round_answers.{$index}.response" => ['Files may only be submitted for file upload questions.'],
                         ]);
                     }
-                    if (! app(RoundMatchScore::class)->fileMatchesQuestionOptions($file, (array) ($question->options ?? []))) {
-                        throw ValidationException::withMessages([
-                            "round_answers.{$index}.response" => ['The uploaded file type is not allowed for this question.'],
-                        ]);
+                    app(RoundMatchScore::class)->validateFileSet($files, $question, "round_answers.{$index}.response");
+                    foreach ($files as $oneFile) {
+                        $saved = $this->fileUpload->saveFile($oneFile, $path);
+                        $uploadedFiles[] = $saved;
+                        $filePaths[] = $saved;
                     }
-                    $filePath = $this->fileUpload->saveFile($file, $path);
-                    $uploadedFiles[] = $filePath;
+                    $filePath = $filePaths[0];
                 }
 
                 $response = $answer['response'] ?? null;
@@ -826,6 +858,7 @@ class ProgramApplicationController extends Controller
                     'question_id' => $answer['question_id'],
                     'response' => $response,
                     'file_path' => $filePath,
+                    'file_paths' => $filePaths ? json_encode($filePaths) : null,
                     'created_at' => now(),
                     'updated_at' => now(),
                 ];

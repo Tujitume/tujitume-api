@@ -191,6 +191,8 @@ class RoundQuestionController extends Controller
                 'question_id' => 'required|exists:round_custom_questions,id',
                 'response' => 'required_without:file|nullable|string',
                 'file' => 'nullable|file|max:10240', // 10MB max
+                'files' => 'nullable|array|max:'.RoundMatchScore::MAX_FILES_PER_QUESTION,
+                'files.*' => 'file|max:10240',
             ]);
 
             // Verify question belongs to this round
@@ -198,24 +200,24 @@ class RoundQuestionController extends Controller
                 ->where('round_id', $roundId)
                 ->firstOrFail();
 
-            // Handle file upload for file_upload question type
-            $filePath = ApplicationRoundResponse::where('application_id', $applicationId)
+            // Handle file upload for file_upload question type: one file (`file`) or several (`files[]`) that replace the earlier ones
+            $existing = ApplicationRoundResponse::where('application_id', $applicationId)
                 ->where('round_id', $roundId)
                 ->where('question_id', $question->id)
-                ->value('file_path');
-            if ($question->question_type === 'file_upload' && $request->hasFile('file')) {
-                $file = $request->file('file');
-                if (! app(RoundMatchScore::class)->fileMatchesQuestionOptions($file, (array) ($question->options ?? []))) {
+                ->first();
+            $filePath = $existing?->file_path;
+            $filePaths = $existing?->allFilePaths() ?? [];
+            $incoming = array_values(array_filter([$request->file('file'), ...(array) $request->file('files')]));
+            if ($incoming) {
+                if ($question->question_type !== 'file_upload') {
                     throw ValidationException::withMessages([
-                        'file' => ['The uploaded file type is not allowed for this question.'],
+                        'file' => ['Files may only be submitted for file upload questions.'],
                     ]);
                 }
+                app(RoundMatchScore::class)->validateFileSet($incoming, $question, 'file');
                 $path = "RoundAnswers/{$roundId}";
-                $filePath = $this->fileUpload->saveFile($file, $path);
-            } elseif ($request->hasFile('file')) {
-                throw ValidationException::withMessages([
-                    'file' => ['Files may only be submitted for file upload questions.'],
-                ]);
+                $filePaths = array_map(fn ($file) => $this->fileUpload->saveFile($file, $path), $incoming);
+                $filePath = $filePaths[0];
             }
 
             $answer = app(RoundMatchScore::class)->saveAnswer(
@@ -223,7 +225,8 @@ class RoundQuestionController extends Controller
                 $application->currentRound,
                 $question,
                 $validated['response'] ?? null,
-                $filePath
+                $filePath,
+                $filePaths
             );
 
             $knockoutService->evaluate($application);
@@ -311,8 +314,10 @@ class RoundQuestionController extends Controller
             $round = ProgramRound::findOrFail($roundId);
 
             // Delete file if exists
-            if ($answer->file_path && file_exists($answer->file_path)) {
-                unlink($answer->file_path);
+            foreach ($answer->allFilePaths() as $storedFile) {
+                if ($storedFile && file_exists($storedFile)) {
+                    unlink($storedFile);
+                }
             }
 
             $answer->delete();
