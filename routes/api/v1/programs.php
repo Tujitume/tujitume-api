@@ -164,6 +164,8 @@ Route::prefix('/programs')->middleware(['program', 'program.response'])->group(f
     // Questions & Answers
     Route::apiResource('rounds/{round}/questions', RoundQuestionController::class)->shallow();
     Route::patch('questions/{question}', [RoundQuestionController::class, 'update']); // added by owen
+    Route::delete('questions/{question}', [RoundQuestionController::class, 'destroy']);
+    Route::delete('rounds/{round}/questions', [RoundQuestionController::class, 'destroyMany']);
 
     Route::prefix('applications/{application_id}/rounds/{round_id}')->group(function () {
         Route::post('/answer', [RoundQuestionController::class, 'submitAnswer']);

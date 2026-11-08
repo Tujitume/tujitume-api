@@ -158,6 +158,33 @@ class RoundQuestionController extends Controller
 
 
     /**
+     * Delete several questions of a round at once (bulk delete and "replace all" in the question editor)
+     * DELETE /api/v1/programs/rounds/{round}/questions   body: { "ids": [1, 2, 3] }
+     */
+    public function destroyMany(Request $request, ProgramRound $round)
+    {
+        if (!\App\Service\Program\ProgramAccess::owns($round->program)) {
+            return response()->json(['error' => 'Unauthorized'], 403);
+        }
+
+        $data = $request->validate([
+            'ids' => 'required|array|min:1|max:200',
+            'ids.*' => 'integer',
+        ]);
+
+        // Only this round's own questions can be removed, whatever ids were sent
+        $deleted = DB::transaction(fn () => RoundCustomQuestion::where('round_id', $round->id)
+            ->whereIn('id', $data['ids'])
+            ->get()
+            ->each->delete()
+            ->count());
+
+        app(RoundMatchScore::class)->recalculateRound($round);
+
+        return response()->json(['message' => 'Questions deleted successfully', 'deleted' => $deleted]);
+    }
+
+    /**
      * Submit answer to a question
      * POST /program/applications/{application_id}/rounds/{round_id}/answer
      */
