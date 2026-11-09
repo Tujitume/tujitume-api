@@ -20,6 +20,8 @@ class PublicProgramPreviewController extends Controller
 
         abort_unless($program, 404);
 
+        return response()->json(['data' => $program ])->header('Cache-Control', 'public, max-age=300'); 
+
         return response()->json(['data' => ['program' => [
             'public_id' => $program->public_id,
             'program_title' => $program->program_title,

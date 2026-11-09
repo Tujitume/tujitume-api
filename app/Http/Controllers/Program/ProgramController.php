@@ -176,6 +176,7 @@ class ProgramController extends Controller
                 'require_kyc_verification_to_apply' => 'nullable|boolean',
                 'use_match_score' => 'nullable|boolean',
                 'match_score_limit' => 'nullable|integer|min:1|max:100',
+                
                 'application_round' => 'nullable|array',
                 'application_round.round_name' => 'nullable|string|max:100',
                 'application_round.open_date' => 'nullable|date',
