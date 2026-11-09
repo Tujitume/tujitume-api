@@ -15,6 +15,8 @@ class RoundMatchScore
 {
     private const KNOCKOUT_TYPES = ['knockout', 'knockout_yes_no'];
 
+    public const MAX_FILES_PER_QUESTION = 10;
+
     private const TYPE_ALIASES = [
         'long_answer' => 'long_text',
         'checkboxes' => 'checkbox',
@@ -61,6 +63,9 @@ class RoundMatchScore
         $useScoring = array_key_exists('use_in_match_score', $data)
             ? filter_var($data['use_in_match_score'], FILTER_VALIDATE_BOOLEAN)
             : (bool) ($question?->use_in_match_score ?? false);
+        if ($this->canonicalType((string) $type) === 'file_upload') {
+            $this->maxFilesFor((array) ($options ?? []), true);
+        }
         $typeChanged = $question && isset($data['question_type']) && $data['question_type'] !== $question->question_type;
         $points = array_key_exists('match_points', $data) ? $data['match_points'] : $question?->match_points;
         $answers = array_key_exists('match_answers', $data)
@@ -172,7 +177,7 @@ class RoundMatchScore
                 'question_text' => $question->question_text,
                 'match_points' => $points,
                 'earned_points' => round($earned, 1),
-                'status' => $earned >= $points ? 'matched' : 'not matched',
+                'status' => $earned >= $points ? 'matched' : ($earned > 0 ? 'partial' : 'not matched'),
             ];
         }
 
@@ -242,15 +247,16 @@ class RoundMatchScore
             ->each(fn (ProgramApplication $application) => $this->recalculateApplication($application));
     }
 
-    public function saveAnswer(ProgramApplication $application, ProgramRound $round, RoundCustomQuestion $question, ?string $response, ?string $filePath = null): ApplicationRoundResponse
+    public function saveAnswer(ProgramApplication $application, ProgramRound $round, RoundCustomQuestion $question, ?string $response, ?string $filePath = null, ?array $filePaths = null): ApplicationRoundResponse
     {
+        $filePaths = $filePaths ?: ($filePath ? [$filePath] : null);
         $answer = ApplicationRoundResponse::updateOrCreate(
             [
                 'application_id' => $application->id,
                 'round_id' => $round->id,
                 'question_id' => $question->id,
             ],
-            ['response' => $response, 'file_path' => $filePath]
+            ['response' => $response, 'file_path' => $filePaths[0] ?? $filePath, 'file_paths' => $filePaths]
         );
 
         if ((int) $round->round_number === 1) {
@@ -291,6 +297,46 @@ class RoundMatchScore
         }
 
         return $this->isPresent($value);
+    }
+
+    /** The most files a file-upload question takes: the owner's "max_files:N" setting, otherwise one. */
+    public function maxFilesFor(array $options, bool $validate = false): int
+    {
+        foreach ($options as $option) {
+            if (is_string($option) && str_starts_with(strtolower($option), 'max_files:')) {
+                $number = substr($option, 10);
+                if (! ctype_digit($number) || (int) $number < 1 || (int) $number > self::MAX_FILES_PER_QUESTION) {
+                    if ($validate) {
+                        $this->fail('options', 'The number of files must be between 1 and '.self::MAX_FILES_PER_QUESTION.'.');
+                    }
+                    return 1;
+                }
+
+                return (int) $number;
+            }
+        }
+
+        return 1;
+    }
+
+    /**
+     * Checks the files sent for one file-upload question: not more than the question allows, and every one of an allowed
+     * type. Throws a validation error on `$field`.
+     *
+     * @param UploadedFile[] $files
+     */
+    public function validateFileSet(array $files, RoundCustomQuestion $question, string $field): void
+    {
+        $options = (array) ($question->options ?? []);
+        $max = $this->maxFilesFor($options);
+        if (count($files) > $max) {
+            throw ValidationException::withMessages([$field => ["This question takes at most {$max} file".($max === 1 ? '' : 's').'.']]);
+        }
+        foreach ($files as $file) {
+            if (! $this->fileMatchesQuestionOptions($file, $options)) {
+                throw ValidationException::withMessages([$field => ['The uploaded file type is not allowed for this question.']]);
+            }
+        }
     }
 
     public function fileMatchesQuestionOptions(UploadedFile $file, array $options): bool
@@ -362,7 +408,7 @@ class RoundMatchScore
             if (! is_array($answers) || ! isset($answers['keywords']) || ! is_array($answers['keywords'])) {
                 $this->fail('match_answers', 'Short-text match answers must contain a keywords list or be null.');
             }
-            return ['keywords' => array_values(array_filter(array_map(fn ($value) => trim((string) $value), $answers['keywords']), fn ($value) => $value !== ''))];
+            return ['keywords' => $this->keywordList($answers['keywords'])];
         }
 
         if (in_array($type, ['yes_no', 'true_false'], true)) {
@@ -537,11 +583,13 @@ class RoundMatchScore
         }
 
         if (in_array($type, ['short_answer', 'long_text', 'paragraph', 'address'], true)) {
-            $text = mb_strtolower(trim(is_scalar($value) ? (string) $value : json_encode($value)));
-            $keywords = array_map(fn ($keyword) => mb_strtolower(trim((string) $keyword)), $accepted['keywords'] ?? []);
-            return ! $keywords || collect($keywords)->contains(fn ($keyword) => $keyword !== '' && str_contains($text, $keyword))
-                ? (float) $points
-                : 0.0;
+            $text = is_scalar($value) ? (string) $value : json_encode($value);
+            $keywords = $this->keywordList($accepted['keywords'] ?? []);
+            if (! $keywords) {
+                return (float) $points; // no words set: any answer earns the points
+            }
+            // The points are shared equally across the keywords; each different keyword is counted once however often it appears
+            return round($points * $this->keywordsFound($text, $keywords) / count($keywords), 1);
         }
 
         if (in_array($type, ['yes_no', 'true_false'], true)) {
@@ -571,22 +619,16 @@ class RoundMatchScore
                 return 0.0;
             }
 
-            $actualPositions = [];
-            foreach ($value as $index => $item) {
-                $key = mb_strtolower(trim((string) $item));
-                if (! array_key_exists($key, $actualPositions)) {
-                    $actualPositions[$key] = (int) $index;
+            // Each option in the owner's position earns an equal share (25 points over 3 options = 8.3 each; all right = 25)
+            $given = array_values($value);
+            $inPlace = 0;
+            foreach ($order as $index => $expected) {
+                if (mb_strtolower(trim((string) ($given[$index] ?? ''))) === mb_strtolower(trim((string) $expected))) {
+                    $inPlace++;
                 }
             }
 
-            $distance = 0;
-            foreach ($order as $expectedIndex => $expected) {
-                $actualIndex = $actualPositions[mb_strtolower(trim((string) $expected))] ?? $count;
-                $distance += abs($actualIndex - $expectedIndex);
-            }
-
-            $maximumDistance = intdiv($count * $count, 2);
-            return $points * max(0, 1 - ($distance / $maximumDistance));
+            return round($points * $inPlace / $count, 1);
         }
 
         if ($type === 'rating') {
@@ -672,10 +714,100 @@ class RoundMatchScore
                     $matched++;
                 }
             }
-            return $points * ($matched / count($accepted));
+            return round($points * ($matched / count($accepted)), 1);
         }
 
         return 0.0;
+    }
+
+    /**
+     * The keywords of a text question, one per entry. An owner may type them in one box ("teacher, training; coaching"),
+     * so each entry is split on commas, semicolons and new lines; lower-cased and de-duplicated.
+     *
+     * @return string[]
+     */
+    private function keywordList(mixed $keywords): array
+    {
+        $list = [];
+        foreach ((array) $keywords as $entry) {
+            foreach (preg_split('/[,;\n\r]+/u', (string) $entry, -1, PREG_SPLIT_NO_EMPTY) as $part) {
+                $part = mb_strtolower(trim($part));
+                if ($part !== '') {
+                    $list[$part] = true;
+                }
+            }
+        }
+
+        return array_keys($list);
+    }
+
+    /**
+     * How many different keywords the text mentions (whole words or their common forms: teach, teacher, teaching).
+     * A word in the text can satisfy only one keyword, so "teacher" does not also pay out "teaching".
+     */
+    private function keywordsFound(string $text, array $keywords): int
+    {
+        $words = $this->stems($text);
+        $used = [];
+        $found = 0;
+        foreach ($keywords as $keyword) {
+            $wanted = $this->stems($keyword);
+            $span = count($wanted);
+            if (! $span) {
+                continue;
+            }
+            for ($start = 0; $start + $span <= count($words); $start++) {
+                $fits = true;
+                foreach ($wanted as $offset => $stem) {
+                    if (isset($used[$start + $offset]) || ! $this->sameStem($words[$start + $offset], $stem)) {
+                        $fits = false;
+                        break;
+                    }
+                }
+                if ($fits) {
+                    for ($offset = 0; $offset < $span; $offset++) {
+                        $used[$start + $offset] = true;
+                    }
+                    $found++;
+                    break;
+                }
+            }
+        }
+
+        return $found;
+    }
+
+    /** @return string[] the words of a text, lower-cased and cut back to their stem */
+    private function stems(string $text): array
+    {
+        $words = preg_split('/[^\p{L}\p{N}]+/u', mb_strtolower($text), -1, PREG_SPLIT_NO_EMPTY) ?: [];
+
+        return array_map(fn (string $word) => $this->stem($word), $words);
+    }
+
+    private function stem(string $word): string
+    {
+        if (mb_strlen($word) <= 4) {
+            return $word;
+        }
+        foreach (['ations', 'ation', 'ments', 'ment', 'ating', 'ated', 'ates', 'ings', 'ing', 'ers', 'er', 'ies', 'ied', 'ed', 'es', 's', 'ly'] as $suffix) {
+            if (str_ends_with($word, $suffix) && mb_strlen($word) - mb_strlen($suffix) >= 4) {
+                return mb_substr($word, 0, mb_strlen($word) - mb_strlen($suffix));
+            }
+        }
+
+        return $word;
+    }
+
+    /** Equal stems, or one stem that begins the other when it is long enough to be a real word start (facilit / facilitat). */
+    private function sameStem(string $a, string $b): bool
+    {
+        if ($a === $b) {
+            return true;
+        }
+        [$short, $long] = mb_strlen($a) <= mb_strlen($b) ? [$a, $b] : [$b, $a];
+
+        return mb_strlen($short) >= 5 && str_starts_with($long, $short);
     }
 
     private function answerMap(array $answers): array

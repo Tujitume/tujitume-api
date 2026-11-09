@@ -206,6 +206,7 @@ class ApplicationRoundProgressController extends Controller
                 'display_order' => $question->display_order,
                 'response' => $response?->response,
                 'response_file' => $response?->file_path,
+                'response_files' => $response?->allFilePaths() ?? [],
                 'answered' => $response !== null,
                 'answered_at' => $response?->created_at,
             ];

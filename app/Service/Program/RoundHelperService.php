@@ -52,6 +52,7 @@ class RoundHelperService
                 'display_order' => $q->display_order,
                 'response' => $res?->response,
                 'response_file' => $res?->file_path,
+                'response_files' => $res?->allFilePaths() ?? [],
                 'answered' => $res !== null,
                 'answered_at' => $res?->created_at,
             ];

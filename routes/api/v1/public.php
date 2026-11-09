@@ -18,6 +18,7 @@ use App\Http\Controllers\Misc\AmariController;
 use App\Http\Controllers\Misc\EventController;
 use App\Http\Controllers\Misc\LookupController;
 use App\Http\Controllers\Misc\MiscController;
+use App\Http\Controllers\Misc\RealtimeConfigController;
 use App\Http\Controllers\Misc\SearchController;
 use App\Http\Controllers\Misc\SupportController;
 use App\Http\Controllers\Organizations\ProgramIndustryController;
@@ -31,6 +32,8 @@ use App\Http\Controllers\Service\ServiceMilestoneController;
 // program supplier confirm
 Route::get('program/disbursements/{disbursement}/supplier-confirm', [ProgramDisbursementController::class, 'supplierConfirm']);
 
+// How a browser opens the real-time connection (public values only), so the frontend needs no .env for it
+Route::get('/config/realtime', [RealtimeConfigController::class, 'show']);
 Route::get('/locations/{query}', [SearchController::class, 'locations']);
 Route::get('/get-conversion-rate/{base}', [WalletController::class, 'conversion_rate']);
 Route::get('all-events', [EventController::class, 'browse']);

@@ -18,6 +18,8 @@ class MatchController extends Controller
             'round_answers.*.question_id' => 'required_with:round_answers|integer',
             'round_answers.*.response' => 'nullable',
             'round_answers.*.file' => 'nullable|file|max:10240',
+            'round_answers.*.files' => 'nullable|array|max:'.RoundMatchScore::MAX_FILES_PER_QUESTION,
+            'round_answers.*.files.*' => 'file|max:10240',
         ]);
         $program = Program::findOrFail($program_id);
         $answers = $validated['round_answers'] ?? [];
@@ -27,14 +29,16 @@ class MatchController extends Controller
             foreach ($answers as $index => &$answer) {
                 $question = RoundCustomQuestion::where('round_id', $round->id)
                     ->findOrFail($answer['question_id']);
-                $file = $request->file("round_answers.{$index}.response")
-                    ?? $request->file("round_answers.{$index}.file");
-                if ($file) {
-                    if ($question->question_type !== 'file_upload' || $file->getSize() > 10 * 1024 * 1024
-                        || ! app(RoundMatchScore::class)->fileMatchesQuestionOptions($file, (array) ($question->options ?? []))) {
+                $files = array_values(array_filter([
+                    $request->file("round_answers.{$index}.response") ?? $request->file("round_answers.{$index}.file"),
+                    ...(array) $request->file("round_answers.{$index}.files"),
+                ]));
+                if ($files) {
+                    if ($question->question_type !== 'file_upload') {
                         abort(422, 'The uploaded file is not allowed for this question.');
                     }
-                    $answer['response'] = $file;
+                    app(RoundMatchScore::class)->validateFileSet($files, $question, 'round_answers');
+                    $answer['response'] = $files[0];
                 }
             }
             unset($answer);
@@ -44,7 +48,7 @@ class MatchController extends Controller
 
         $applicantBreakdown = collect($computed['breakdown'] ?? [])
             ->map(function ($item) {
-                $status = ($item['status'] ?? null) === 'matched' ? 'matched' : 'not matched';
+                $status = in_array($item['status'] ?? null, ['matched', 'partial'], true) ? $item['status'] : 'not matched';
                 return [
                     'question_id' => $item['question_id'] ?? null,
                     'question_text' => $item['question_text'] ?? null,
