@@ -67,6 +67,14 @@ class RegisterService
                 'image' => $uploadedImage,
             ]);
 
+            // Applications are claimable only after this exact email completed the existing OTP flow.
+            if (\App\Models\EmailVerificationCode::whereRaw('LOWER(email) = ?', [strtolower($user->email)])
+                ->whereNotNull('verified_at')->exists()) {
+                \App\Models\Programs\ProgramApplication::whereNull('user_id')
+                    ->whereRaw('LOWER(email) = ?', [strtolower($user->email)])
+                    ->update(['user_id' => $user->id]);
+            }
+
             UserSetting::create(['user_id' => $user->id]);
 
             DB::commit();

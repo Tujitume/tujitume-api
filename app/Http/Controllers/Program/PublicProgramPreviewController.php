@@ -4,6 +4,10 @@ namespace App\Http\Controllers\Program;
 
 use App\Http\Controllers\Controller;
 use App\Models\Programs\Program;
+use App\Models\Programs\Rounds\RoundCustomQuestion;
+use App\Service\Misc\ErrorLogService;
+use App\Support\ApiContract;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 
@@ -12,41 +16,53 @@ class PublicProgramPreviewController extends Controller
     /** Return only fields intended for a public program detail page. */
     public function details(string $publicId)
     {
-        $program = Program::query()
-            ->where('public_id', $publicId)
-            ->where('status', 'published')
-            ->with(['owner', 'rounds' => fn ($query) => $query->orderBy('round_number')])
-            ->first();
+        try {
+            $program = Program::with([
+                'rounds.questions',
+            ])
+                ->withCount('liked')
+                ->where('public_id', $publicId)
+                ->where('status', 'published')
+                ->first();
 
-        abort_unless($program, 404);
+            //  Handle not found
+            if (!$program) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Program not found'
+                ], 404);
+            }
 
-        return response()->json(['data' => $program ])->header('Cache-Control', 'public, max-age=300'); 
+            //  No extra query (use loaded relation)
+            $round1 = $program->rounds->first();
+            if ($round1 && $round1->relationLoaded('questions')) {
+                $round1->setRelation('questions', $round1->questions->map(
+                    fn (RoundCustomQuestion $question) => $question->applicantView()
+                ));
+            }
+            //  Better naming (no overwrite)
+            if (Auth::check()) {
+                $program->liked = $program->liked()
+                    ->where('user_id', Auth::id())
+                    ->exists();
+            }
 
-        return response()->json(['data' => ['program' => [
-            'public_id' => $program->public_id,
-            'program_title' => $program->program_title,
-            'description' => $program->description ?: ($program->message ?? null),
-            'organization_logo' => $program->organization_logo,
-            'organization_name' => $program->owner?->display_name,
-            'owner_website' => $program->owner->website ?? null,
-            'total_program_amount' => $program->total_program_amount,
-            'funding_per_business' => $program->funding_per_business,
-            'currency' => $program->currency,
-            'max_awardees' => $program->max_awardees,
-            'disbursement_type' => $program->disbursement_type,
-            'status' => $program->status,
-            'application_start_date' => $program->application_start_date,
-            'application_deadline' => $program->application_deadline,
-            'rounds' => $program->rounds->map(fn ($round) => [
-                'round_number' => $round->round_number,
-                'round_name' => $round->round_name,
-                'open_date' => $round->open_date,
-                'close_date' => $round->close_date,
-                'review_period_end' => $round->review_period_end,
-                'announcement_date' => $round->announcement_date,
-                'required_documents' => $round->required_documents,
-            ])->values(),
-        ]]])->header('Cache-Control', 'public, max-age=300');
+            return ApiContract::itemResponse(
+                'Program fetched successfully.',
+                'program',
+                $program,
+                ['application_round' => $round1],
+                ['program_data' => $program, 'application_round' => $round1],
+            );
+        } catch (\Exception $e) {
+            ErrorLogService::report($e, [
+                'input' => request()->except(['password', 'token']),
+            ]);
+
+            return response()->json([
+                'message' => 'Something went wrong, please try again later.'
+            ], 500);
+        }
     }
 
     public function show(Request $request, string $publicId)

@@ -313,9 +313,7 @@ class ProgramApplicationController extends Controller
         DB::beginTransaction();
 
         try{
-            if (auth()->user()?->user_type_id !== 1) {
-                return response()->json(['message' => 'Only business owners can submit applications.'], 403);
-            }
+           
 
             // Closed once the first round is over and applicants have moved to the next round
             if ($closedReason = $program->applicationsClosedReason()) {
@@ -323,11 +321,10 @@ class ProgramApplicationController extends Controller
             }
 
             $validated = $request->validate([
-                //'business_id' => 'required|exists:listings,id',
                 'startup_name' => 'required|string|max:255',
                 'contact_person_name' => 'required|string|max:100',
                 'contact_person_email' => 'required|email|max:100',
-                'sector' => 'required|string|max:100',
+                'sector' => 'nullable|string|max:100',
                 'headquarters_location' => 'required|string|max:255',
                 'total_amount_requested' => 'required|numeric|min:0|max:' . $program->funding_per_business,
                 'stage' => 'nullable|string|max:100',
@@ -355,7 +352,9 @@ class ProgramApplicationController extends Controller
 
             // Auto-set fields
             $validated['program_id'] = $program->id;  $validated['program_owner_id'] = $program->user_id;
-            $validated['user_id'] = auth()->id(); $validated['status'] = 'pending';
+            $validated['user_id'] = auth()->id();
+            $validated['email'] = $validated['contact_person_email'];
+            $validated['status'] = 'pending';
             // New applications always enter the first round; later rounds only take advanced applicants
             $validated['current_round_id'] = $program->applicationRound()?->id;
 
@@ -472,14 +471,14 @@ class ProgramApplicationController extends Controller
                 'application_id' => $application->id,
                 'round_id'       => $program->grant_type === 'multi_round' ? $application->current_round_id : null,
             ]);
-            $this->notification->create($program->user_id, $application->user_id, $text, $pitchLink, 'program');
+            $this->notification->create($program->user_id, $application->user_id ?? $program->user_id, $text, $pitchLink, 'program');
 
             // Commit changes
             DB::commit();
 
             // E M A I L
             $sme = Auth::user();
-            $smeName = $sme->first_name. ' '. $sme->last_name;
+            $smeName = $sme ? trim($sme->first_name . ' ' . $sme->last_name) : $application->contact_person_name;
             $go_email = User::where('id', $program->user_id)->value('email');
 
             // The email button opens this exact application, same as the in-app notification
@@ -487,8 +486,21 @@ class ProgramApplicationController extends Controller
                     'action_url' => \App\Service\Notification\EmailLink::url($pitchLink), 'action_label' => 'Review Pitch' ];
             $this->emailService->send('New Program Pitch', 'opportunities.program_pitch', $info, $go_email);
 
+            if (!$application->user_id) {
+                try {
+                    $signupUrl = rtrim(config('app.frontend_url', 'https://beta.tujitume.com'), '/') . '/?registerModal=open';
+                    $this->emailService->send('Application submitted successfully', 'programs.guest_application_received', [
+                        'program_title' => $program->program_title,
+                        'startup_name' => $application->startup_name,
+                        'signup_url' => $signupUrl,
+                    ], $application->email);
+                } catch (\Throwable $e) {
+                    ErrorLogService::report($e, ['application_id' => $application->id]);
+                }
+            }
+
             // And a thank-you to the applicant, from the organization (best effort: never fails the submission)
-            try {
+            if ($sme) try {
                 $round = $program->applicationRound();
                 $this->programNotification->send('application.received', [$sme], [
                     'program_id' => $program->id,

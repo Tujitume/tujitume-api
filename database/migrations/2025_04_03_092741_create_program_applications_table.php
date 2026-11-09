@@ -16,13 +16,14 @@ return new class extends Migration
 
             $table->unsignedBigInteger('program_id');
             $table->unsignedBigInteger('business_id')->nullable();
-            $table->unsignedBigInteger('user_id');                      // applicant (business owner)
+            $table->unsignedBigInteger('user_id')->nullable();          // applicant (business owner; null for guests)
             $table->unsignedBigInteger('program_owner_id');               // program admin reviewing this
 
             // Business / startup profile
             $table->string('startup_name', 255);
             $table->string('contact_person_name', 100)->nullable();
             $table->string('contact_person_email', 100)->nullable();
+            $table->string('email', 100)->nullable();                    // applicant email used for guest account linking
             $table->string('sector', 100);
             $table->string('headquarters_location', 255);
             $table->string('stage', 100)->nullable();

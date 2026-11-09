@@ -73,7 +73,6 @@ Route::prefix('/programs')->middleware(['program', 'program.response'])->group(f
     Route::get('/{program_id}/sme/applications', [ProgramApplicationController::class, 'application_info']);
     Route::get('/my-applications/awarded', [ProgramApplicationController::class, 'smeAwarded']);
 
-    Route::post('/{program}/applications', [ProgramApplicationController::class, 'store_application']);
     Route::post('applications/{pitch}/accept', [ProgramApplicationController::class, 'accept']);
     // Route::post('applications/{pitch}/reject', [ProgramApplicationController::class, 'reject']);
 

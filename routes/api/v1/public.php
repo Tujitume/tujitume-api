@@ -23,6 +23,7 @@ use App\Http\Controllers\Misc\SearchController;
 use App\Http\Controllers\Misc\SupportController;
 use App\Http\Controllers\Organizations\ProgramIndustryController;
 use App\Http\Controllers\Program\ProgramController;
+use App\Http\Controllers\Program\ProgramApplicationController;
 use App\Http\Controllers\Program\PublicProgramPreviewController;
 use App\Http\Controllers\Program\ProgramDisbursementController;
 use App\Http\Controllers\Service\BookingController;
@@ -40,6 +41,8 @@ Route::get('all-events', [EventController::class, 'browse']);
 Route::get('/home/programs', [ProgramController::class, 'index']);
 Route::get('/public/programs/{publicId}', [PublicProgramPreviewController::class, 'details'])
     ->where('publicId', '[0-9A-HJKMNP-TV-Z]{26}')
+    ->middleware('throttle:public');
+Route::post('/programs/{program}/applications', [ProgramApplicationController::class, 'store_application'])
     ->middleware('throttle:public');
 
 Route::get('program/reject-invitation/{email}', [ProgramController::class, 'reject_invitation'])
