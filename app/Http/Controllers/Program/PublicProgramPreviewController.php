@@ -80,6 +80,12 @@ class PublicProgramPreviewController extends Controller
         $program->owner_website = $program->owner->website ?? null;
 
         $url = 'https://tujitume.com/programs/' . rawurlencode($program->public_id);
+        // The share link carries a version that changes whenever the program is edited. LinkedIn keeps what it read
+        // for a link for days; a new version makes it a new link, so it reads the current name and description.
+        $version = preg_replace('/\D/', '', (string) $request->query('v', ''));
+        if ($version !== '') {
+            $url .= '?v=' . substr($version, 0, 20);
+        }
         $title = $program->program_title ?: 'Program opportunity';
         $description = $program->description ?: ($program->message ?: 'View this program opportunity on Tujitume.');
         $requestMessage = $request->query('share_message', '');
@@ -89,7 +95,7 @@ class PublicProgramPreviewController extends Controller
             ->limit(1000, '')
             ->toString();
         $ogDescription = $shareMessage !== '' ? Str::limit($shareMessage, 300, '') : $description;
-        $previewUrl = $shareMessage !== '' ? $url . '?share_message=' . rawurlencode($shareMessage) : $url;
+        $previewUrl = $shareMessage !== '' ? $url . ($version !== '' ? '&' : '?') . 'share_message=' . rawurlencode($shareMessage) : $url;
         $image = $program->organization_logo ?: 'https://tujitume.com/pwa-light-512x512.png';
         $firstRound = $program->rounds->first();
         $isOpen = in_array($program->status, ['published', 'open'], true)
