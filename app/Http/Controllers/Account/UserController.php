@@ -372,6 +372,7 @@ class UserController extends Controller
                 'first_name' => 'sometimes|required|string|max:100',
                 'last_name' => 'sometimes|required|string|max:100',
                 'display_name' => 'sometimes|required|string|max:100',
+                'organization_name' => 'sometimes|required|string|max:150',
                 'country' => 'sometimes|required|string|max:100',
                 'city' => 'sometimes|required|string|max:100',
                 'website' => 'sometimes|required|url|max:255',
@@ -382,7 +383,15 @@ class UserController extends Controller
             ]);
 
             $user = Auth::user();
-            $data = collect($validated)->except('image')->filter()->all();
+            $data = collect($validated)->except(['image', 'organization_name'])->filter()->all();
+
+            // The owner of an organization account can rename the organization itself (team members cannot)
+            if (isset($validated['organization_name']) && $user->organization_id) {
+                $organization = $user->organization;
+                if ($organization && (int) $organization->owner_user_id === (int) $user->id) {
+                    $organization->update(['name' => $validated['organization_name']]);
+                }
+            }
 
             if ($request->hasFile('image')) {
                 $newImage = $this->imageUpload->save($request->file('image'), 'images/users');
@@ -556,9 +565,11 @@ class UserController extends Controller
             TeamMemberNotifier::notify(
                 $teamMember,
                 $user,
-                match ($membership->status) { 'pending' => 'reinvited', 'active' => 'activated', default => 'revoked' },
+                match ($membership->status) {
+                    'pending' => 'reinvited', 'active' => 'activated', default => 'revoked'
+                },
                 $membership->role?->name ?? 'Team member',
-                $invitationToken ? rtrim(config('app.app_url'), '/') . '/organization-invitations/accept?token=' . $invitationToken : null,
+                $invitationToken ? rtrim(config('app.app_url'), '/').'/organization-invitations/accept?token='.$invitationToken : null,
             );
 
             return response()->json([
@@ -587,7 +598,7 @@ class UserController extends Controller
             'phone' => ['required', 'string', 'max:20'],
             'password' => ['required', 'confirmed', Password::min(8)->mixedCase()->numbers()],
         ]);
- 
+
         try {
 
             $user = null;
@@ -606,7 +617,6 @@ class UserController extends Controller
                 if ($image) {
                     $uploadedImage = $this->imageUpload->save($image, 'images/users');
                 }
-
 
                 // External Reviewer
                 if (! $membership) {
@@ -636,8 +646,7 @@ class UserController extends Controller
                 }
 
                 // Organization User
-                if ($membership->status !== 'pending' || $membership->invitation_expires_at?->isPast()) 
-                {
+                if ($membership->status !== 'pending' || $membership->invitation_expires_at?->isPast()) {
                     abort(422, 'This invitation is invalid or has expired.');
                 }
 
