@@ -493,6 +493,8 @@ class ProgramApplicationController extends Controller
                         'startup_name' => $application->startup_name,
                         'application_uid' => $application->uid,
                         'tracking_url' => \App\Service\Program\ApplicationTrackingLink::url($application),
+                        // An email that already belongs to an account is told to sign in, not to create one
+                        'has_account' => \App\Models\Auth\User::whereRaw('LOWER(email) = ?', [strtolower((string) $application->email)])->exists(),
                     ], $application->email);
                 } catch (\Throwable $e) {
                     ErrorLogService::report($e, ['application_id' => $application->id]);

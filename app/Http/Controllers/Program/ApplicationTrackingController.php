@@ -42,6 +42,7 @@ class ApplicationTrackingController extends Controller
 
         if ($application->user_id === null) {
             $application->forceFill(['user_id' => $user->id])->save();
+            $application->adoptApplicantName($user);
         } elseif ((int) $application->user_id !== (int) $user->id) {
             return response()->json(['message' => 'This application is already linked to another account.'], 409);
         }

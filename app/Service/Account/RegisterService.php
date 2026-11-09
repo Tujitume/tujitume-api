@@ -72,7 +72,11 @@ class RegisterService
                 ->whereNotNull('verified_at')->exists()) {
                 \App\Models\Programs\ProgramApplication::whereNull('user_id')
                     ->whereRaw('LOWER(email) = ?', [strtolower($user->email)])
-                    ->update(['user_id' => $user->id]);
+                    ->get()
+                    ->each(function ($application) use ($user) {
+                        $application->forceFill(['user_id' => $user->id])->save();
+                        $application->adoptApplicantName($user);
+                    });
             }
 
             UserSetting::create(['user_id' => $user->id]);

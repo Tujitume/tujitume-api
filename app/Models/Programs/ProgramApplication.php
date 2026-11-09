@@ -46,6 +46,28 @@ class ProgramApplication extends Model
         });
     }
 
+    /**
+     * A guest application is named after the email (the part before the @) because no name was asked.
+     * Once it belongs to an account, use the account holder's real name instead.
+     */
+    public function adoptApplicantName($user): void
+    {
+        $guess = strtolower(explode('@', (string) $this->email)[0]);
+        $name = trim(implode(' ', array_filter([$user->first_name ?? null, $user->last_name ?? null], fn ($v) => $v && $v !== 'null')));
+        if ($name === '') {
+            return;
+        }
+        $changes = [];
+        foreach (['startup_name', 'contact_person_name'] as $field) {
+            if (strtolower((string) $this->{$field}) === $guess) {
+                $changes[$field] = $name;
+            }
+        }
+        if ($changes) {
+            $this->forceFill($changes)->save();
+        }
+    }
+
     protected $casts = [
 	'social_impact_areas' => 'array',
 	'score_breakdown' => 'array',
