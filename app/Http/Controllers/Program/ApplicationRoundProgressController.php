@@ -270,8 +270,9 @@ class ApplicationRoundProgressController extends Controller
             $errors['close_date'] = 'Close date must be after open date.';
         }
 
-        if ($round->advancement_mode == 'score_threshold' && empty($round->scoring_criteria)) {
-            $errors['scoring_criteria'] = 'Round must have scoring criteria defined.';
+        // A round cannot open without at least one scoring criterion
+        if (empty($round->scoring_criteria)) {
+            $errors['scoring_criteria'] = 'Add at least one scoring criterion before publishing.';
         }
 
         if ($round->advancement_mode === 'score_threshold' && !$round->score_threshold) {
