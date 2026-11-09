@@ -232,7 +232,21 @@ class ProviderWorkController extends Controller
                             ->orWhere('first_name', 'like', $like)
                             ->orWhere('last_name', 'like', $like)
                             ->orWhereRaw("CONCAT(first_name, ' ', last_name) LIKE ?", [$like])
-                            ->orWhere('city', 'like', $like);
+                            ->orWhere('city', 'like', $like)
+                            // ...and by what they offer: a service name, or its category ("business coach", "coaching", "project")
+                            ->orWhereIn('id', Services::whereIn('category', ['project_management', 'business_coaching'])
+                                ->where(function ($services) use ($like, $search) {
+                                    $services->where('name', 'like', $like)
+                                        ->orWhere('category', 'like', '%' . str_replace(' ', '_', strtolower($search)) . '%');
+                                    // A few plain words people type for the two categories
+                                    if (preg_match('/coach/i', $search)) {
+                                        $services->orWhere('category', 'business_coaching');
+                                    }
+                                    if (preg_match('/project|manage/i', $search)) {
+                                        $services->orWhere('category', 'project_management');
+                                    }
+                                })
+                                ->select('user_id'));
                     });
                 })
                 ->orderBy('first_name')
