@@ -46,10 +46,15 @@ class GoogleFormReader
         }
 
         $rows = [];
+        $textItems = [];
         foreach ($items as $item) {
             $row = $this->row($item);
             if ($row) {
                 $rows[] = ['rowNumber' => count($rows) + 1, 'cells' => $row];
+                // Short and long text questions are the ones whose real type Amari can work out from the title
+                if (in_array($item[3] ?? null, [0, 1], true)) {
+                    $textItems[count($rows) - 1] = ['title' => $row['text'], 'long' => ($item[3] ?? null) === 1];
+                }
             }
             if (count($rows) >= self::MAX_ROWS) {
                 break;
@@ -57,6 +62,10 @@ class GoogleFormReader
         }
         if (! $rows) {
             throw new InvalidArgumentException('form_empty');
+        }
+
+        foreach ((new GoogleFormTypeGuesser())->guess($textItems) as $index => $type) {
+            $rows[$index]['cells']['type'] = $type;
         }
 
         return ['title' => $data[3] ?? ($data[1][8] ?? null), 'rows' => $rows];
@@ -83,6 +92,22 @@ class GoogleFormReader
         }
 
         return preg_replace('#/(edit|viewform)?([?\#].*)?$#', '/viewform', $url);
+    }
+
+    /** A short answer whose title says what it is (an email, a phone number, a website) gets that specific type. */
+    private function shortAnswerType(string $title): string
+    {
+        if (preg_match('/e-?mail/i', $title)) {
+            return 'Email';
+        }
+        if (preg_match('/\b(mobile|phone|whatsapp|telephone|tel)\b/i', $title)) {
+            return 'Phone number';
+        }
+        if (preg_match('/\b(website|web site|url|link)\b/i', $title)) {
+            return 'Website link';
+        }
+
+        return self::TYPES[0];
     }
 
     private function row(array $item): ?array
@@ -133,7 +158,7 @@ class GoogleFormReader
 
         $row = [
             'text' => $title,
-            'type' => self::TYPES[$code],
+            'type' => $code === 0 ? $this->shortAnswerType($title) : self::TYPES[$code],
             'required' => $required ? 'Yes' : 'No',
             'options' => $options,
             'score' => 'No',
