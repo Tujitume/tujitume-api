@@ -32,6 +32,7 @@ use App\Http\Controllers\Program\Rounds\ApplicationScoreController;
 use App\Http\Controllers\Program\Rounds\ProgramRoundController;
 use App\Http\Controllers\Program\Rounds\RoundDocumentController;
 use App\Http\Controllers\Program\Rounds\RoundQuestionController;
+use App\Http\Controllers\Program\GoogleFormImportController;
 use App\Http\Controllers\Program\Rounds\RoundReviewerController;
 use App\Http\Controllers\Program\ReviewerOrderController;
 use App\Http\Controllers\Program\SupplierDirectoryController;
@@ -164,6 +165,7 @@ Route::prefix('/programs')->middleware(['program', 'program.response'])->group(f
     Route::get('applications/{application}/rounds', [ApplicationRoundProgressController::class, 'index']);
 
     // Questions & Answers
+    Route::post('questions/import/google-form', [GoogleFormImportController::class, 'preview'])->middleware('throttle:20,1');
     Route::apiResource('rounds/{round}/questions', RoundQuestionController::class)->shallow();
     Route::patch('questions/{question}', [RoundQuestionController::class, 'update']); // added by owen
     Route::delete('questions/{question}', [RoundQuestionController::class, 'destroy']);

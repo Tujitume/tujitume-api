@@ -17,6 +17,7 @@ use App\Http\Controllers\Misc\AiController;
 use App\Http\Controllers\Misc\AmariController;
 use App\Http\Controllers\Misc\EventController;
 use App\Http\Controllers\Misc\LookupController;
+use App\Http\Controllers\Misc\MatchController;
 use App\Http\Controllers\Misc\MiscController;
 use App\Http\Controllers\Misc\RealtimeConfigController;
 use App\Http\Controllers\Misc\SearchController;
@@ -40,6 +41,7 @@ Route::get('/locations/{query}', [SearchController::class, 'locations']);
 Route::get('/get-conversion-rate/{base}', [WalletController::class, 'conversion_rate']);
 Route::get('all-events', [EventController::class, 'browse']);
 Route::get('/home/programs', [ProgramController::class, 'index']);
+Route::post('/public/programs/{publicId}/match-score', [MatchController::class, 'scorePublic'])->middleware('throttle:30,1');
 Route::get('/public/programs/{publicId}', [PublicProgramPreviewController::class, 'details'])
     ->where('publicId', '[0-9A-HJKMNP-TV-Z]{26}')
     ->middleware('throttle:public');

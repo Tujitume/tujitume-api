@@ -11,6 +11,14 @@ use Illuminate\Http\Request;
 
 class MatchController extends Controller
 {
+    // A guest works out the score before applying: same calculation, the program is found by its public id
+    public function scorePublic(Request $request, string $publicId)
+    {
+        $program = Program::where('public_id', $publicId)->where('status', 'published')->firstOrFail();
+
+        return $this->score($request, $program->id);
+    }
+
     public function score(Request $request, $program_id)
     {
         $validated = $request->validate([
