@@ -93,6 +93,7 @@ class ProgramApplicationController extends Controller
             return response()->json([
                 'pitch' => [
                     ...$pitch->toArray(),
+                    ...$pitch->applicantProfile(),
                     'my_review_assignment' => $myReviewAssignment,
                     'status' => [
                         'value' => $pitch->status,

@@ -273,7 +273,7 @@ class ProgramRoundController extends Controller
             ->unique()
             ->values();
 
-        $applications = ProgramApplication::with('reviewer')->whereIn('id', $appIds)->get();
+        $applications = ProgramApplication::with(['reviewer', 'user:id,first_name,last_name,image'])->whereIn('id', $appIds)->get();
 
         // Stats always from history (accurate regardless of round state)
         $history = ApplicationRoundHistory::where('round_id', $round_id)->get();
@@ -341,6 +341,7 @@ class ProgramRoundController extends Controller
 
             return [
                 ...$app->toArray(),
+                ...$app->applicantProfile(),
                 'reviewers' => $assignments->map(fn ($assignment) => [
                     'user_id' => $assignment->reviewer_id,
                     'name' => trim(($assignment->reviewer?->first_name ?? '') . ' ' . ($assignment->reviewer?->last_name ?? '')),

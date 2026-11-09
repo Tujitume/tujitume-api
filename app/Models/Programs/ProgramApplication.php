@@ -68,6 +68,21 @@ class ProgramApplication extends Model
         }
     }
 
+    /**
+     * Who the applicant is, for lists and headers: the account holder's real name and photo once the application belongs
+     * to an account (and is not a business's). A guest application keeps the name given when applying.
+     */
+    public function applicantProfile(): array
+    {
+        $user = $this->business_id ? null : $this->user;
+        $name = $user ? trim(implode(' ', array_filter([$user->first_name, $user->last_name], fn ($v) => $v && $v !== 'null'))) : '';
+
+        return [
+            'applicant_name' => $name !== '' ? $name : $this->startup_name,
+            'applicant_image' => $user?->image,
+        ];
+    }
+
     protected $casts = [
 	'social_impact_areas' => 'array',
 	'score_breakdown' => 'array',
