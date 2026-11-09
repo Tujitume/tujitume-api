@@ -33,6 +33,19 @@ class ProgramApplication extends Model
 
     protected $guarded = [];
 
+    // Every application gets a short reference (UID) the applicant can quote and track
+    protected static function booted(): void
+    {
+        static::creating(function (self $application) {
+            if (!$application->uid) {
+                do {
+                    $uid = 'APP-' . strtoupper(\Illuminate\Support\Str::random(8));
+                } while (static::where('uid', $uid)->exists());
+                $application->uid = $uid;
+            }
+        });
+    }
+
     protected $casts = [
 	'social_impact_areas' => 'array',
 	'score_breakdown' => 'array',

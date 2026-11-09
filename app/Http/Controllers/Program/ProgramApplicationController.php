@@ -352,7 +352,7 @@ class ProgramApplicationController extends Controller
 
             // Auto-set fields
             $validated['program_id'] = $program->id;  $validated['program_owner_id'] = $program->user_id;
-            $validated['user_id'] = auth()->id();
+            $validated['user_id'] = auth('sanctum')->id(); // empty for a guest: no account is needed to apply
             $validated['email'] = $validated['contact_person_email'];
             $validated['status'] = 'pending';
             // New applications always enter the first round; later rounds only take advanced applicants
@@ -488,11 +488,11 @@ class ProgramApplicationController extends Controller
 
             if (!$application->user_id) {
                 try {
-                    $signupUrl = rtrim(config('app.frontend_url', 'https://beta.tujitume.com'), '/') . '/?registerModal=open';
                     $this->emailService->send('Application submitted successfully', 'programs.guest_application_received', [
                         'program_title' => $program->program_title,
                         'startup_name' => $application->startup_name,
-                        'signup_url' => $signupUrl,
+                        'application_uid' => $application->uid,
+                        'tracking_url' => \App\Service\Program\ApplicationTrackingLink::url($application),
                     ], $application->email);
                 } catch (\Throwable $e) {
                     ErrorLogService::report($e, ['application_id' => $application->id]);
@@ -520,6 +520,7 @@ class ProgramApplicationController extends Controller
             return response()->json([
                 'message' => 'Application submitted successfully.',
                 'data' => $application->fresh(),
+                'uid' => $application->uid,
             ], 201);
         }
         catch (ValidationException $e) {

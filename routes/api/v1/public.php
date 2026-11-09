@@ -24,6 +24,7 @@ use App\Http\Controllers\Misc\SupportController;
 use App\Http\Controllers\Organizations\ProgramIndustryController;
 use App\Http\Controllers\Program\ProgramController;
 use App\Http\Controllers\Program\ProgramApplicationController;
+use App\Http\Controllers\Program\ApplicationTrackingController;
 use App\Http\Controllers\Program\PublicProgramPreviewController;
 use App\Http\Controllers\Program\ProgramDisbursementController;
 use App\Http\Controllers\Service\BookingController;
@@ -44,6 +45,11 @@ Route::get('/public/programs/{publicId}', [PublicProgramPreviewController::class
     ->middleware('throttle:public');
 Route::post('/programs/{program}/applications', [ProgramApplicationController::class, 'store_application'])
     ->middleware('throttle:public');
+// "Track Your Application": the link in the confirmation email (HMAC token), then linking it to an account
+Route::get('/public/applications/track/{uid}', [ApplicationTrackingController::class, 'show'])
+    ->middleware('throttle:public');
+Route::post('/applications/claim/{uid}', [ApplicationTrackingController::class, 'claim'])
+    ->middleware(['auth:sanctum', 'throttle:public']);
 
 Route::get('program/reject-invitation/{email}', [ProgramController::class, 'reject_invitation'])
     ->name('reject.invitation')

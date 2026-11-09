@@ -3,8 +3,9 @@
     <div style="padding:24px">
         <p>Hello {{ $startup_name }},</p>
         <p>Your application to <strong>{{ $program_title }}</strong> was submitted successfully.</p>
-        <p>You can sign up with this same email address to track and manage your application.</p>
-        @include('programs.partials.brand_button', ['label' => 'Sign up', 'action_url' => $signup_url])
+        <p>Your application reference: <strong>{{ $application_uid }}</strong></p>
+        <p>Use the button below to track your application. You will be asked to sign in or create an account so it appears under My Applications.</p>
+        @include('programs.partials.brand_button', ['label' => 'Track Your Application', 'url' => $tracking_url])
         @include('programs.partials.brand_footer')
     </div>
 </div>
