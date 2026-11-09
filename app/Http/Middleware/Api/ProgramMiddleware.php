@@ -35,7 +35,13 @@ class ProgramMiddleware
         // KYC verification required for POST requests
         $user->load('kycVerification');
 
-        if ( ( ($isOrgnizationUser && $role ==='super-admin') || $isEntrepreneur) && $user->kycVerification?->status !== 'verified') {
+        // An applicant can always read their own applications, verified or not: a guest who has just created an
+        // account to track an application must be able to see it (the application's own access check still applies).
+        $uri = Route::current()?->uri() ?? '';
+        $applicantRead = $isEntrepreneur && $method === 'GET'
+            && preg_match('#programs/(my-applications(/awarded)?|applications/\{id\})$#', $uri) === 1;
+
+        if ( ( ($isOrgnizationUser && $role ==='super-admin') || $isEntrepreneur) && ! $applicantRead && $user->kycVerification?->status !== 'verified') {
             return response()->json([
                 'message' => 'KYC verification is required to access program functionality.',
                 'status' => 403,
