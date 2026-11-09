@@ -38,6 +38,9 @@ use App\Http\Controllers\Program\SupplierDirectoryController;
 use App\Http\Controllers\TestData\TestApplicationGeneratorController;
 use Illuminate\Support\Facades\Route;
 
+Route::get('programs/{program_id}/sme/applications', [ProgramApplicationController::class, 'application_info']);
+
+
 Route::prefix('/programs')->middleware(['program', 'program.response'])->group(function () {
     Route::get('program-metadata', [ProgramMetadataController::class, 'index']);
     Route::get('program-metadata/{program_industry_id}', [ProgramMetadataController::class, 'index'])->whereNumber('program_industry_id');

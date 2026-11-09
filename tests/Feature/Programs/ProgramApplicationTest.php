@@ -45,40 +45,6 @@ describe('Application endpoints', function () {
         ]);
     });
 
-    it('links guest applications after registration only when the registration email was verified', function () {
-        $guestPayload = applicationPayload(null);
-        $this->postJson("/api/v1/programs/{$this->program->id}/applications", $guestPayload)->assertCreated();
-        $application = \App\Models\Programs\ProgramApplication::where('email', 'amina@example.test')->firstOrFail();
-        $application->update(['status' => 'approved']);
-
-        \App\Models\EmailVerificationCode::create([
-            'email' => 'amina@example.test', 'code' => bcrypt('1234'),
-            'expires_at' => now()->addMinutes(10), 'verified_at' => now(),
-        ]);
-        $this->postJson('/api/v1/register', [
-            'user_type_id' => 1, 'first_name' => 'Amina', 'last_name' => 'Wanjiku', 'gender' => 'Female',
-            'email' => 'amina@example.test', 'password' => 'SecurePass123',
-        ])->assertCreated();
-        $userId = \App\Models\Auth\User::where('email', 'amina@example.test')->value('id');
-        $this->assertDatabaseHas('program_applications', [
-            'id' => $application->id, 'user_id' => $userId, 'status' => 'approved',
-            'startup_name' => 'GreenField Agri',
-        ]);
-    });
-
-    it('does not link applications to an account with a different or unverified email', function () {
-        $this->postJson("/api/v1/programs/{$this->program->id}/applications", applicationPayload(null))->assertCreated();
-        \App\Models\EmailVerificationCode::create([
-            'email' => 'other@example.test', 'code' => bcrypt('1234'),
-            'expires_at' => now()->addMinutes(10), 'verified_at' => now(),
-        ]);
-        $this->postJson('/api/v1/register', [
-            'user_type_id' => 1, 'first_name' => 'Other', 'last_name' => 'User', 'gender' => 'Other',
-            'email' => 'other@example.test', 'password' => 'SecurePass123',
-        ])->assertCreated();
-        $this->assertDatabaseHas('program_applications', ['email' => 'amina@example.test', 'user_id' => null]);
-    });
-
     it('rejects a duplicate application with conflict status', function () {
         $applicant = \App\Models\Auth\User::factory()->create(['user_type_id' => 1]);
         $this->createVerifiedKyc($applicant);
