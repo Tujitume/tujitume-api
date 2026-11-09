@@ -55,8 +55,8 @@ class RegisterService
             $user = User::create([
                 'first_name' => $data['first_name'],
                 'last_name' => $data['last_name'],
-                'gender' => $data['gender'],
-                'dob' => $data['dob'],
+                'gender' => $data['gender'] ?? null,
+                'dob' => $data['dob'] ?? null,
                 'email' => $data['email'],
                 'password' => Hash::make($data['password']),
                 'phone' => $data['phone'] ?? null,

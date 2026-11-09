@@ -20,7 +20,7 @@ return [
 
     //prod
     'app_url' => env('APP_URL', 'http://localhost:81/'),
-    'frontend_url' => env('FRONTEND_URL', 'https://beta.tujitume.com'),
+    'frontend_url' => env('FRONTEND_URL', 'https://tujitume.com'),
     'api_url' => env('API_URL', 'http://127.0.0.1:8000/api/'),
     'api_base_url' => env('API_BASE_URL', 'http://127.0.0.1:8000/'),
 
