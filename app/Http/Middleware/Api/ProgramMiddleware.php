@@ -39,7 +39,7 @@ class ProgramMiddleware
         // account to track an application must be able to see it (the application's own access check still applies).
         $uri = Route::current()?->uri() ?? '';
         $applicantRead = $isEntrepreneur && $method === 'GET'
-            && preg_match('#programs/(my-applications(/awarded)?|applications/\{id\})$#', $uri) === 1;
+            && preg_match('#programs/(my-applications(/awarded)?|applications/\{(id|application)\}(/rounds)?)$#', $uri) === 1;
 
         if ( ( ($isOrgnizationUser && $role ==='super-admin') || $isEntrepreneur) && ! $applicantRead && $user->kycVerification?->status !== 'verified') {
             return response()->json([
