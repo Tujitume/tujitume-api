@@ -27,10 +27,47 @@ class AuthController extends Controller
     public function sendEmailVerification(Request $request)
     {
         $request->validate([
-            'email' => 'required|email'
+            'email' => 'required|email',
+            'first_name' => 'sometimes|nullable|string|max:255',
+            'last_name' => 'sometimes|nullable|string|max:255',
+            'dob' => 'sometimes|nullable|date',
+            'gender' => 'sometimes|nullable|in:Male,Female,Other',
         ]);
 
         $email = $request->email;
+
+        // The business registration form sends profile details with the OTP request.
+        // DOB and gender must match, and either name matching is enough to flag a possible duplicate.
+        if ($request->filled(['first_name', 'last_name', 'dob', 'gender'])) {
+            $dobInput = $request->input('dob');
+            $dob = preg_match('/^\d{2}-\d{2}-\d{4}$/', $dobInput)
+                ? \Carbon\Carbon::createFromFormat('!d-m-Y', $dobInput)
+                : \Carbon\Carbon::parse($dobInput);
+            $dobFormats = array_unique([
+                $dob->format('Y-m-d'),
+                $dob->format('d-m-Y'),
+                $dob->format('m-d-Y'),
+            ]);
+
+            $similarUser = User::query()
+                ->whereRaw('LOWER(TRIM(gender)) = ?', [strtolower(trim($request->input('gender')))])
+                ->whereIn('dob', $dobFormats)
+                ->where(function ($query) use ($request) {
+                    $query->whereRaw('LOWER(TRIM(first_name)) = ?', [strtolower(trim($request->input('first_name')))])
+                        ->orWhereRaw('LOWER(TRIM(last_name)) = ?', [strtolower(trim($request->input('last_name')))]);
+                })
+                ->orderByDesc('id')
+                ->first();
+
+            if ($similarUser) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Similar user found',
+                    'user' => $similarUser->only(['id', 'email', 'first_name', 'last_name', 'gender', 'dob']),
+                ], 200);
+            }
+        }
+
         $code = random_int(1000, 9999);
 
         // Remove previous unused codes
@@ -51,6 +88,7 @@ class AuthController extends Controller
         });
 
         return response()->json([
+            'success' => true,
             'message' => 'Verification code sent'
         ], 200);
     }
