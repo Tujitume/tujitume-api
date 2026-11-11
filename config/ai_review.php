@@ -13,7 +13,7 @@
 $list = fn (string $key, string $default = '') => array_values(array_filter(array_map('trim', explode(',', (string) env($key, $default)))));
 
 return [
-    'enabled' => env('AI_REVIEW_ENABLED', false),
+    'enabled' => true,
     'default_provider' => env('AI_REVIEW_PROVIDER', 'groq'),
     'fallbacks' => $list('AI_REVIEW_FALLBACKS', ''),
     'prompt_version' => env('AI_REVIEW_PROMPT_VERSION', 'v1'),

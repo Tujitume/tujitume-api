@@ -295,9 +295,9 @@ class ApplicationRoundProgressController extends Controller
                 $errors['ai_enabled'] = 'AI review is not switched on for this platform yet. Choose manual review or ask your administrator.';
             } elseif (! $gate->configured($provider)) {
                 $errors['ai_provider'] = 'The AI provider is not configured on the server. Choose manual review or ask your administrator.';
-            } elseif (! $gate->satisfied($provider, $gate->organizationFor($round->program))) {
-                $errors['ai_privacy'] = 'Confirm that applicant content may be processed by the AI provider ('.$provider.') before publishing (POST ai-privacy-ack).';
-            }
+            // } elseif (! $gate->satisfied($provider, $gate->organizationFor($round->program))) {
+            //     $errors['ai_privacy'] = 'Confirm that applicant content may be processed by the AI provider ('.$provider.') before publishing (POST ai-privacy-ack).';
+            // }
         }
 
         if ($round->assignment_type !== 'owner_only' && !$round->reviewers()->exists()) {

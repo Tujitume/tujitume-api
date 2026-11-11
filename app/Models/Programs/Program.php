@@ -115,6 +115,9 @@ class Program extends Model
 
         $round = $this->applicationRound();
         if (!$round) return 'No application round exists for this program.';
+        if ($round->status !== 'published') {
+            return 'Applications are not open because the first round has not been published.';
+        }
 
         $rounds = $this->relationLoaded('rounds') ? $this->rounds : $this->rounds()->get();
         $movedOn = $rounds->contains(fn ($r) => $r->round_number > $round->round_number && $r->status !== 'draft');
