@@ -306,6 +306,18 @@ class UserSeeder extends Seeder
             DB::table('users')->whereIn('id', [2])->update(['organization_id' => 1]);
             DB::table('users')->whereIn('id', [8, 14, 18])->update(['organization_id' => 2]);
 
+            DB::table('organization_user_roles')->upsert([
+                [
+                    'organization_id' => 2,
+                    'user_id' => 8,
+                    'role_id' => 10001,
+                    'status' => 'active',
+                    'accepted_at' => $now,
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ],
+            ], ['organization_id', 'user_id'], ['role_id', 'status', 'accepted_at', 'updated_at']);
+
             $kycTimestamp = now();
             DB::table('kyc_verifications')->upsert([
                 [

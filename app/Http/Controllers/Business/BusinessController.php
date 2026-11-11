@@ -103,6 +103,13 @@ class BusinessController extends Controller
 
     public function storeListing(Request $request, SpamWordChecker $spam, SpamImageChecker $spamI)
     {
+        if ($request->user()?->currentKycVerification()->value('status') !== 'verified') {
+            return response()->json([
+                'message' => 'Verify your account (KYC) before you create a business.',
+                'code' => 'kyc_required',
+            ], 403);
+        }
+
         // Payments run on LIPR: a business cannot be listed until its owner's wallet exists
         $walletOwner = User::find($request->user()->organizationOwnerId());
         if (! $walletOwner?->lipr_wallet) {

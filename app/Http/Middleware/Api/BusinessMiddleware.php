@@ -27,16 +27,6 @@ class BusinessMiddleware
         }
 
 
-        // KYC verification required
-        $user->load('kycVerification');
-
-        if ($isBusinessUser && $user->kycVerification?->status !== 'verified') {
-            return response()->json([
-                'message' => 'KYC verification is required to access business functionality.',
-                'status' => 403,
-            ], 403);
-        }
-
         // return original request
         return $next($request);
     }

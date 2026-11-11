@@ -21,7 +21,6 @@ class ProgramMiddleware
         $method = $request->method();;
         $route_name = $lastSegment = $this->getLastRouteSegment(Route::current()?->uri());
         $isOrgnizationUser = Auth::user()?->user_type_id === 4;
-        $isEntrepreneur = Auth::user()?->user_type_id === 1;
 
         $user = Auth::user();
         if (! $user) {
@@ -32,16 +31,10 @@ class ProgramMiddleware
         $user->load('organizationRole.role');
         $role = $user->organizationRole?->role?->name;
 
-        // KYC verification required for POST requests
-        $user->load('kycVerification');
-
-        // An applicant can always read their own applications, verified or not: a guest who has just created an
-        // account to track an application must be able to see it (the application's own access check still applies).
-        $uri = Route::current()?->uri() ?? '';
-        $applicantRead = $isEntrepreneur && $method === 'GET'
-            && preg_match('#programs/(my-applications(/awarded)?|applications/\{(id|application)\}(/rounds)?)$#', $uri) === 1;
-
-        if ( ( ($isOrgnizationUser && $role ==='super-admin') || $isEntrepreneur) && ! $applicantRead && $user->kycVerification?->status !== 'verified') {
+        // Organization admins must be verified to use program management. Business applicants
+        // may use program functionality, including applying, before KYC is complete.
+        if ($isOrgnizationUser && $role === 'super-admin'
+            && $user->currentKycVerification()->value('status') !== 'verified') {
             return response()->json([
                 'message' => 'KYC verification is required to access program functionality.',
                 'status' => 403,
