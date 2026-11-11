@@ -302,6 +302,7 @@ class ApplicationRoundProgressController extends Controller
             // } elseif (! $gate->satisfied($provider, $gate->organizationFor($round->program))) {
             //     $errors['ai_privacy'] = 'Confirm that applicant content may be processed by the AI provider ('.$provider.') before publishing (POST ai-privacy-ack).';
             // }
+            }
         }
 
         if ($round->assignment_type !== 'owner_only' && !$round->reviewers()->exists()) {
