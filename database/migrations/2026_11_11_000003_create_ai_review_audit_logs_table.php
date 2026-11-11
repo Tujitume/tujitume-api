@@ -4,10 +4,15 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
+// Renamed from 2027_11_06_000003_...: safe to run again on a database that already ran it under the old name.
 return new class extends Migration
 {
     public function up(): void
     {
+        if (Schema::hasTable('ai_review_audit_logs')) {
+            return;
+        }
+
         Schema::create('ai_review_audit_logs', function (Blueprint $table) {
             $table->id();
             $table->foreignId('user_id')->nullable()->constrained('users')->nullOnDelete();

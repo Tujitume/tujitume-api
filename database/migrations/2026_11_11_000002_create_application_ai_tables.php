@@ -4,11 +4,13 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
+// Renamed from 2027_11_06_000002_...: safe to run again on a database that already ran it under the old name
+// (each table and column is created only if it is missing).
 return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('application_ai_reviews', function (Blueprint $table) {
+        if (! Schema::hasTable('application_ai_reviews')) Schema::create('application_ai_reviews', function (Blueprint $table) {
             $table->id();
             $table->foreignId('application_id')->constrained('program_applications')->cascadeOnDelete();
             $table->foreignId('round_id')->constrained('program_rounds')->cascadeOnDelete();
@@ -37,7 +39,7 @@ return new class extends Migration
             $table->index(['round_id', 'status']);
         });
 
-        Schema::create('application_ai_findings', function (Blueprint $table) {
+        if (! Schema::hasTable('application_ai_findings')) Schema::create('application_ai_findings', function (Blueprint $table) {
             $table->id();
             $table->foreignId('review_id')->constrained('application_ai_reviews')->cascadeOnDelete();
             $table->string('author_type', 10)->default('ai');   // ai | human
@@ -62,7 +64,7 @@ return new class extends Migration
             $table->index(['review_id', 'dimension']);
         });
 
-        Schema::create('application_document_extractions', function (Blueprint $table) {
+        if (! Schema::hasTable('application_document_extractions')) Schema::create('application_document_extractions', function (Blueprint $table) {
             $table->id();
             $table->string('source_type', 20);                  // answer_file | round_document
             $table->unsignedBigInteger('source_id');
@@ -81,7 +83,7 @@ return new class extends Migration
             $table->unique(['source_type', 'source_id', 'file_hash'], 'doc_extractions_unique');
         });
 
-        Schema::create('ai_provider_usage', function (Blueprint $table) {
+        if (! Schema::hasTable('ai_provider_usage')) Schema::create('ai_provider_usage', function (Blueprint $table) {
             $table->id();
             $table->string('provider', 40);
             $table->string('model', 120)->nullable();
@@ -97,14 +99,24 @@ return new class extends Migration
         });
 
         Schema::table('application_scores', function (Blueprint $table) {
-            $table->string('source', 10)->default('human')->after('reviewer_id');
-            $table->foreignId('ai_review_id')->nullable()->constrained('application_ai_reviews')->nullOnDelete();
+            if (! Schema::hasColumn('application_scores', 'source')) {
+                $table->string('source', 10)->default('human')->after('reviewer_id');
+            }
+            if (! Schema::hasColumn('application_scores', 'ai_review_id')) {
+                $table->foreignId('ai_review_id')->nullable()->constrained('application_ai_reviews')->nullOnDelete();
+            }
         });
 
         Schema::table('organizations', function (Blueprint $table) {
-            $table->timestamp('ai_data_ack_at')->nullable();
-            $table->unsignedBigInteger('ai_data_ack_by')->nullable();
-            $table->string('ai_data_ack_provider', 40)->nullable();
+            if (! Schema::hasColumn('organizations', 'ai_data_ack_at')) {
+                $table->timestamp('ai_data_ack_at')->nullable();
+            }
+            if (! Schema::hasColumn('organizations', 'ai_data_ack_by')) {
+                $table->unsignedBigInteger('ai_data_ack_by')->nullable();
+            }
+            if (! Schema::hasColumn('organizations', 'ai_data_ack_provider')) {
+                $table->string('ai_data_ack_provider', 40)->nullable();
+            }
         });
     }
 
