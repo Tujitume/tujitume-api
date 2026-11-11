@@ -235,6 +235,10 @@ class ApplicationRoundProgressController extends Controller
             return response()->json(['message' => 'Unauthorized.'], 403);
         }
 
+        if($userId !== $round->program->user_id) {
+            return response()->json(['message' => 'Only the program owner can publish this round.'], 403);
+        }
+
         if ($round->status !== 'draft') {
             return response()->json([
                 'message' => $round->status === 'published'
