@@ -1,5 +1,18 @@
 # AI review runbook
 
+## Two separate AI connections (do not mix them)
+
+| | Amari (the in-app assistant) | Application review (AI-assisted / AI-only) |
+|---|---|---|
+| Used for | Chat and the guided steps in the app | Reading applications and documents, writing reports and scores |
+| Runs | In the browser calling `/api/v1/amari/chat` on the API | In queued backend jobs |
+| Key | `AMARI_AI_API_KEY` | `GROQ_API_KEY` (or the key of the provider you pick) |
+| Other settings | `AMARI_AI_URL`, `AMARI_AI_MODEL`, `AMARI_AI_PUBLIC_MODEL`, `AMARI_AI_GUARD_MODEL`, `AMARI_RATE_PER_MIN` | `AI_REVIEW_*`, `GROQ_*`, `AI_CUSTOM_*`, ... |
+| Config file | `config/services.php` (`amari`) | `config/ai_review.php` |
+| Check it | `php artisan amari:ping` | `php artisan ai-review:ping` |
+
+They share no setting, and `tests/Feature/AiConnectionsAreSeparateTest.php` fails if one ever reads the other's variables. Each needs its own line in the server's `.env`. If both use the same Groq account key they also share its per-minute limits, so a separate key for each is better. If the app says Amari is "not connected", run `php artisan amari:ping`: it prints whether `AMARI_AI_API_KEY` is set.
+
 What the AI review feature needs to run, how to switch provider, and what to do when something is wrong.
 
 ## 1. Get a free key (Groq, the default)

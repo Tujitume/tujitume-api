@@ -8,6 +8,11 @@ return new class extends Migration
 {
     public function up(): void
     {
+        // This file was renamed (2027_11_05_... -> 2026_11_12_...). A database that ran it under the old name must not run it again.
+        if (Schema::hasTable('program_metadata')) {
+            return;
+        }
+
         Schema::create('program_metadata', function (Blueprint $table) {
             $table->engine = 'InnoDB';
             $table->id();
