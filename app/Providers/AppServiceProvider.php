@@ -16,6 +16,9 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
+        // One extractor per process: it collects the notes (truncation, missing OCR) for the review being built
+        $this->app->singleton(\App\Service\AiReview\DocumentExtractor::class);
+
         //
     }
 

@@ -103,6 +103,9 @@ class RoundDocumentController extends Controller
 
             DB::commit();
 
+            // A document changed after submission: queue a fresh AI review (no-op for manual rounds)
+            \App\Service\AiReview\AiReviewDispatcher::safely(ProgramApplication::find($applicationId), true);
+
             return response()->json([
                 'message' => 'Document uploaded successfully',
                 'data' => [

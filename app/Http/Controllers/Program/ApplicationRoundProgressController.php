@@ -283,6 +283,23 @@ class ApplicationRoundProgressController extends Controller
             $errors['max_advancing'] = 'Max advancing must be set for fixed quota advancement mode.';
         }
 
+        // AI-assisted / AI-only rounds also need valid AI settings, an enabled and credentialed provider, and the privacy gate
+        if ($round->usesAi()) {
+            $config = $round->ai_review_config;
+            if (empty($config) || empty($config['dimensions'])) {
+                $errors['ai_review_config'] = 'Choose at least one area for the AI to assess (AI review criteria).';
+            }
+            $gate = app(\App\Service\AiReview\PrivacyGate::class);
+            $provider = config('ai_review.default_provider');
+            if (! config('ai_review.enabled')) {
+                $errors['ai_enabled'] = 'AI review is not switched on for this platform yet. Choose manual review or ask your administrator.';
+            } elseif (! $gate->configured($provider)) {
+                $errors['ai_provider'] = 'The AI provider is not configured on the server. Choose manual review or ask your administrator.';
+            } elseif (! $gate->satisfied($provider, $gate->organizationFor($round->program))) {
+                $errors['ai_privacy'] = 'Confirm that applicant content may be processed by the AI provider ('.$provider.') before publishing (POST ai-privacy-ack).';
+            }
+        }
+
         if ($round->assignment_type !== 'owner_only' && !$round->reviewers()->exists()) {
             $errors['reviewers'] = 'At least one reviewer must be assigned before publishing.';
         }

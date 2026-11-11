@@ -15,6 +15,9 @@ use App\Http\Controllers\Auth\DeviceController;
 use App\Http\Controllers\Auth\SessionController;
 use Illuminate\Support\Facades\DB;
 
+// Everything waiting for the signed-in person (the Pending drawer and its badge)
+Route::get('/pending-tasks', [\App\Http\Controllers\Account\PendingTasksController::class, 'index']);
+
 Route::get('/me/sessions', [SessionController::class, 'index']);
 Route::delete('/me/sessions/{id}', [SessionController::class, 'destroy']);
 Route::delete('/me/sessions', [SessionController::class, 'destroyAllExceptCurrent']);

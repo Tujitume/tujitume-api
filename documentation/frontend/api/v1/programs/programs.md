@@ -131,3 +131,8 @@ Changing the threshold changes the below-threshold flag without changing the sco
 - Round 1 scored-question points total no more than `100`. Rounds 2+ cannot score match answers.
 - `bonus_points` is not part of match-score calculation.
 - The database has no program-level custom-field scoring schema; use Round 1 questions instead.
+
+
+## AI-assisted and AI-only review
+
+A round can use `review_method` `manual` (default), `ai_assisted` or `ai_only`, chosen per round and locked after publish. See [AI review](ai-review.md) for the fields, endpoints, report format and privacy gate.

@@ -41,3 +41,7 @@ Manual assignment body:
 Round reviewer payment/order fields and payment status are documented in [Reviewer Payment](../../reviewers/README.md). Round finalization preview and payment start are documented in [Finalization](finalization.md).
 
 Checkpoint site-visit assignment, reviewer acceptance/report submission, separate owner review actions, and payment are documented in [Site Visits](../monitoring/site-visits.md).
+
+## AI-only rounds
+
+In `ai_only` rounds there are no reviewers, reviewer orders or reviewer fees: the round is `owner_only`, the fee checks are skipped and `start-review` returns `422`. In `ai_assisted` rounds reviewers work as before and also see the AI report (`GET /programs/applications/{application}/ai-review`).

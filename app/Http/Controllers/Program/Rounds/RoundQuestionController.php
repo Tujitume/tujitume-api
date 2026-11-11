@@ -260,6 +260,9 @@ class RoundQuestionController extends Controller
 
             DB::commit();
 
+            // An answer changed after submission: the earlier AI review is stale, queue a new one
+            \App\Service\AiReview\AiReviewDispatcher::safely($application, true);
+
             return response()->json([
                 'message' => 'Answer submitted successfully',
                 'data' => $answer

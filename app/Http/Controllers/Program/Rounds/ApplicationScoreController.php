@@ -10,6 +10,8 @@ use App\Models\Programs\Rounds\ReviewerApplicationAssignment;
 use App\Models\ReviewerOrder;
 use App\Service\Misc\ErrorLogService;
 use App\Service\Program\RoundParticipation;
+use App\Service\Program\RubricCalculator;
+use App\Service\Program\ScoreAverager;
 use App\Service\Notification\ProgramNotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -104,7 +106,7 @@ class ApplicationScoreController extends Controller
             }
 
             // Calculate total score based on rubric mode
-            $totalScore = $this->calculateScore(
+            $totalScore = app(RubricCalculator::class)->calculate(
                 $validated['criterion_scores'],
                 $round->scoring_criteria,
                 $round->rubric_mode ?? 'simple_total'
@@ -121,26 +123,12 @@ class ApplicationScoreController extends Controller
                     'total_score'      => $totalScore,
                     'overall_comment'  => $validated['overall_comment'] ?? null,
                     'scored_at'        => now(),
+                    'source'           => 'human',
                 ]
             );
 
-            $avgScore = ApplicationScore::where('application_id', $application->id)
-                ->where('round_id', $round->id)
-                ->avg('total_score');
-
-            $avgScore = round($avgScore, 2);
-
-            $application->average_score  = $avgScore;
-            $application->round_status   = 'scored';
-
-            $application->is_eligible_to_advance = match($round->advancement_mode) {
-                'score_threshold' => $avgScore >= $round->score_threshold,
-                'fixed_quota'     => true,
-                'manual'          => true,
-                default           => false,
-            };
-
-            $application->save();
+            // Human scores take precedence over any AI score when averaging
+            $avgScore = app(ScoreAverager::class)->apply($application, $round);
 
             // Mark assignment completed
             ReviewerApplicationAssignment::where('round_id', $round->id)
@@ -222,71 +210,4 @@ class ApplicationScoreController extends Controller
             ]);
         }
     }
-
-    private function calculateScore(array $criterionScores, array $scoringCriteria, string $rubricMode): float
-    {
-        return match($rubricMode) {
-            'weighted'     => $this->calculateWeighted($criterionScores, $scoringCriteria),
-            'pass_fail'    => $this->calculatePassFail($criterionScores),
-            'simple_total' => $this->calculateSimpleTotal($criterionScores),
-            default        => $this->calculateSimpleTotal($criterionScores),
-        };
-    }
-
-    private function calculateSimpleTotal(array $criterionScores): float
-    {
-        // Just sum all raw scores
-        return round(array_sum(array_column($criterionScores, 'score')), 2);
-    }
-
-    private function calculateWeighted(array $criterionScores, array $scoringCriteria): float
-    {
-        // Weight defined in scoring_criteria e.g. [{name, weight: 30, score_range: 100}]
-        $criteriaMap = collect($scoringCriteria)->keyBy('name');
-        $totalScore  = 0;
-
-        foreach ($criterionScores as $criterion) {
-            $config     = $criteriaMap->get($criterion['criterion']);
-            $weight     = $config['weight'] ?? 0;      // e.g. 30 means 30%
-            $scoreRange = $this->maxScoreFor($config);
-
-            // Normalize score to 0-100 then apply weight
-            $normalized  = ($criterion['score'] / $scoreRange) * 100;
-            $totalScore += $normalized * ($weight / 100);
-        }
-
-        return round($totalScore, 2);
-    }
-
-    /**
-     * Highest score a criterion allows. The round config saves it as "scoreRange"
-     * in the form "0-10" or "1-5"; older data may carry a numeric "score_range".
-     * Reading only "score_range" made every criterion default to 100, so a score
-     * of 8 out of 10 counted as 8%.
-     */
-    private function maxScoreFor($config): float
-    {
-        $range = $config['score_range'] ?? $config['scoreRange'] ?? null;
-
-        if (is_numeric($range)) {
-            return max((float) $range, 1.0);
-        }
-
-        if (is_string($range) && preg_match_all('/\d+(?:\.\d+)?/', $range, $matches) && ! empty($matches[0])) {
-            return max((float) end($matches[0]), 1.0);
-        }
-
-        return 100.0;
-    }
-
-    private function calculatePassFail(array $criterionScores): float
-    {
-        // Each criterion either passes (score > 0) or fails (score = 0)
-        // Total = percentage of criteria passed
-        $total  = count($criterionScores);
-        $passed = count(array_filter($criterionScores, fn($c) => $c['score'] > 0));
-
-        return round(($passed / $total) * 100, 2);
-    }
-
 }

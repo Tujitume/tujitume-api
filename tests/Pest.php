@@ -51,3 +51,6 @@ function assertProgramUnauthenticated(string $method, string $uri): void
     $response = test()->json($method, '/api/v1/programs/'.$uri);
     //$response->assertStatus(401)->assertJsonStructure(['message']);
 }
+
+// AI review unit tests need the application container (config, cache, Http fakes)
+uses(Tests\TestCase::class)->in('Unit/AiReview');

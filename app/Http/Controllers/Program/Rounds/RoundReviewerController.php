@@ -592,6 +592,11 @@ class RoundReviewerController extends Controller
 
         $userId = $user->id;
 
+        // AI-only rounds have no reviewers, reviewer orders or reviewer fees
+        if ($round->isAiOnly()) {
+            return response()->json(['message' => 'This round is reviewed by AI only. There is nothing for a reviewer to start.'], 422);
+        }
+
         if (!$user->lipr_wallet) {
             throw new \RuntimeException('You must onboard to Mpesa Lipr before starting a review.', 422);
         }

@@ -20,11 +20,35 @@ class ProgramRound extends Model
 
     protected $guarded = [];
 
+    /**
+     * What the program owner configured for AI review is private: it never appears in an applicant-facing response.
+     * Owner endpoints add these back with makeVisible(ProgramRound::AI_PRIVATE_FIELDS).
+     */
+    public const AI_PRIVATE_FIELDS = ['ai_review_config', 'ai_only_acknowledged_at', 'ai_only_acknowledged_by', 'ai_review_notified_at', 'ai_capacity_notified_at'];
+
+    protected $hidden = self::AI_PRIVATE_FIELDS;
+
+    protected $appends = ['ai_review_disclosure'];
+
+    /** What applicants are told when AI is part of the review. Null for manual review. */
+    public function getAiReviewDisclosureAttribute(): ?string
+    {
+        return match ($this->review_method) {
+            'ai_assisted' => 'This round uses AI-assisted review: an AI system helps reviewers assess applications and uploaded documents, and people make the final decisions. Your application content is processed by a third-party AI provider for this purpose.',
+            'ai_only' => 'This round uses AI-only review: an AI system evaluates applications against the program criteria without a human reviewer, and the program team makes the final decisions. Your application content is processed by a third-party AI provider for this purpose.',
+            default => null,
+        };
+    }
+
     protected $casts = [
         'scoring_criteria' => 'array',
         'knockout_questions' => 'array',
         'required_documents' => 'array',
         'confirmed_steps' => 'array',
+        'ai_review_config' => 'array',
+        'ai_only_acknowledged_at' => 'datetime',
+        'ai_review_notified_at' => 'datetime',
+        'ai_capacity_notified_at' => 'datetime',
         'open_date' => 'date',
         'close_date' => 'date',
         'review_period_end' => 'date',
@@ -51,6 +75,16 @@ class ProgramRound extends Model
     public function program()
     {
         return $this->belongsTo(Program::class);
+    }
+
+    public function usesAi(): bool
+    {
+        return in_array($this->review_method, ['ai_assisted', 'ai_only'], true);
+    }
+
+    public function isAiOnly(): bool
+    {
+        return $this->review_method === 'ai_only';
     }
 
     public function reviewers()

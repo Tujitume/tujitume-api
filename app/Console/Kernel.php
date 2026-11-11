@@ -20,6 +20,10 @@ class Kernel extends ConsoleKernel
 
         $schedule->command('update:program-status')->daily();
 
+        // AI-assisted / AI-only review: retries, owner and reviewer notices, capacity watch; and purge of stored document text
+        $schedule->command('ai-reviews:sweep')->hourly()->withoutOverlapping(30)->onOneServer();
+        $schedule->command('ai-reviews:purge-extractions')->daily()->onOneServer();
+
     }
 
     /**

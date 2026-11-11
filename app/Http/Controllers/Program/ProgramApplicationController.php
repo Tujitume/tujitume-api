@@ -477,6 +477,9 @@ class ProgramApplicationController extends Controller
             // Commit changes
             DB::commit();
 
+            // AI-assisted / AI-only rounds: queue the review (a no-op for manual rounds)
+            \App\Service\AiReview\AiReviewDispatcher::safely($application);
+
             // E M A I L
             $sme = Auth::user();
             $smeName = $sme ? trim($sme->first_name . ' ' . $sme->last_name) : $application->contact_person_name;

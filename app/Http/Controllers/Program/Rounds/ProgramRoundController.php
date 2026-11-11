@@ -95,7 +95,7 @@ class ProgramRoundController extends Controller
         }
         return response()->json([
             'data' => [
-                ...$round->toArray(),
+                ...$round->makeVisible(ProgramRound::AI_PRIVATE_FIELDS)->toArray(),
                 'status' => ApiContract::statusMeta('program_round', $round->status),
                 'reviewers' => $round->reviewers,
                 'configuration_progress' => $this->configurationProgress($round),
@@ -335,7 +335,9 @@ class ProgramRoundController extends Controller
 
             $roundScores = $participation['submitted'] ? $scoresByApplication->get($app->id, collect()) : collect();
             $criteriaCount = is_array($round->scoring_criteria) ? count($round->scoring_criteria) : 0;
-            $average = $roundScores->isNotEmpty() ? round((float) $roundScores->avg('total_score'), 1) : null;
+            // Human scores take precedence; AI scores only count while nobody has scored
+            $humanScores = $roundScores->filter(fn ($score) => ($score->source ?? 'human') === 'human');
+            $average = $roundScores->isNotEmpty() ? round((float) ($humanScores->isNotEmpty() ? $humanScores : $roundScores)->avg('total_score'), 1) : null;
 
             $assignments = $assignmentsByApplication->get($app->id, collect());
 
@@ -596,7 +598,8 @@ class ProgramRoundController extends Controller
                 'score_threshold' => 'nullable|numeric|min:0|max:100',
                 'max_advancing' => 'nullable|integer|min:1',
                 'tie_breaker_rule' => 'nullable|in:allow_over_cap,secondary_metric,manual',
-            ]);
+            ] + app(\App\Service\AiReview\AiRoundSettings::class)->rules());
+            $aiChanges = app(\App\Service\AiReview\AiRoundSettings::class)->apply($validated, null, $request);
 
             // Check if round number already exists
             $rounds = ProgramRound::where('program_id', $program->id)->count();
@@ -617,6 +620,7 @@ class ProgramRoundController extends Controller
             $validated['status'] = 'draft';
 
             $round = ProgramRound::create($validated);
+            app(\App\Service\AiReview\AiRoundSettings::class)->record($aiChanges, $round);
 
             if ($request->has('round_questions') || $request->has('knockout_questions')) {
                 RoundCustomQuestion::where('round_id', $round->id)->delete();
@@ -662,7 +666,7 @@ class ProgramRoundController extends Controller
             DB::commit();
             return response()->json([
                 'message' => 'Round created successfully',
-                'data' => $round,
+                'data' => $round->makeVisible(ProgramRound::AI_PRIVATE_FIELDS),
             ], 201);
 
         } catch (ValidationException $e) {
@@ -727,7 +731,8 @@ class ProgramRoundController extends Controller
                 'score_threshold' => 'nullable|numeric|min:0|max:100',
                 'max_advancing' => 'nullable|integer|min:1',
                 'tie_breaker_rule' => 'nullable|in:allow_over_cap,secondary_metric,manual',
-            ]);
+            ] + app(\App\Service\AiReview\AiRoundSettings::class)->rules());
+            $aiChanges = app(\App\Service\AiReview\AiRoundSettings::class)->apply($validated, $round, $request);
 
             // The status is never set from here: publishing and finalizing have their own endpoints with their own checks
             if (array_key_exists('open_date', $validated)) {
@@ -735,6 +740,7 @@ class ProgramRoundController extends Controller
             }
 
             $round->update($validated);
+            app(\App\Service\AiReview\AiRoundSettings::class)->record($aiChanges, $round);
 
             $matchScore = app(RoundMatchScore::class);
             foreach ($validated['round_questions'] ?? [] as $index => $q) {
@@ -796,7 +802,7 @@ class ProgramRoundController extends Controller
 
             return response()->json([
                 'message' => 'Round updated successfully',
-                'data' => $round,
+                'data' => $round->makeVisible(ProgramRound::AI_PRIVATE_FIELDS),
             ]);
 
         } catch (ValidationException $e) {
@@ -1771,6 +1777,9 @@ class ProgramRoundController extends Controller
                 ->update(['submitted_at' => now()]);
 
             DB::commit();
+
+            // AI-assisted / AI-only rounds: queue the review (a no-op for manual rounds)
+            \App\Service\AiReview\AiReviewDispatcher::safely($application);
 
             // Thank the applicant, from the organization (best effort: never fails the submission)
             try {

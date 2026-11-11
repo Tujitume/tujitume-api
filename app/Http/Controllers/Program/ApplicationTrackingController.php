@@ -25,6 +25,9 @@ class ApplicationTrackingController extends Controller
             'uid' => $application->uid,
             'program_title' => $application->program?->program_title,
             'email' => $this->mask($email),
+            // The real address, so the register form can pre-fill it (the person may change it). Safe: this signed link was
+            // emailed only to that address and is checked by resolve() before anything is returned.
+            'contact_email' => $email,
             'account_exists' => User::whereRaw('LOWER(email) = ?', [$email])->exists(),
             'linked' => $application->user_id !== null,
         ]]);

@@ -12,6 +12,7 @@ use App\Http\Controllers\CheckoutStripeController;
 use App\Http\Controllers\Misc\AnalyticsController;
 use App\Http\Controllers\Misc\MatchController;
 use App\Http\Controllers\Organizations\ExternalReviewerController;
+use App\Http\Controllers\Program\Ai\AiReviewController;
 use App\Http\Controllers\Program\ApplicationRoundProgressController;
 use App\Http\Controllers\Program\MEAnalyticsController;
 use App\Http\Controllers\Program\MEController;
@@ -43,6 +44,14 @@ Route::get('programs/{program_id}/sme/applications', [ProgramApplicationControll
 
 
 Route::prefix('/programs')->middleware(['program', 'program.response'])->group(function () {
+    // AI-assisted / AI-only review (static paths first)
+    Route::post('ai-privacy-ack', [AiReviewController::class, 'privacyAck']);
+    Route::get('rounds/{round}/ai-reviews', [AiReviewController::class, 'roundOverview'])->whereNumber('round');
+    Route::get('applications/{application}/ai-review', [AiReviewController::class, 'show'])->whereNumber('application');
+    Route::post('applications/{application}/ai-review/rerun', [AiReviewController::class, 'rerun'])->whereNumber('application')->middleware('throttle:'.config('ai_review.rerun_throttle_per_minute', 6).',1');
+    Route::post('applications/{application}/ai-review/findings', [AiReviewController::class, 'storeFinding'])->whereNumber('application');
+    Route::patch('ai-findings/{finding}', [AiReviewController::class, 'updateFinding'])->whereNumber('finding');
+
     Route::get('program-metadata', [ProgramMetadataController::class, 'index']);
     Route::get('program-metadata/{program_industry_id}', [ProgramMetadataController::class, 'index'])->whereNumber('program_industry_id');
     Route::post('program-metadata', [ProgramMetadataController::class, 'store']);

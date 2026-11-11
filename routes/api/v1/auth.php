@@ -43,6 +43,9 @@ Route::post('verifyEmailOtp', [AuthController::class, 'verifyEmailCode']);
 
 Route::get('emailExists/{email}', [UserController::class, 'checkEmailExists']);
 
+// Public, throttled: is there already an account for this name and date of birth? (the sign-up form asks before creating one)
+Route::post('register/check-duplicate', [\App\Http\Controllers\Auth\ValidationController::class, 'checkDuplicate'])->middleware('throttle:12,1');
+
 // Social Login
 Route::get('social_login', function () {
     return view('social_types');

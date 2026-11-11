@@ -11,3 +11,7 @@ All endpoints are under `/api/v1/programs` and require Sanctum authentication. O
 Applicant eligibility scoring can include a program-level nullable `match_score_limit` (integer 1–100). Null means no threshold. When set, the API reports whether an applicant's computed match score is below the limit; this does not change the score, block application submission, or act as a round advancement threshold.
 
 See [Reviewers](reviewers.md), [Publish](publish.md), and [Finalization](finalization.md) for assignments and end-of-round decisions.
+
+## AI review settings
+
+Round create and update also accept `review_method` (`manual` | `ai_assisted` | `ai_only`), `confirm_ai_only` and `ai_review_config`. The method is locked once the round is published. `ai_only` forces `assignment_type = owner_only`. `ai_review_config` is private to the owner. See [AI review](../ai-review.md).

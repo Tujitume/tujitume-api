@@ -33,12 +33,14 @@ class Organization extends Model
         'sub_sector',
         'physical_address',
         'social_media_url',
+        'ai_data_ack_at', 'ai_data_ack_by', 'ai_data_ack_provider',
     ];
 
     protected $casts = [
         'focus_sectors' => 'array',
         'operating_countries' => 'array',
         'target_regions' => 'array',
+        'ai_data_ack_at' => 'datetime',
     ];
 
     public function owner()

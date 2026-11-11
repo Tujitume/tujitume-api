@@ -27,3 +27,7 @@ Publishes a configured round. Only the owning organization can perform this stat
 | 422 | Missing dates, criteria, reviewers, advancement configuration, or invalid prior-round state |
 
 **Business Rules**: open and close dates must be valid; scoring modes require scoring criteria; score-threshold and fixed-quota modes require their threshold or maximum. Later rounds cannot publish until the preceding round is finalized.
+
+## AI rounds
+
+Rounds that use AI review also need `ai_review_config` (at least one dimension), `AI_REVIEW_ENABLED`, a configured provider and the privacy gate. Missing items come back as the error keys `ai_review_config`, `ai_enabled`, `ai_provider` and `ai_privacy`. See [AI review](../ai-review.md).

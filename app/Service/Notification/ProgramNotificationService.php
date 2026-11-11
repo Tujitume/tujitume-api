@@ -80,6 +80,8 @@ class ProgramNotificationService
 
         foreach ($recipients as $recipient) {
             if (!$recipient) continue;
+            // The system AI reviewer account never receives notifications or email
+            if (strcasecmp((string) ($recipient->email ?? ''), (string) config('ai_review.system_user_email')) === 0) continue;
 
             // Events that reach people in different portals carry one link per user type
             $link = $this->linkFor($config, $recipient);
@@ -971,6 +973,32 @@ class ProgramNotificationService
                 'email_subject' => 'All Applications Scored — Finalize the Round',
                 'email_view'    => $this->view_base . 'round_all_applications_scored',
                 'link'          => $this->orgRoundLink($data + ['finalize' => true]),
+            ],
+
+            // ── AI-ASSISTED / AI-ONLY REVIEW ─────────────────────────────────
+            'ai_review.reports_ready' => [
+                'title'         => 'AI Reports Ready',
+                'message'       => "{$this->v($data, 'count')} AI report(s) are ready for {$this->v($data, 'round_name')} in {$this->v($data, 'program_title')}. Check the findings before you score.",
+                'email_subject' => 'AI Review Reports Ready',
+                'email_view'    => $this->view_base . 'ai_review_reports_ready',
+                'link'          => $this->reviewerProgramLink($data),
+                'links'         => [4 => $this->orgRoundLink($data + ['tab' => 'ai-review'])],
+            ],
+
+            'ai_review.round_scored' => [
+                'title'         => 'Round Scored by AI',
+                'message'       => "{$this->v($data, 'round_name')} has been scored by AI. Please review and finalize.",
+                'email_subject' => 'Round Scored by AI — Review and Finalize',
+                'email_view'    => $this->view_base . 'ai_review_round_scored',
+                'link'          => $this->orgRoundLink($data + ['tab' => 'ai-review']),
+            ],
+
+            'ai_review.round_attention' => [
+                'title'         => 'AI Review Needs Your Attention',
+                'message'       => "AI review for {$this->v($data, 'round_name')} needs attention: {$this->v($data, 'issue')}",
+                'email_subject' => 'AI Review Needs Your Attention',
+                'email_view'    => $this->view_base . 'ai_review_round_attention',
+                'link'          => $this->orgRoundLink($data + ['tab' => 'ai-review']),
             ],
 
             'reviewer.accepted' => [
