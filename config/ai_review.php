@@ -50,10 +50,6 @@ return [
     // Send a page image to the provider's vision model when OCR returns nothing. Off by default; privacy gate applies.
     'vision_fallback' => env('AI_REVIEW_VISION_FALLBACK', false),
 
-    'ai_only' => [
-        'min_verified_ratio' => (float) env('AI_REVIEW_MIN_VERIFIED_RATIO', 0.6),
-    ],
-
     'timeouts' => ['connect' => 10, 'request' => (int) env('AI_REVIEW_TIMEOUT', 90)],
     'retries' => (int) env('AI_REVIEW_RETRIES', 3),
     'backoff_seconds' => [30, 120, 600],

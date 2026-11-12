@@ -38,20 +38,28 @@ it('creates no reviewer orders and refuses start-review in AI-only rounds', func
     $this->actingAsReviewer()->postJson("/api/v1/programs/rounds/{$this->round->id}/applications/{$this->application->id}/start-review")->assertStatus(422);
 });
 
-it('refuses to score when too few quotes verify, and flags the application instead', function () {
+it('scores an AI-only application when quote verification is low and keeps the ratio for audit', function () {
     $this->aiRound('ai_only');
     $this->llm->push($this->report(['findings' => [0 => ['quote' => 'this sentence is not in the application']]]));
     app(AiReviewDispatcher::class)->dispatchFor($this->application);
     $r = ApplicationAiReview::first();
-    expect($r->status)->toBe('needs_attention')->and($r->error)->toContain('quotes')->and(ApplicationScore::count())->toBe(0)
-        ->and($this->application->fresh()->round_status)->toBe('submitted');
+    expect($r->status)->toBe('ready')->and($r->error)->toBeNull()
+        ->and($r->quality['verified_quote_ratio'])->toEqual(0)
+        ->and(ApplicationScore::count())->toBe(1)
+        ->and($this->application->fresh()->round_status)->toBe('scored');
 });
 
-it('refuses to score when a criterion is missing', function () {
+it('records zero for a missing AI criterion and still scores the application', function () {
     $this->aiRound('ai_only');
     $this->llm->push($this->report(['scores' => [1 => ['criterion' => 'Something else']]]));
     app(AiReviewDispatcher::class)->dispatchFor($this->application);
-    expect(ApplicationAiReview::first()->status)->toBe('needs_attention')->and(ApplicationScore::count())->toBe(0);
+    $review = ApplicationAiReview::first();
+    $score = ApplicationScore::first();
+    expect($review->status)->toBe('ready')->and($review->error)->toBeNull()
+        ->and(ApplicationScore::count())->toBe(1)
+        ->and((float) $score->total_score)->toBe(48.0)
+        ->and((float) collect($score->criterion_scores)->firstWhere('criterion', 'Viability')['score'])->toBe(0.0)
+        ->and($this->application->fresh()->round_status)->toBe('scored');
 });
 
 it('clamps scores to each criterion range, so an injected 100 cannot exceed the rubric', function () {

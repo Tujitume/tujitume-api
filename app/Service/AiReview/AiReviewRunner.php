@@ -110,7 +110,7 @@ class AiReviewRunner
             ]);
         }
 
-        $mapped = $this->scoring->map($review->round, $out['data']['scores']);
+        $mapped = $this->scoring->map($review->round, $out['data']['scores'], $review->round->isAiOnly());
         $missing = array_values(array_unique(array_merge($review->missing_items ?? [], $out['data']['missing_items'])));
 
         $review->update([
