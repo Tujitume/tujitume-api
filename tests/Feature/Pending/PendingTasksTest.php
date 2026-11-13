@@ -2,7 +2,6 @@
 
 use App\Models\Auth\User;
 use App\Models\Programs\ProgramApplication;
-use App\Models\Programs\Rounds\ProgramRound;
 use App\Models\Programs\Rounds\ReviewerApplicationAssignment;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -95,6 +94,41 @@ it('shows single-round applications waiting for the owner, but not draft or deci
         $this->application->update(['status' => $status]);
         expect(pendingTypes(pendingFor($this)))->not->toContain('owner.application');
     }
+});
+
+it('groups pending single-round decisions by program and links to that program', function () {
+    $this->program->update(['program_type' => 'single_round']);
+    $this->application->update(['status' => 'pending']);
+    ProgramApplication::factory()->create([
+        'program_id' => $this->program->id,
+        'user_id' => $this->applicantUser->id,
+        'program_owner_id' => $this->orgUser->id,
+        'status' => 'pending',
+    ]);
+
+    $group = pendingGroup(pendingFor($this), 'manage');
+    $items = collect($group['items'])->where('type', 'owner.application')->values();
+
+    expect($group['count'])->toBe(2)
+        ->and($items)->toHaveCount(1)
+        ->and($items[0]['count'])->toBe(2)
+        ->and($items[0]['link'])->toBe('dashboard.programOrg.applicationsSingle::id='.$this->program->id.'?status=pending#round-applications');
+});
+
+it('links AI attention to its exact program round and AI tab', function () {
+    DB::table('application_ai_reviews')->insert([
+        'application_id' => $this->application->id,
+        'round_id' => $this->round->id,
+        'program_id' => $this->program->id,
+        'mode' => 'ai_assisted',
+        'status' => 'needs_attention',
+        'input_hash' => str_repeat('a', 64),
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    $item = collect(pendingGroup(pendingFor($this), 'manage')['items'])->firstWhere('type', 'owner.ai_attention');
+    expect($item['link'])->toBe('dashboard.programOrg.applicationsMultiRound::id='.$this->program->id.'::roundId='.$this->round->id.'?tab=ai-review');
 });
 
 it('shows milestone and funding-plan work to the right side of a program', function () {

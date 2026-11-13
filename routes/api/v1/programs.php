@@ -50,6 +50,7 @@ Route::prefix('/programs')->middleware(['program', 'program.response'])->group(f
     Route::get('applications/{application}/ai-review', [AiReviewController::class, 'show'])->whereNumber('application');
     Route::post('applications/{application}/ai-review/rerun', [AiReviewController::class, 'rerun'])->whereNumber('application')->middleware('throttle:'.config('ai_review.rerun_throttle_per_minute', 6).',1');
     Route::post('applications/{application}/ai-review/findings', [AiReviewController::class, 'storeFinding'])->whereNumber('application');
+    Route::get('applications/{application}/answers/{answer}/file', [\App\Http\Controllers\Program\ApplicationFileController::class, 'answerFile'])->whereNumber(['application', 'answer']);
     Route::patch('ai-findings/{finding}', [AiReviewController::class, 'updateFinding'])->whereNumber('finding');
 
     Route::get('program-metadata', [ProgramMetadataController::class, 'index']);
