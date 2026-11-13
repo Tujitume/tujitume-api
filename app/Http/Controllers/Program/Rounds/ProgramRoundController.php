@@ -493,8 +493,15 @@ class ProgramRoundController extends Controller
 
         $roundData = $round->toArray();
 
+        // Who the application is assigned to, for the program team only (an applicant never sees their reviewer)
+        $assignedReviewer = null;
+        if ($application->assigned_reviewer_id && ! (new ProgramAccess())->isApplicant(auth()->user(), $application)) {
+            $assignedReviewer = $application->reviewer()->first(['id', 'first_name', 'last_name', 'email', 'image']);
+        }
+
         return [
             ...$application->toArray(),
+            'assigned_reviewer' => $assignedReviewer,
             'current_round' => $roundData,
             'viewed_round_id' => $roundId,
             'participation' => $participation,
