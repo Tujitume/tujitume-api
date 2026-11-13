@@ -24,6 +24,26 @@ it('shows the owner the report with explicit AI provenance and source links', fu
     expect(json_encode($d))->not->toContain('text_content')->not->toContain('file_path');
 });
 
+it('returns reviewer-friendly criterion explanations with their linked question and answer', function () {
+    $this->round->update(['scoring_criteria' => [
+        ['name' => 'Impact', 'description' => 'Assess the business answer. Based on: Q1 "Describe your business".', 'weight' => 60, 'score_range' => '0-10'],
+        ['name' => 'Viability', 'description' => 'Assess viability. Based on: Q1 "Describe your business".', 'weight' => 40, 'score_range' => '0-10'],
+    ]]);
+
+    $data = $this->actingAsOrgOwner()->getJson($this->base)->assertOk()->json('data');
+    $impact = collect($data['criteria_reviews'])->firstWhere('criterion', 'Impact');
+
+    expect((float) $impact['score'])->toBe(8.0)
+        ->and((float) $impact['max_score'])->toBe(10.0)
+        ->and((float) $impact['weight_percent'])->toBe(60.0)
+        ->and((float) $impact['weighted_points'])->toBe(48.0)
+        ->and($impact['rationale'])->toBe('Serves 200 farmers')
+        ->and($impact['question']['id'])->toBe($this->question->id)
+        ->and($impact['question']['text'])->toBe('Describe your business')
+        ->and($impact['question']['answer'])->toBe(self::ANSWER)
+        ->and($data['questions_and_answers'][0]['answered'])->toBeTrue();
+});
+
 it('lets an assigned reviewer read it but not an unassigned one, another organization or an applicant', function () {
     $this->actingAsReviewer()->getJson($this->base)->assertOk();
     \App\Models\Programs\Rounds\ReviewerApplicationAssignment::query()->delete();

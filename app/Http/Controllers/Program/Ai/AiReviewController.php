@@ -111,7 +111,7 @@ class AiReviewController extends Controller
             return response()->json(['data' => null, 'message' => 'No AI review has run for this application yet.']);
         }
 
-        return response()->json(['data' => AiReviewResource::make($review->load('findings'))]);
+        return response()->json(['data' => AiReviewResource::make($review->load('findings'), $round)]);
     }
 
     /** POST applications/{application}/ai-review/findings: a human finding, labelled as human. */

@@ -16,7 +16,6 @@ class AiReviewAnalyzer
     /** Tokens kept free for the model's answer (reasoning models spend part of it thinking). */
     private const OUTPUT_RESERVE = 2500;
     /** Maximum extracted document characters sent to the model for each file. */
-    private const QUICK_SCAN_CHARS_PER_DOCUMENT = 900;
 
     public function __construct(
         private ProviderRouter $router,
@@ -40,30 +39,18 @@ class AiReviewAnalyzer
         $this->redactor->lastCount = 0;
         $name = $input['applicant_name'] ?? null;
 
-        // 1. Redacted blocks: keep text answers whole, but send only a small local-text scan per document.
+        // 1. Redacted blocks: answers whole, documents by page
         $blocks = [];
         foreach ($input['sources'] as $source) {
             if ($source['type'] === 'answer') {
                 $blocks[] = ['type' => 'answer', 'id' => $source['id'], 'label' => $source['label'], 'text' => $this->redactor->redact($source['text'], $name)];
             } else {
-                /*
-                 * Original full-document path, retained for easy restoration:
-                 * foreach ($source['pages'] ?? [1 => $source['text']] as $page => $text) {
-                 *     if (trim($text) === '') continue;
-                 *     $blocks[] = ['type' => 'document', 'id' => $source['id'], 'label' => $source['label'], 'page' => $page, 'text' => $this->redactor->redact($text, $name)];
-                 * }
-                 */
-                foreach ($this->quickScanPages($source['pages'] ?? [1 => $source['text']]) as $page => $text) {
+                foreach ($source['pages'] ?? [1 => $source['text']] as $page => $text) {
                     if (trim($text) === '') continue;
                     $blocks[] = ['type' => 'document', 'id' => $source['id'], 'label' => $source['label'], 'page' => $page, 'text' => $this->redactor->redact($text, $name)];
                 }
             }
         }
-        // Keep answer text ahead of sampled document text if the final request needs trimming.
-        $blocks = array_merge(
-            array_values(array_filter($blocks, fn ($block) => $block['type'] === 'answer')),
-            array_values(array_filter($blocks, fn ($block) => $block['type'] === 'document')),
-        );
 
         // 2. Fit the provider budget; too big means map (cached per-document digests) then reduce
         $budgetChars = $this->budgetChars($program);
@@ -74,10 +61,8 @@ class AiReviewAnalyzer
         $available = max(2000, $budgetChars - $overhead);
 
         if ($totalChars > $available) {
-            $notes[] = 'The application was too long for one pass; document quick scans were trimmed to fit the provider budget.';
-            /* Original token-heavy map-reduce path, retained for easy restoration:
-             * $blocks = $this->mapReduceBlocks($blocks, $input, $program, $review, $available, $usage, $notes);
-             */
+            $notes[] = 'The application was too long for one pass, so documents were summarised first (map-reduce).';
+            $blocks = $this->mapReduceBlocks($blocks, $input, $program, $review, $available, $usage, $notes);
         }
         $blocks = $this->trimToFit($blocks, $available, $notes);
 
@@ -135,25 +120,6 @@ class AiReviewAnalyzer
             'data' => $result['data'], 'findings' => $findings, 'quality' => $quality, 'usage' => $usage,
             'provider' => $response->provider, 'model' => $response->model, 'notes' => $notes,
         ];
-    }
-
-    /** Pick the first, middle and final page, with a strict character budget per document. */
-    private function quickScanPages(array $pages): array
-    {
-        $pages = array_filter($pages, fn ($text) => is_string($text) && trim($text) !== '');
-        if (! $pages) return [];
-
-        $keys = array_keys($pages);
-        $count = count($keys);
-        $indexes = array_values(array_unique([0, intdiv($count - 1, 2), $count - 1]));
-        $perPage = max(1, intdiv(self::QUICK_SCAN_CHARS_PER_DOCUMENT, count($indexes)));
-        $scan = [];
-        foreach ($indexes as $index) {
-            $page = $keys[$index];
-            $scan[$page] = mb_substr(trim($pages[$page]), 0, $perPage);
-        }
-
-        return $scan;
     }
 
     // ── budget & chunking ─────────────────────────────────────────────────────

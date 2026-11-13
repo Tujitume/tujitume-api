@@ -17,7 +17,6 @@ class AiReviewRunner
         private AiScoringService $scoring,
         private AiReviewNotifier $notifier,
         private RubricCalculator $rubric,
-        private CriterionAnswerScorer $criterionAnswerScorer,
     ) {
     }
 
@@ -83,11 +82,6 @@ class AiReviewRunner
             return $this->fail($review, 'The AI review hit an unexpected error.');
         }
 
-        $out['data']['scores'] = $this->criterionAnswerScorer->apply(
-            $out['data']['scores'],
-            $round->scoring_criteria ?? [],
-            $input,
-        );
         $this->store($review, $out, $input);
 
         // 4. After ready
