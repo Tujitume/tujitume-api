@@ -287,12 +287,8 @@ class ApplicationRoundProgressController extends Controller
             $errors['max_advancing'] = 'Max advancing must be set for fixed quota advancement mode.';
         }
 
-        // AI-assisted / AI-only rounds also need valid AI settings, an enabled and credentialed provider, and the privacy gate
+        // AI-assisted / AI-only rounds also need an enabled and credentialed provider, and the privacy gate
         if ($round->usesAi()) {
-            $config = $round->ai_review_config;
-            if (empty($config) || empty($config['dimensions'])) {
-                $errors['ai_review_config'] = 'Choose at least one area for the AI to assess (AI review criteria).';
-            }
             $gate = app(\App\Service\AiReview\PrivacyGate::class);
             $provider = config('ai_review.default_provider');
             if (! config('ai_review.enabled')) {
