@@ -22,12 +22,12 @@ class ReviewInputBuilder
     {
         $answers = ApplicationRoundResponse::where(['application_id' => $application->id, 'round_id' => $round->id])->orderBy('question_id')->get(['question_id', 'response', 'file_path', 'file_paths', 'updated_at']);
         $docs = RoundRequiredDocument::where(['application_id' => $application->id, 'round_id' => $round->id])->orderBy('id')->get(['id', 'file_path', 'document_type', 'updated_at']);
-        $questions = RoundCustomQuestion::where('round_id', $round->id)->orderBy('id')->get(['id', 'question_text', 'updated_at']);
+        $questions = RoundCustomQuestion::where('round_id', $round->id)->orderBy('id')->get(['id', 'question_text', 'question_type', 'display_order', 'options', 'match_answers', 'updated_at']);
 
         return hash('sha256', json_encode([
             $answers->map(fn ($a) => [$a->question_id, $a->response, $a->file_path, $a->file_paths, $a->updated_at?->timestamp])->all(),
             $docs->map(fn ($d) => [$d->id, $d->file_path, $d->document_type, $d->updated_at?->timestamp])->all(),
-            $questions->map(fn ($q) => [$q->id, $q->question_text])->all(),
+            $questions->map(fn ($q) => [$q->id, $q->question_text, $q->question_type, $q->display_order, $q->options, $q->match_answers])->all(),
             $round->ai_review_config, $round->scoring_criteria, $round->review_method,
             config('ai_review.prompt_version'),
         ]));
@@ -41,7 +41,7 @@ class ReviewInputBuilder
         $maxChars = (int) config('ai_review.max_answer_chars');
 
         $questions = RoundCustomQuestion::where('round_id', $round->id)->where('question_type', '!=', 'knockout')->orderBy('display_order')->get()
-            ->map(fn ($q) => ['id' => $q->id, 'text' => $q->question_text, 'type' => $q->question_type, 'required' => (bool) $q->is_required])->all();
+            ->map(fn ($q) => ['id' => $q->id, 'text' => $q->question_text, 'type' => $q->question_type, 'required' => (bool) $q->is_required, 'display_order' => (int) $q->display_order, 'options' => $q->options ?? [], 'match_answers' => $q->match_answers])->all();
         $questionsById = collect($questions)->keyBy('id');
 
         $responses = ApplicationRoundResponse::where(['application_id' => $application->id, 'round_id' => $round->id])->get();
