@@ -23,6 +23,18 @@ it('ai-review:ping proves a provider switch by env alone: a different URL, key a
     Http::assertSent(fn ($r) => str_starts_with($r->url(), 'https://my-ollama.local/v1/chat/completions') && $r['model'] === 'llama3.1:8b' && $r->hasHeader('Authorization', 'Bearer secret'));
 });
 
+it('ai-review uses the exact Amari connection without duplicating the chat path', function () {
+    config(['ai_review.providers.amari' => array_merge(config('ai_review.providers.amari'), [
+        'base_url' => 'https://amari.test/openai/v1', 'api_key' => 'amari-secret', 'model' => 'amari-model',
+    ])]);
+    Http::fake(['amari.test/*' => Http::response(['model' => 'amari-model', 'choices' => [['message' => ['content' => '{"ok":true}']]], 'usage' => []])]);
+
+    $this->artisan('ai-review:ping', ['--provider' => 'amari'])->expectsOutputToContain('OK')->assertSuccessful();
+    Http::assertSent(fn ($request) => $request->url() === 'https://amari.test/openai/v1/chat/completions'
+        && $request['model'] === 'amari-model'
+        && $request->hasHeader('Authorization', 'Bearer amari-secret'));
+});
+
 it('ai-review:ping reports failures per provider', function () {
     Http::fake(['*' => Http::response('bad', 401)]);
     $this->artisan('ai-review:ping', ['--provider' => 'groq'])->expectsOutputToContain('FAILED: auth_error')->assertSuccessful();

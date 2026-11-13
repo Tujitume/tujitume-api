@@ -4,13 +4,16 @@ use Illuminate\Support\Facades\Http;
 
 uses(Tests\TestCase::class);
 
-it('keeps Amari and the application-review AI on separate settings', function () {
+it('gives application review an Amari provider without changing the Groq provider', function () {
     $review = file_get_contents(config_path('ai_review.php'));
     $services = file_get_contents(config_path('services.php'));
     $amariBlock = substr($services, strpos($services, "'amari' => ["), 900);
 
-    // Application review never reads Amari's variables, and Amari never reads the review's
-    expect($review)->not->toContain('AMARI_');
+    expect($review)->toContain("'default_provider' => env('AI_REVIEW_PROVIDER', 'amari')")
+        ->toContain("'api_key' => env('AMARI_AI_API_KEY')")
+        ->toContain("'model' => env('AMARI_AI_MODEL'")
+        ->toContain("'api_key' => env('GROQ_API_KEY')")
+        ->toContain("'model' => env('GROQ_MODEL'");
     expect($amariBlock)->toContain('AMARI_AI_API_KEY')->not->toContain('GROQ_')->not->toContain('AI_REVIEW_');
 });
 

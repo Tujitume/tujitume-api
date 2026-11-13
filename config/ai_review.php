@@ -11,10 +11,12 @@
 */
 
 $list = fn (string $key, string $default = '') => array_values(array_filter(array_map('trim', explode(',', (string) env($key, $default)))));
+$amariChatUrl = rtrim((string) env('AMARI_AI_URL', 'https://api.groq.com/openai/v1/chat/completions'), '/');
+$amariBaseUrl = preg_replace('~/chat/completions$~', '', $amariChatUrl) ?: $amariChatUrl;
 
 return [
     'enabled' => true,
-    'default_provider' => env('AI_REVIEW_PROVIDER', 'groq'),
+    'default_provider' => env('AI_REVIEW_PROVIDER', 'amari'),
     'fallbacks' => $list('AI_REVIEW_FALLBACKS', ''),
     'prompt_version' => env('AI_REVIEW_PROMPT_VERSION', 'v1'),
     'queue' => env('AI_REVIEW_QUEUE', 'ai-review'),
@@ -60,6 +62,24 @@ return [
     'rerun_throttle_per_minute' => 6,
 
     'providers' => [
+        // Use the same OpenAI-compatible connection as Amari chat. Review prompts,
+        // extraction, verification, scoring and queue behaviour remain unchanged.
+        'amari' => [
+            'driver' => 'openai_compatible',
+            'base_url' => $amariBaseUrl,
+            'api_key' => env('AMARI_AI_API_KEY'),
+            'model' => env('AMARI_AI_MODEL', 'openai/gpt-oss-120b'),
+            'vision_model' => env('AMARI_AI_VISION_MODEL'),
+            'extra' => array_filter(['reasoning_effort' => env('AMARI_AI_REASONING_EFFORT', 'low')]),
+            'supports_json_schema' => env('AMARI_AI_JSON_SCHEMA', true),
+            'supports_json_mode' => env('AMARI_AI_JSON_MODE', true),
+            'context_tokens' => (int) env('AMARI_AI_CONTEXT_TOKENS', 128000),
+            'max_output_tokens' => (int) env('AMARI_AI_MAX_OUTPUT', 4096),
+            'limits' => ['rpm' => (int) env('AMARI_RATE_PER_MIN', 20), 'tpm' => (int) env('AMARI_AI_TPM', 6000), 'rpd' => (int) env('AMARI_AI_RPD', 900), 'reset_tz' => 'UTC'],
+            'trains_on_data' => env('AMARI_AI_TRAINS_ON_DATA', 'unknown'),
+            'allow_applicant_data' => env('AMARI_AI_ALLOW_APPLICANT_DATA', false),
+            'notes' => 'Uses Amari chat URL, key and model.',
+        ],
         // https://console.groq.com/docs/rate-limits  (checked 2026-11-11; third-party numbers disagree: 30 rpm is common,
         // rpd 1,000-14,400, tpm 6,000-12,000 depending on model). Defaults below are deliberately conservative.
         'groq' => [

@@ -1,28 +1,31 @@
 # AI review runbook
 
-## Two separate AI connections (do not mix them)
+## Amari connection used by two features
 
 | | Amari (the in-app assistant) | Application review (AI-assisted / AI-only) |
 |---|---|---|
 | Used for | Chat and the guided steps in the app | Reading applications and documents, writing reports and scores |
 | Runs | In the browser calling `/api/v1/amari/chat` on the API | In queued backend jobs |
-| Key | `AMARI_AI_API_KEY` | `GROQ_API_KEY` (or the key of the provider you pick) |
-| Other settings | `AMARI_AI_URL`, `AMARI_AI_MODEL`, `AMARI_AI_PUBLIC_MODEL`, `AMARI_AI_GUARD_MODEL`, `AMARI_RATE_PER_MIN` | `AI_REVIEW_*`, `GROQ_*`, `AI_CUSTOM_*`, ... |
+| Key | `AMARI_AI_API_KEY` | `AMARI_AI_API_KEY` when `AI_REVIEW_PROVIDER=amari` |
+| Other settings | `AMARI_AI_URL`, `AMARI_AI_MODEL`, `AMARI_AI_PUBLIC_MODEL`, `AMARI_AI_GUARD_MODEL`, `AMARI_RATE_PER_MIN` | Same Amari URL/model plus `AI_REVIEW_*`; review logic stays separate |
 | Config file | `config/services.php` (`amari`) | `config/ai_review.php` |
 | Check it | `php artisan amari:ping` | `php artisan ai-review:ping` |
 
-They share no setting, and `tests/Feature/AiConnectionsAreSeparateTest.php` fails if one ever reads the other's variables. Each needs its own line in the server's `.env`. If both use the same Groq account key they also share its per-minute limits, so a separate key for each is better. If the app says Amari is "not connected", run `php artisan amari:ping`: it prints whether `AMARI_AI_API_KEY` is set.
+With `AI_REVIEW_PROVIDER=amari`, application review uses Amari's URL, key and model. Its prompts, extraction, verification, scoring and queue remain separate. Both features share the upstream account's limits. Set `AMARI_AI_ALLOW_APPLICANT_DATA=true` only after confirming the provider may process application content.
 
 What the AI review feature needs to run, how to switch provider, and what to do when something is wrong.
 
-## 1. Get a free key (Groq, the default)
+## 1. Configure the Amari connection (default)
 
 1. Create an account at https://console.groq.com and create an API key.
 2. Put it in `.env`:
    ```
    AI_REVIEW_ENABLED=true
-   AI_REVIEW_PROVIDER=groq
-   GROQ_API_KEY=gsk_...
+   AI_REVIEW_PROVIDER=amari
+   AMARI_AI_API_KEY=gsk_...
+   AMARI_AI_URL=https://api.groq.com/openai/v1/chat/completions
+   AMARI_AI_MODEL=openai/gpt-oss-120b
+   AMARI_AI_ALLOW_APPLICANT_DATA=true
    ```
 3. Run `php artisan config:clear` (or `config:cache`), then `php artisan ai-review:ping`.
 
@@ -34,7 +37,8 @@ Every provider is an OpenAI-compatible chat endpoint. Change `AI_REVIEW_PROVIDER
 
 | Provider | Env | Notes (checked 2026-11-11; confirm in the provider's console) |
 |---|---|---|
-| `groq` (default) | `GROQ_API_KEY`, `GROQ_MODEL` | Default model `openai/gpt-oss-120b` (the older llama-3.3 id was retired; list your models at `https://api.groq.com/openai/v1/models`). Live-tested 2026-11-11 with schema-enforced JSON. Free tier; about 30 requests/min is commonly reported, daily and token limits vary by model. Data terms not confirmed: treated as `unknown` |
+| `amari` (default) | `AMARI_AI_API_KEY`, `AMARI_AI_URL`, `AMARI_AI_MODEL` | Uses the exact OpenAI-compatible connection configured for Amari chat |
+| `groq` | `GROQ_API_KEY`, `GROQ_MODEL` | Original review provider remains available and unchanged for rollback |
 | `cerebras` | `CEREBRAS_API_KEY`, `CEREBRAS_MODEL` | Reports say the permanent free tier may have been replaced by one-time trial credit (about 5 requests/min). Base URL and terms not confirmed |
 | `cloudflare` | `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_AI_MODEL` | 10,000 neurons/day free, resets 00:00 UTC (https://developers.cloudflare.com/workers-ai/platform/pricing/). Compatibility of the OpenAI endpoint not verified |
 | `mistral` | `MISTRAL_API_KEY`, `MISTRAL_MODEL` | Free (Experiment) plan data **may be used for training** (https://help.mistral.ai/en/articles/323757). Scale plan data is not; then set `MISTRAL_TRAINS_ON_DATA=false` |
