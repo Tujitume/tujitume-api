@@ -176,7 +176,7 @@ it('summarises very long documents first (map-reduce) and caches the digest', fu
     Storage::disk('s3')->put('files/roundDocuments/long.docx', docx($long, $long, $long));
     RoundRequiredDocument::create(['application_id' => $this->application->id, 'round_id' => $this->round->id, 'document_type' => 'financials', 'file_path' => 'files/roundDocuments/long.docx', 'original_filename' => 'long.docx']);
     $this->llm->default = function ($req) {
-        if (str_contains(json_encode($req->messages), 'Extract the key facts')) return ['facts' => [['fact' => 'Sells flour to rural households', 'page' => 1, 'quote' => 'sell flour to rural households']]];
+        if (str_contains(json_encode($req->messages), 'Extract concise facts')) return ['facts' => [['fact' => 'Sells flour to rural households', 'page' => 1, 'quote' => 'sell flour to rural households']]];
 
         return $this->report();
     };
@@ -187,9 +187,9 @@ it('summarises very long documents first (map-reduce) and caches the digest', fu
         ->and(\App\Models\Programs\Ai\ApplicationDocumentExtraction::first()->digest['facts'])->not->toBeEmpty();
 
     // A re-run reuses the cached digest: no further map calls.
-    $mapCalls = collect($this->llm->requests)->filter(fn ($r) => str_contains(json_encode($r->messages), 'Extract the key facts'))->count();
+    $mapCalls = collect($this->llm->requests)->filter(fn ($r) => str_contains(json_encode($r->messages), 'Extract concise facts'))->count();
     $this->answer->update(['response' => 'Slightly different answer text about the women-led maize business.']);
     app(AiReviewDispatcher::class)->dispatchFor($this->application->fresh());
-    $after = collect($this->llm->requests)->filter(fn ($r) => str_contains(json_encode($r->messages), 'Extract the key facts'))->count();
+    $after = collect($this->llm->requests)->filter(fn ($r) => str_contains(json_encode($r->messages), 'Extract concise facts'))->count();
     expect($after)->toBe($mapCalls);
 });
