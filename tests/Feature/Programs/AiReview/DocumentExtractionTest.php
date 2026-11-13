@@ -169,27 +169,27 @@ it('feeds documents to the AI as redacted text only, never as files, and links f
     expect($api['type'])->toBe('document')->and($api['url'])->toContain('signed.test')->and($api['page'])->toBe(1);
 })->skip('Temporarily disabled while document extraction and AI review integration is investigated.');
 
-it('summarises very long documents first (map-reduce) and caches the digest', function () {
+it('quick-scans long documents without map-reduce calls or cached digests', function () {
     $this->aiRound('ai_assisted');
     config(['ai_review.providers.groq.context_tokens' => 3000, 'ai_review.providers.groq.limits' => ['rpm' => 1000, 'tpm' => 3000000, 'rpd' => 100000, 'reset_tz' => 'UTC']]);
     $long = str_repeat('We process maize and sell flour to rural households across the region. ', 40);
     Storage::disk('s3')->put('files/roundDocuments/long.docx', docx($long, $long, $long));
     RoundRequiredDocument::create(['application_id' => $this->application->id, 'round_id' => $this->round->id, 'document_type' => 'financials', 'file_path' => 'files/roundDocuments/long.docx', 'original_filename' => 'long.docx']);
-    $this->llm->default = function ($req) {
-        if (str_contains(json_encode($req->messages), 'Extract the key facts')) return ['facts' => [['fact' => 'Sells flour to rural households', 'page' => 1, 'quote' => 'sell flour to rural households']]];
-
-        return $this->report();
-    };
+    $this->llm->default = fn ($req) => $this->report();
     app(AiReviewDispatcher::class)->dispatchFor($this->application);
     $r = ApplicationAiReview::first();
     expect($r->error)->toBeNull();
-    expect($r->status)->toBe('ready')->and(implode(' ', $r->extraction_notes['notes']))->toContain('map-reduce')
-        ->and(\App\Models\Programs\Ai\ApplicationDocumentExtraction::first()->digest['facts'])->not->toBeEmpty();
+    $requestText = json_encode($this->llm->requests[0]->messages);
+    expect($r->status)->toBe('ready')
+        ->and($requestText)->toContain('We process maize')
+        ->and(substr_count($requestText, 'We process maize'))->toBeLessThan(20)
+        ->and($requestText)->not->toContain('Extract the key facts')
+        ->and(\App\Models\Programs\Ai\ApplicationDocumentExtraction::first()->digest)->toBeNull();
 
-    // a re-run reuses the cached digest: no further map calls
+    // A re-run still sends only a quick scan and does not make document map calls.
     $mapCalls = collect($this->llm->requests)->filter(fn ($r) => str_contains(json_encode($r->messages), 'Extract the key facts'))->count();
     $this->answer->update(['response' => 'Slightly different answer text about the women-led maize business.']);
     app(AiReviewDispatcher::class)->dispatchFor($this->application->fresh());
     $after = collect($this->llm->requests)->filter(fn ($r) => str_contains(json_encode($r->messages), 'Extract the key facts'))->count();
-    expect($after)->toBe($mapCalls);
+    expect($after)->toBe($mapCalls)->toBe(0);
 });
