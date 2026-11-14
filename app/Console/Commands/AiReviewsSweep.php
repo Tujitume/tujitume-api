@@ -44,7 +44,8 @@ class AiReviewsSweep extends Command
 
             // 2. Assisted: flush batched "reports ready" notices, and tell the owner once when everything is ready
             if ($round->review_method === 'ai_assisted') {
-                $reviewerIds = ReviewerApplicationAssignment::where('round_id', $round->id)->distinct()->pluck('reviewer_id');
+                // The owner is included: applications with nobody assigned are reported to them
+                $reviewerIds = ReviewerApplicationAssignment::where('round_id', $round->id)->distinct()->pluck('reviewer_id')->push($notifier->owner($round)?->id)->filter()->unique();
                 foreach ($reviewerIds as $id) $notifier->flushReviewer($round, (int) $id);
                 if ($allReady && ! $round->ai_review_notified_at) {
                     // Only the owner who scores the round themselves is told. When Business Coaches or team members review, the

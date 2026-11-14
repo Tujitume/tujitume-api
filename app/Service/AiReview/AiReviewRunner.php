@@ -97,7 +97,10 @@ class AiReviewRunner
                 $review->update(['status' => ApplicationAiReview::STATUS_NEEDS_ATTENTION, 'error' => $result['reason']]);
             }
         } else {
-            $reviewerId = ReviewerApplicationAssignment::where(['round_id' => $round->id, 'application_id' => $application->id])->value('reviewer_id');
+            // The person this application is assigned to is told (batched, so a long run is a few notices, not one each).
+            // With nobody assigned, it is the program owner's to review.
+            $reviewerId = ReviewerApplicationAssignment::where(['round_id' => $round->id, 'application_id' => $application->id])->value('reviewer_id')
+                ?: $this->notifier->owner($round)?->id;
             if ($reviewerId) $this->notifier->reportReady($round, (int) $reviewerId);
         }
 

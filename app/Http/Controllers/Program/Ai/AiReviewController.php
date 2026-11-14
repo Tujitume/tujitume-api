@@ -123,6 +123,10 @@ class AiReviewController extends Controller
         // Waiting requests, the latest at the top
         $queue = $base()->where('application_ai_reviews.status', 'queued')->orderByDesc('application_ai_reviews.updated_at')->limit(15)->get();
 
+        // The one the queue takes next (oldest first, the order it really works in), and whether anything is moving at all
+        $next = $base()->where('application_ai_reviews.status', 'queued')->orderBy('application_ai_reviews.updated_at')->orderBy('application_ai_reviews.id')->first();
+        $stalled = $working === 0 && $next !== null && $next->updated_at->lt(now()->subMinutes(2));
+
         // Finished, newest first, with what the timeline needs
         $recent = $base()->whereIn('application_ai_reviews.status', ['ready', 'failed', 'needs_attention'])->orderByDesc('application_ai_reviews.completed_at')->limit(8)->get();
 
@@ -148,6 +152,8 @@ class AiReviewController extends Controller
             'state' => $state,
             'counts' => ['total' => $submitted, 'done' => $ready, 'working' => $working, 'waiting' => $waiting, 'attention' => $attention],
             'now' => $now ? ['application_id' => $now->application_id, 'applicant_name' => $name($now), 'step' => $now->status, 'started_at' => $now->started_at?->toIso8601String()] : null,
+            'next' => $next ? ['application_id' => $next->application_id, 'applicant_name' => $name($next), 'queued_at' => $next->updated_at->toIso8601String()] : null,
+            'stalled' => $stalled,
             'queue' => $queue->map(fn ($r) => ['application_id' => $r->application_id, 'applicant_name' => $name($r), 'queued_at' => $r->updated_at->toIso8601String()])->values(),
             'queue_more' => max(0, $waiting - $queue->count()),
             'recent' => $recent->map(fn ($r) => [
@@ -191,9 +197,15 @@ class AiReviewController extends Controller
         $limit = config('queue.default') === 'sync' ? 5 : 200;
         $started = 0;
         // 1. Reviews already waiting (the job is unique per review, so asking again never doubles the work)
-        ApplicationAiReview::where('round_id', $round->id)->where('status', 'queued')->orderBy('id')->limit($limit)->pluck('id')
-            ->each(function ($id) use (&$started) {
-                \App\Jobs\RunApplicationAiReviewJob::dispatch($id);
+        // A queued review untouched for a couple of minutes is stuck: its job's "only one at a time" lock may be left over from a run that
+        // never finished, which would make this dispatch do nothing. Free that lock first.
+        $stuckBefore = now()->subMinutes(2);
+        ApplicationAiReview::where('round_id', $round->id)->where('status', 'queued')->orderBy('id')->limit($limit)->get(['id', 'updated_at'])
+            ->each(function ($review) use (&$started, $stuckBefore) {
+                if ($review->updated_at->lt($stuckBefore)) {
+                    \Illuminate\Support\Facades\Cache::lock('laravel_unique_job:'.\App\Jobs\RunApplicationAiReviewJob::class.'ai-review-'.$review->id)->forceRelease();
+                }
+                \App\Jobs\RunApplicationAiReviewJob::dispatch($review->id);
                 $started++;
             });
         // 2. Submitted applications that have no review at all yet
