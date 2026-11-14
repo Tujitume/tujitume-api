@@ -132,3 +132,27 @@ it('averages human scores over AI scores when both exist', function () {
     ApplicationScore::create(['application_id' => $this->application->id, 'round_id' => $this->round->id, 'reviewer_id' => $this->reviewerUser->id, 'source' => 'human', 'criterion_scores' => [], 'total_score' => 40, 'scored_at' => now()]);
     expect(app(ScoreAverager::class)->average($this->application->id, $this->round->id))->toBe(40.0);
 });
+
+it('stamps a coach\'s score as approved when they submit the AI\'s suggestion as it was, edited when they change it, and nothing otherwise', function () {
+    $this->aiRound('ai_assisted');
+    $this->assignReviewer();
+    $this->llm->default = $this->report();
+    app(AiReviewDispatcher::class)->dispatchFor($this->application);
+    $this->round->update(['status' => 'published']);
+    $url = "/api/v1/programs/applications/{$this->application->id}/scores";
+    $asSuggested = fn (array $over = []) => array_replace_recursive([
+        'from_ai' => true, 'overall_comment' => 'A women-led processor with clear growth.',
+        'criterion_scores' => [['criterion' => 'Impact', 'score' => 8, 'comment' => 'Serves 200 farmers'], ['criterion' => 'Viability', 'score' => 7, 'comment' => 'Growing revenue']],
+    ], $over);
+
+    // Not started from the AI: no stamp
+    $this->actingAsOrgOwner()->postJson($url, ['criterion_scores' => [['criterion' => 'Impact', 'score' => 8], ['criterion' => 'Viability', 'score' => 7]]])->assertStatus(201)->assertJsonPath('data.ai_action', null);
+
+    // Submitted exactly as the AI suggested it
+    $this->actingAsOrgOwner()->postJson($url, $asSuggested())->assertStatus(201)->assertJsonPath('data.ai_action', 'approved');
+    expect(ApplicationScore::where('source', 'human')->first()->ai_action)->toBe('approved');
+
+    // Changed a score, or a comment, or the overall comment
+    $this->actingAsOrgOwner()->postJson($url, $asSuggested(['criterion_scores' => [['score' => 6]]]))->assertStatus(201)->assertJsonPath('data.ai_action', 'edited');
+    $this->actingAsOrgOwner()->postJson($url, $asSuggested(['overall_comment' => 'Checked by hand.']))->assertStatus(201)->assertJsonPath('data.ai_action', 'edited');
+});

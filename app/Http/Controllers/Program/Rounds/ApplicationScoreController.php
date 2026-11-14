@@ -97,6 +97,7 @@ class ApplicationScoreController extends Controller
                 'criterion_scores.*.score'     => 'required|numeric|min:0',
                 'criterion_scores.*.comment'   => 'nullable|string',
                 'overall_comment'              => 'nullable|string',
+                'from_ai'                      => 'nullable|boolean',
             ]);
 
             // Validate submitted criteria match round's defined scoring_criteria
@@ -117,6 +118,12 @@ class ApplicationScoreController extends Controller
                 $round->rubric_mode ?? 'simple_total'
             );
 
+            // The form started from the AI's suggestion: say whether the coach approved it as it was or changed it (worked out here, from the
+            // suggestion on record, not taken from the browser)
+            [$aiAction, $aiReviewId] = ! empty($validated['from_ai'])
+                ? $this->aiAction($application, $round, $validated)
+                : [null, null];
+
             ApplicationScore::updateOrCreate(
                 [
                     'application_id' => $application->id,
@@ -129,6 +136,8 @@ class ApplicationScoreController extends Controller
                     'overall_comment'  => $validated['overall_comment'] ?? null,
                     'scored_at'        => now(),
                     'source'           => 'human',
+                    'ai_action'        => $aiAction,
+                    'ai_review_id'     => $aiReviewId,
                 ]
             );
 
@@ -156,6 +165,7 @@ class ApplicationScoreController extends Controller
                     'rubric_mode'   => $round->rubric_mode,
                     'total_score'   => $totalScore,
                     'average_score' => $avgScore,
+                    'ai_action'     => $aiAction,
                 ],
             ], 201);
 
@@ -171,6 +181,33 @@ class ApplicationScoreController extends Controller
             ErrorLogService::report($e, ['input' => request()->except(['password', 'token'])]);
             return response()->json(['message' => 'Something went wrong.'], 500);
         }
+    }
+
+    /**
+     * "approved" when the submitted scores, comments and overall comment are what the AI suggested (as the form shows them: whole numbers within
+     * each criterion's range), otherwise "edited". [null, null] when there is no finished AI suggestion to compare with.
+     * @return array{0:?string,1:?int}
+     */
+    private function aiAction(ProgramApplication $application, $round, array $validated): array
+    {
+        $review = \App\Models\Programs\Ai\ApplicationAiReview::where(['application_id' => $application->id, 'round_id' => $round->id, 'status' => 'ready'])->latest('id')->first();
+        if (! $review) return [null, null];
+
+        $max = collect($round->scoring_criteria ?? [])->mapWithKeys(fn ($c) => [trim((string) ($c['name'] ?? '')) => app(RubricCalculator::class)->maxScoreFor($c)]);
+        $suggested = collect($review->suggested_scores ?? [])->keyBy(fn ($x) => trim((string) ($x['criterion'] ?? '')));
+        $same = fn ($a, $b) => trim((string) $a) === trim((string) $b);
+
+        $approved = true;
+        foreach ($validated['criterion_scores'] as $row) {
+            $name = trim((string) $row['criterion']);
+            $x = $suggested->get($name);
+            if (! $x) { $approved = false; break; }
+            $score = (int) round(min((float) ($max[$name] ?? 10), max(0, (float) $x['score'])));
+            if ((int) round((float) $row['score']) !== $score || ! $same($row['comment'] ?? '', $x['rationale'] ?? '')) { $approved = false; break; }
+        }
+        if ($approved && ! $same($validated['overall_comment'] ?? '', $review->summary ?? '')) $approved = false;
+
+        return [$approved ? 'approved' : 'edited', $review->id];
     }
 
     // ─── Score Calculation Methods ──────────────────────────────────────────────

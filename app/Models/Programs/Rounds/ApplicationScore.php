@@ -18,6 +18,7 @@ class ApplicationScore extends Model
         'reviewer_id',
         'source',
         'ai_review_id',
+        'ai_action',
         'criterion_scores',
         'total_score',
         'overall_comment',

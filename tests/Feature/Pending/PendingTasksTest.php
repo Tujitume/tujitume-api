@@ -128,7 +128,7 @@ it('links AI attention to its exact program round and AI tab', function () {
     ]);
 
     $item = collect(pendingGroup(pendingFor($this), 'manage')['items'])->firstWhere('type', 'owner.ai_attention');
-    expect($item['link'])->toBe('dashboard.programOrg.applicationsMultiRound::id='.$this->program->id.'::roundId='.$this->round->id.'?tab=ai-review');
+    expect($item['link'])->toBe('dashboard.programOrg.applicationsMultiRound::id='.$this->program->id.'::roundId='.$this->round->id.'?tab=ai-review&ai-view=attention');
 });
 
 it('shows milestone and funding-plan work to the right side of a program', function () {
@@ -212,4 +212,14 @@ it('never shows one person another person\'s tasks', function () {
     $other = User::factory()->create(['user_type_id' => 1]);
     $this->createVerifiedKyc($other, 'entrepreneur');
     expect(pendingFor($this, $other)->json('data.total'))->toBe(0);
+});
+
+it('counts only the newest AI review of each application as needing attention: a failed one that was run again no longer shows', function () {
+    $base = ['application_id' => $this->application->id, 'round_id' => $this->round->id, 'program_id' => $this->program->id, 'mode' => 'ai_assisted', 'created_at' => now(), 'updated_at' => now()];
+    DB::table('application_ai_reviews')->insert($base + ['status' => 'needs_attention', 'input_hash' => str_repeat('b', 64)]);
+    expect(collect(pendingGroup(pendingFor($this), 'manage')['items'])->firstWhere('type', 'owner.ai_attention')['count'] ?? 0)->toBe(1);
+
+    // Run again and now it is fine: the older failed one is superseded
+    DB::table('application_ai_reviews')->insert($base + ['status' => 'ready', 'input_hash' => str_repeat('c', 64)]);
+    expect(collect(pendingGroup(pendingFor($this), 'manage')['items'])->firstWhere('type', 'owner.ai_attention'))->toBeNull();
 });
