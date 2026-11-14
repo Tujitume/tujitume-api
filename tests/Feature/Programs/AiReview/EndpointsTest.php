@@ -113,8 +113,11 @@ it('shows only the latest AI review attempt for each application in round activi
         ->and($data['counts']['done'])->toBe(0);
 });
 
-it('lets only the owner rerun a review, and audits it', function () {
+it('lets only the owner retry a review the AI could not finish, and audits it', function () {
     $this->actingAsReviewer()->postJson("{$this->base}/rerun")->assertStatus(403);
+    // A finished review is never run again: it would spend tokens, and the reviewer can edit the scores by hand
+    $this->actingAsOrgOwner()->postJson("{$this->base}/rerun")->assertStatus(422);
+    \App\Models\Programs\Ai\ApplicationAiReview::where('application_id', $this->application->id)->update(['status' => 'needs_attention']);
     $this->actingAsOrgOwner()->postJson("{$this->base}/rerun")->assertStatus(202);
     expect(DB::table('ai_review_audit_logs')->where('action', 'rerun')->exists())->toBeTrue();
     $this->round->update(['review_method' => 'manual']);
@@ -169,4 +172,25 @@ it('carries on with waiting reviews without re-scoring a finished one', function
 
 it('does not let a stranger resume the AI of a round', function () {
     $this->postJson("/api/v1/programs/rounds/{$this->round->id}/ai-reviews/resume")->assertStatus(401);
+});
+
+it('never sends the test-data generator\'s applications to the AI', function () {
+    $user = \App\Models\Auth\User::factory()->create(['email' => 'testuser7@example123.com', 'user_type_id' => 1]);
+    $app = \App\Models\Programs\ProgramApplication::factory()->create(['program_id' => $this->program->id, 'user_id' => $user->id, 'program_owner_id' => $this->orgUser->id, 'current_round_id' => $this->round->id, 'status' => 'pending', 'round_status' => 'submitted']);
+
+    expect(app(AiReviewDispatcher::class)->dispatchFor($app))->toBeNull()
+        ->and(\App\Models\Programs\Ai\ApplicationAiReview::where('application_id', $app->id)->exists())->toBeFalse();
+
+    $d = $this->actingAsOrgOwner()->getJson("/api/v1/programs/rounds/{$this->round->id}/ai-reviews/activity")->assertOk()->json('data');
+    expect($d['counts']['total'])->toBe(1); // the real application only
+});
+
+it('sends no email to the test-data generator\'s accounts, but does to real ones', function () {
+    config(['mail.default' => 'array']);
+    \Illuminate\Support\Facades\Mail::purge('array');
+    \Illuminate\Support\Facades\Mail::raw('Hello', fn ($m) => $m->to('testuser12@example456.com')->subject('Test'));
+    \Illuminate\Support\Facades\Mail::raw('Hello', fn ($m) => $m->to('owen@gmail.com')->subject('Real'));
+
+    $sent = collect(\Illuminate\Support\Facades\Mail::mailer('array')->getSymfonyTransport()->messages())->map(fn ($m) => $m->getEnvelope()->getRecipients()[0]->getAddress());
+    expect($sent->all())->toBe(['owen@gmail.com']);
 });

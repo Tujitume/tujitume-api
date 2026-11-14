@@ -53,6 +53,14 @@ class AppServiceProvider extends ServiceProvider
             $event->message->from(new Address((string) config('mail.from.address'), (string) $brand['name']));
         });
 
+        // Nothing is sent to the test-data generator's accounts: no real person, and the addresses bounce
+        Event::listen(MessageSending::class, function (MessageSending $event) {
+            $to = $event->message->getTo();
+            if ($to && collect($to)->every(fn ($address) => \App\Service\Misc\AutomatedAccounts::isEmail($address->getAddress()))) {
+                return false;
+            }
+        });
+
         Validator::extend('recaptcha', 'App\\Validators\\ReCaptcha@validate');
     }
 }

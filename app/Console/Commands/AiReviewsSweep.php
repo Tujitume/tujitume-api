@@ -24,7 +24,7 @@ class AiReviewsSweep extends Command
         $rounds = ProgramRound::whereIn('review_method', ['ai_assisted', 'ai_only'])->whereNotIn('status', ['draft', 'finalized'])->get();
 
         foreach ($rounds as $round) {
-            $submitted = ProgramApplication::where('current_round_id', $round->id)->whereIn('round_status', ['submitted', 'scored'])->get();
+            $submitted = ProgramApplication::where('current_round_id', $round->id)->whereIn('round_status', ['submitted', 'scored'])->notAutomated()->get();
 
             // 1. Pick up anything that has no review yet, is stale, queued or failed (within the attempt limit)
             foreach ($submitted as $application) {

@@ -31,6 +31,8 @@ class AiReviewDispatcher
         $round ??= $application->currentRound;
         if (! $round || ! $round->usesAi() || ! config('ai_review.enabled')) return null;
         if (in_array($round->status, ['finalized'], true)) return null;
+        // Applications made by the test-data generator are never sent to the AI: nobody needs them scored and each one would cost tokens
+        if (\App\Service\Misc\AutomatedAccounts::forApplication($application)) return null;
 
         $hash = $this->inputs->quickHash($application, $round);
 

@@ -99,7 +99,7 @@ class AiReviewController extends Controller
         $latestReviewIds = ApplicationAiReview::query()
             ->where('round_id', $round->id)->where('status', '!=', 'stale')
             // Only applications that are in this round and submitted count, so every number adds up to the same total
-            ->whereIn('application_id', ProgramApplication::where('current_round_id', $round->id)->whereIn('round_status', ['submitted', 'scored'])->select('id'))
+            ->whereIn('application_id', ProgramApplication::where('current_round_id', $round->id)->whereIn('round_status', ['submitted', 'scored'])->notAutomated()->select('id'))
             ->selectRaw('MAX(id)')->groupBy('application_id');
         $base = fn () => ApplicationAiReview::query()
             ->join('program_applications as pa', 'pa.id', '=', 'application_ai_reviews.application_id')
@@ -108,7 +108,7 @@ class AiReviewController extends Controller
         $name = fn ($r) => $r->startup_name ?: ($r->contact_person_name ?: '#'.$r->application_id);
 
         $byStatus = ApplicationAiReview::whereIn('id', clone $latestReviewIds)->selectRaw('status, count(*) as n')->groupBy('status')->pluck('n', 'status');
-        $submitted = ProgramApplication::where('current_round_id', $round->id)->whereIn('round_status', ['submitted', 'scored'])->count();
+        $submitted = ProgramApplication::where('current_round_id', $round->id)->whereIn('round_status', ['submitted', 'scored'])->notAutomated()->count();
         $working = (int) ($byStatus['extracting'] ?? 0) + (int) ($byStatus['analyzing'] ?? 0);
         $queued = (int) ($byStatus['queued'] ?? 0);
         $ready = (int) ($byStatus['ready'] ?? 0);
@@ -144,9 +144,10 @@ class AiReviewController extends Controller
         $perApplication = $median !== null ? max($floor, (int) $median) : null;
         $cooldown = $governor->cooldownRemaining($provider);
         $remaining = $waiting + $working;
-        $finishAt = $perApplication && $remaining > 0 ? now()->addSeconds($cooldown + $remaining * $perApplication)->toIso8601String() : null;
+        // Historical speed cannot predict a finish while the queue worker is offline.
+        $finishAt = ! $stalled && $perApplication && $remaining > 0 ? now()->addSeconds($cooldown + $remaining * $perApplication)->toIso8601String() : null;
 
-        $state = $working > 0 ? 'working' : ($waiting > 0 ? ($cooldown > 0 || $capacity['requests_remaining_today'] <= 0 ? 'paused' : 'starting') : ($submitted > 0 && $ready + $attention >= $submitted ? 'done' : 'idle'));
+        $state = $working > 0 ? 'working' : ($stalled ? 'stalled' : ($waiting > 0 ? ($cooldown > 0 || $capacity['requests_remaining_today'] <= 0 ? 'paused' : 'starting') : ($submitted > 0 && $ready + $attention >= $submitted ? 'done' : 'idle')));
 
         return response()->json(['data' => [
             'state' => $state,
@@ -211,7 +212,7 @@ class AiReviewController extends Controller
         // 2. Submitted applications that have no review at all yet
         if ($started < $limit) {
             $dispatcher = app(AiReviewDispatcher::class);
-            ProgramApplication::where('current_round_id', $round->id)->whereIn('round_status', ['submitted', 'scored'])
+            ProgramApplication::where('current_round_id', $round->id)->whereIn('round_status', ['submitted', 'scored'])->notAutomated()
                 ->whereNotIn('id', ApplicationAiReview::where('round_id', $round->id)->where('status', '!=', 'stale')->select('application_id'))
                 ->orderBy('id')->limit($limit - $started)->get()
                 ->each(function ($application) use ($dispatcher, $round, &$started) {
@@ -240,6 +241,15 @@ class AiReviewController extends Controller
         }
         if (! config('ai_review.enabled')) {
             return response()->json(['message' => 'AI review is not switched on.'], 422);
+        }
+
+        // The AI scores an application once. A finished review is never run again (it costs tokens): the reviewer edits the scores by hand.
+        // Only an application with no review yet, or one the AI could not finish, can be tried again.
+        $current = ApplicationAiReview::where(['application_id' => $application->id, 'round_id' => $round->id])->where('status', '!=', 'stale')->latest('id')->first();
+        if ($current && ! in_array($current->status, ['failed', 'needs_attention', 'queued'], true)) {
+            return response()->json(['message' => $current->status === 'ready'
+                ? 'The AI has already scored this application. If a score looks wrong, change it yourself.'
+                : 'The AI is already working on this application.'], 422);
         }
 
         $review = app(AiReviewDispatcher::class)->dispatchFor($application, $round, true);

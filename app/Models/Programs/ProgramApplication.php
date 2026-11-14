@@ -115,6 +115,12 @@ class ProgramApplication extends Model
         return $this->belongsTo(User::class,'user_id','id');
     }
 
+    /** Leaves out applications made by the test-data generator (no real person: no emails, no AI). */
+    public function scopeNotAutomated($query)
+    {
+        return $query->whereNotIn('user_id', \App\Models\Auth\User::where('email', 'like', \App\Service\Misc\AutomatedAccounts::EMAIL_LIKE)->select('id'));
+    }
+
     public function user()
     {
         return $this->belongsTo(User::class,'user_id','id');
