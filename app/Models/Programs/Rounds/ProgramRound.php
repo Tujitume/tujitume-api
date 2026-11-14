@@ -34,8 +34,8 @@ class ProgramRound extends Model
     public function getAiReviewDisclosureAttribute(): ?string
     {
         return match ($this->review_method) {
-            'ai_assisted' => 'This round uses AI-assisted review: an AI system helps reviewers assess applications and uploaded documents, and people make the final decisions. Your application content is processed by a third-party AI provider for this purpose.',
-            'ai_only' => 'This round uses AI-only review: an AI system evaluates applications against the program criteria without a human reviewer, and the program team makes the final decisions. Your application content is processed by a third-party AI provider for this purpose.',
+            'ai_assisted' => 'This round uses AI-assisted review. Nothing is analysed while you fill in your application. Only after you submit, an AI system helps reviewers assess your submitted answers and uploaded documents, and people make the final decisions. Your submitted content is processed by a third-party AI provider for this purpose.',
+            'ai_only' => 'This round uses AI-only review. Nothing is analysed while you fill in your application. Only after you submit, an AI system evaluates your submitted answers and uploaded documents against the program criteria without a human reviewer, and the program team makes the final decisions. Your submitted content is processed by a third-party AI provider for this purpose.',
             default => null,
         };
     }
