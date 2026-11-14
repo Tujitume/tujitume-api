@@ -234,6 +234,46 @@ describe('Round 1 match scoring', function () {
             ->and($score('I like football')['match_score'])->toBe(0.0);
     });
 
+    it('scores a Kenyan mobile number with or without the plus and with a local leading zero, and rejects numbers that are not mobile', function () {
+        $question = RoundCustomQuestion::create([
+            'round_id' => $this->round->id, 'question_text' => 'Your mobile phone number', 'question_type' => 'phone',
+            'is_required' => true, 'display_order' => 1, 'use_in_match_score' => true, 'match_points' => 10, 'match_answers' => ['countries' => ['ke']],
+        ]);
+        $score = fn (string $phone) => app(RoundMatchScore::class)->score($this->program, $this->round, [$question->id => ['response' => $phone]])['match_score'];
+
+        expect($score('+254712345678'))->toBe(10.0)
+            ->and($score('254712345678'))->toBe(10.0)
+            ->and($score('0712 345 678'))->toBe(10.0)
+            ->and($score('+254 112 345 678'))->toBe(10.0)
+            ->and($score('+254212345678'))->toBe(0.0)        // 2xx is a landline, not a mobile
+            ->and($score('25439939393939939'))->toBe(0.0)     // too many digits
+            ->and($score('+255712345678'))->toBe(0.0)        // Tanzania
+            ->and($score('0712345'))->toBe(0.0);
+    });
+
+    it('rewards only a company email when the owner asks for one, and any valid email otherwise', function () {
+        $svc = app(RoundMatchScore::class);
+        $make = fn ($answers) => RoundCustomQuestion::create([
+            'round_id' => $this->round->id, 'question_text' => 'Your company email', 'question_type' => 'email',
+            'is_required' => true, 'display_order' => 1, 'use_in_match_score' => true, 'match_points' => 10, 'match_answers' => $answers,
+        ]);
+        $score = fn ($q, string $email) => $svc->score($this->program, $this->round, [$q->id => ['response' => $email]])['match_score'];
+
+        $saved = $svc->prepareQuestionForSave($this->round, ['question_text' => 'Email', 'question_type' => 'email', 'is_required' => true, 'use_in_match_score' => true, 'match_points' => 10, 'match_answers' => ['company_only' => true]])['match_answers'];
+        expect($saved)->toBe(['company_only' => true]);
+
+        $company = $make($saved);
+        expect($score($company, 'amina@northstar.co.ke'))->toBe(10.0)
+            ->and($score($company, 'amina@mail.northstar.com'))->toBe(10.0)
+            ->and($score($company, 'amina@gmail.com'))->toBe(0.0)
+            ->and($score($company, 'amina@Yahoo.co.uk'))->toBe(0.0)
+            ->and($score($company, 'amina@outlook.com'))->toBe(0.0)
+            ->and($score($company, 'not an email'))->toBe(0.0);
+
+        $any = $make(null);
+        expect($score($any, 'amina@gmail.com'))->toBe(10.0);
+    });
+
     it('gives full points for a text answer when the owner set no words', function () {
         $question = RoundCustomQuestion::create([
             'round_id' => $this->round->id, 'question_text' => 'Tell us', 'question_type' => 'short_answer',

@@ -28,7 +28,7 @@ class RoundMatchScore
         'matrix_grid' => 'matrix',
     ];
 
-    private const PHONE_CODES = [
+    public const PHONE_CODES = [
         'af' => '93', 'al' => '355', 'dz' => '213', 'ad' => '376', 'ao' => '244', 'ag' => '1', 'ar' => '54', 'am' => '374',
         'au' => '61', 'at' => '43', 'az' => '994', 'bs' => '1', 'bh' => '973', 'bd' => '880', 'bb' => '1', 'by' => '375',
         'be' => '32', 'bz' => '501', 'bj' => '229', 'bt' => '975', 'bo' => '591', 'ba' => '387', 'bw' => '267', 'br' => '55',
@@ -493,7 +493,13 @@ class RoundMatchScore
                     $this->fail('match_answers', 'Every accepted domain must be a valid hostname.');
                 }
             }
-            return $domains ? ['domains' => array_values(array_map('strtolower', $domains))] : null;
+            $valid = $domains ? ['domains' => array_values(array_map('strtolower', $domains))] : [];
+            // Only an email can be asked to be a company email
+            if ($type === 'email' && ! empty($answers['company_only'])) {
+                $valid['company_only'] = true;
+            }
+
+            return $valid ?: null;
         }
 
         if (in_array($type, ['date', 'time', 'datetime'], true)) {
@@ -645,13 +651,11 @@ class RoundMatchScore
         }
 
         if ($type === 'phone') {
-            $digits = preg_replace('/\\D+/', '', (string) $value);
-            if (! is_string($value) || ! str_starts_with(trim($value), '+') || $digits === '') {
+            if (! is_string($value)) {
                 return 0.0;
             }
             foreach ($accepted['countries'] ?? [] as $country) {
-                $code = self::PHONE_CODES[$country] ?? null;
-                if ($code && str_starts_with($digits, $code)) {
+                if ($this->phoneBelongsTo($value, (string) $country)) {
                     return (float) $points;
                 }
             }
@@ -662,7 +666,12 @@ class RoundMatchScore
             if (! is_string($value) || ! filter_var($value, FILTER_VALIDATE_EMAIL)) {
                 return 0.0;
             }
-            return $this->domainMatches(substr(strrchr($value, '@'), 1), $accepted['domains'] ?? [])
+            $domain = substr(strrchr($value, '@'), 1);
+            // "Company email only": a free mailbox (Gmail, Yahoo...) earns nothing
+            if (! empty($accepted['company_only']) && $this->isFreeEmailDomain($domain)) {
+                return 0.0;
+            }
+            return $this->domainMatches($domain, $accepted['domains'] ?? [])
                 ? (float) $points
                 : 0.0;
         }
@@ -853,6 +862,48 @@ class RoundMatchScore
         }
 
         return 0;
+    }
+
+    /**
+     * Is this a usable phone number of the country? The "+" is optional and a local leading 0 is accepted (0712 345 678).
+     * Kenya is checked as a mobile number (254 then 7 or 1, then 8 more digits); other countries by a sensible length.
+     */
+    public static function phoneBelongsTo(string $value, string $country): bool
+    {
+        $code = self::PHONE_CODES[strtolower($country)] ?? null;
+        if (! $code || preg_match('/[^\d\s+\-().]/', $value)) {
+            return false;
+        }
+        $digits = preg_replace('/\D+/', '', $value);
+        if (str_starts_with($digits, '00')) {
+            $digits = substr($digits, 2);
+        }
+        if (str_starts_with($digits, $code)) {
+            $national = substr($digits, strlen($code));
+        } elseif (str_starts_with($digits, '0')) {
+            $national = ltrim($digits, '0');
+        } else {
+            return false;
+        }
+        if (strtolower($country) === 'ke') {
+            return (bool) preg_match('/^[71]\d{8}$/', $national);
+        }
+
+        return strlen($national) >= 6 && strlen($national) + strlen($code) <= 15;
+    }
+
+    private const FREE_EMAIL_DOMAINS = [
+        'gmail.com', 'googlemail.com', 'ymail.com', 'rocketmail.com', 'icloud.com', 'me.com', 'mac.com', 'aol.com',
+        'proton.me', 'protonmail.com', 'pm.me', 'zoho.com', 'zohomail.com', 'mail.com', 'yandex.com', 'yandex.ru', 'tutanota.com', 'tuta.io', 'inbox.com', 'fastmail.com',
+    ];
+
+    /** A free mailbox provider (Gmail, Yahoo, Outlook...), not a company's own domain. */
+    public static function isFreeEmailDomain(string $domain): bool
+    {
+        $domain = strtolower(rtrim($domain, '.'));
+
+        return in_array($domain, self::FREE_EMAIL_DOMAINS, true)
+            || (bool) preg_match('/^(yahoo|hotmail|outlook|live|msn|gmx)\.[a-z.]+$/', $domain);
     }
 
     private function domainMatches(string $domain, array $domains): bool
