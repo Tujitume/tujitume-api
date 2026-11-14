@@ -51,6 +51,7 @@ Route::prefix('/programs')->middleware(['program', 'program.response'])->group(f
     Route::get('rounds/{round}/ai-reviews/items', [AiReviewController::class, 'roundItems'])->whereNumber('round');
     Route::post('rounds/{round}/ai-reviews/resume', [AiReviewController::class, 'resume'])->whereNumber('round');
     Route::post('rounds/{round}/ai-reviews/stop', [AiReviewController::class, 'stop'])->whereNumber('round');
+    Route::post('rounds/{round}/ai-reviews/rerun-attention', [AiReviewController::class, 'rerunAttention'])->whereNumber('round');
     Route::get('applications/{application}/ai-review', [AiReviewController::class, 'show'])->whereNumber('application');
     Route::post('applications/{application}/ai-review/rerun', [AiReviewController::class, 'rerun'])->whereNumber('application')->middleware('throttle:'.config('ai_review.rerun_throttle_per_minute', 6).',1');
     Route::post('applications/{application}/ai-review/findings', [AiReviewController::class, 'storeFinding'])->whereNumber('application');

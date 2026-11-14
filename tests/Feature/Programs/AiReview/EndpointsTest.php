@@ -292,3 +292,20 @@ it('keeps two rounds of two programs apart: stopping or working one never touche
     expect($review2->fresh()->status)->not->toBe('queued')
         ->and(\App\Models\Programs\Ai\ApplicationAiReview::where('application_id', $this->application->id)->first()->round_id)->toBe($this->round->id);
 });
+
+it('runs again, in one go, only the reviews the AI could not finish', function () {
+    $review = \App\Models\Programs\Ai\ApplicationAiReview::where('application_id', $this->application->id)->first();
+    $url = "/api/v1/programs/rounds/{$this->round->id}/ai-reviews/rerun-attention";
+
+    // A finished review is never run again
+    $this->actingAsOrgOwner()->postJson($url)->assertStatus(202)->assertJsonPath('data.queued', 0);
+    expect($review->fresh()->status)->toBe('ready');
+
+    $review->update(['status' => 'needs_attention', 'error' => 'x']);
+    $this->actingAsReviewer()->postJson($url)->assertStatus(403);
+    $this->actingAsOrgOwner()->postJson($url, ['application_ids' => [999999]])->assertStatus(202)->assertJsonPath('data.queued', 0);
+    expect($review->fresh()->status)->toBe('needs_attention');
+
+    $this->actingAsOrgOwner()->postJson($url, ['application_ids' => [$this->application->id]])->assertStatus(202)->assertJsonPath('data.queued', 1);
+    expect($review->fresh()->status)->not->toBe('needs_attention');
+});

@@ -248,8 +248,57 @@ class AiReviewController extends Controller
                 'suggested_total' => $r->suggested_total !== null ? (float) $r->suggested_total : null,
                 'error' => $r->error,
             ])->values(),
-            'meta' => ['current_page' => $page->currentPage(), 'last_page' => $page->lastPage(), 'per_page' => $page->perPage(), 'total' => $page->total()],
+            'meta' => ['current_page' => $page->currentPage(), 'last_page' => $page->lastPage(), 'per_page' => $page->perPage(), 'total' => $page->total(), 'from' => $page->firstItem(), 'to' => $page->lastItem()],
         ]]);
+    }
+
+    /**
+     * POST rounds/{round}/ai-reviews/rerun-attention: try again the reviews the AI could not finish (all of them, or only the application_ids
+     * given). A review that finished well is never run again: it would spend tokens, and the reviewer edits the scores by hand.
+     */
+    public function rerunAttention(Request $request, ProgramRound $round)
+    {
+        if (! ProgramAccess::owns($round->program)) {
+            return response()->json(['message' => 'Unauthorized.'], 403);
+        }
+        if (! $round->usesAi()) {
+            return response()->json(['message' => 'This round does not use AI review.'], 422);
+        }
+        if ($round->status === 'finalized') {
+            return response()->json(['message' => 'This round has been finalized.'], 422);
+        }
+        if (! config('ai_review.enabled')) {
+            return response()->json(['message' => 'AI review is not switched on.'], 422);
+        }
+        $data = $request->validate(['application_ids' => 'nullable|array|max:500', 'application_ids.*' => 'integer']);
+
+        $latestIds = ApplicationAiReview::query()->where('round_id', $round->id)->where('status', '!=', 'stale')
+            ->whereIn('application_id', ProgramApplication::where('current_round_id', $round->id)->whereIn('round_status', ['submitted', 'scored'])->notAutomated()->select('id'))
+            ->selectRaw('MAX(id)')->groupBy('application_id');
+        $query = ApplicationAiReview::whereIn('id', $latestIds)->whereIn('status', ['failed', 'needs_attention']);
+        $total = (clone $query)->count();
+        if (! empty($data['application_ids'])) {
+            $query->whereIn('application_id', $data['application_ids']);
+        }
+        $reviews = $query->orderBy('id')->limit(500)->get();
+
+        // Running them again lifts a stop, like Continue
+        if ($reviews->isNotEmpty() && $round->ai_review_paused_at) {
+            $round->forceFill(['ai_review_paused_at' => null])->save();
+        }
+        foreach ($reviews as $review) {
+            $review->update(['status' => 'queued', 'attempts' => 0, 'error' => null, 'started_at' => null, 'completed_at' => null]);
+        }
+        if ($reviews->isNotEmpty()) {
+            if (\App\Service\AiReview\BackgroundWork::needed()) {
+                \App\Service\AiReview\BackgroundWork::start($round);
+            } else {
+                $reviews->each(fn ($review) => \App\Jobs\RunApplicationAiReviewJob::dispatch($review->id));
+            }
+        }
+        AiAudit::record('rerun_attention', $round->id, null, ['count' => $reviews->count()]);
+
+        return response()->json(['message' => 'AI review started again.', 'data' => ['queued' => $reviews->count(), 'remaining' => max(0, $total - $reviews->count())]], 202);
     }
 
     /**
