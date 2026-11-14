@@ -496,7 +496,8 @@ class ProgramRoundController extends Controller
         // Who the application is assigned to, for the program team only (an applicant never sees their reviewer)
         $assignedReviewer = null;
         if ($application->assigned_reviewer_id && ! (new ProgramAccess())->isApplicant(auth()->user(), $application)) {
-            $assignedReviewer = $application->reviewer()->first(['id', 'first_name', 'last_name', 'email', 'image']);
+            // Name and photo only: the page offers a Message button, so the email is not needed
+            $assignedReviewer = $application->reviewer()->first()?->only(['id', 'first_name', 'last_name', 'image']);
         }
 
         return [
