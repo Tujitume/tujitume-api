@@ -98,6 +98,8 @@ class AiReviewController extends Controller
         // attempt log, so every count and list uses only that application's newest non-stale review.
         $latestReviewIds = ApplicationAiReview::query()
             ->where('round_id', $round->id)->where('status', '!=', 'stale')
+            // Only applications that are in this round and submitted count, so every number adds up to the same total
+            ->whereIn('application_id', ProgramApplication::where('current_round_id', $round->id)->whereIn('round_status', ['submitted', 'scored'])->select('id'))
             ->selectRaw('MAX(id)')->groupBy('application_id');
         $base = fn () => ApplicationAiReview::query()
             ->join('program_applications as pa', 'pa.id', '=', 'application_ai_reviews.application_id')
@@ -185,7 +187,8 @@ class AiReviewController extends Controller
             return response()->json(['message' => 'AI review is not switched on.'], 422);
         }
 
-        $limit = 200;
+        // With no background worker (QUEUE_CONNECTION=sync) each review runs inside this request, so only a few at a time
+        $limit = config('queue.default') === 'sync' ? 5 : 200;
         $started = 0;
         // 1. Reviews already waiting (the job is unique per review, so asking again never doubles the work)
         ApplicationAiReview::where('round_id', $round->id)->where('status', 'queued')->orderBy('id')->limit($limit)->pluck('id')
