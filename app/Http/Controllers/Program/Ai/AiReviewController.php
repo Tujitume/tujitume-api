@@ -120,12 +120,22 @@ class AiReviewController extends Controller
         // The application being worked on now (the longest-running one if several run at once)
         $now = $base()->whereIn('application_ai_reviews.status', ['extracting', 'analyzing'])->orderBy('application_ai_reviews.started_at')->first();
 
-        // Waiting requests, the latest at the top
-        $queue = $base()->where('application_ai_reviews.status', 'queued')->orderByDesc('application_ai_reviews.updated_at')->limit(15)->get();
+        // Waiting requests, the latest at the top: reviews already queued, and submitted applications that have no review row yet
+        $unreviewed = fn () => ProgramApplication::where('current_round_id', $round->id)->whereIn('round_status', ['submitted', 'scored'])->notAutomated()
+            ->whereNotIn('id', ApplicationAiReview::where('round_id', $round->id)->where('status', '!=', 'stale')->select('application_id'));
+        $queuedRows = $base()->where('application_ai_reviews.status', 'queued')->orderByDesc('application_ai_reviews.updated_at')->limit(15)->get()
+            ->map(fn ($r) => ['application_id' => $r->application_id, 'applicant_name' => $name($r), 'queued_at' => $r->updated_at]);
+        $freshRows = $unreviewed()->orderByDesc('id')->limit(15)->get(['id', 'startup_name', 'contact_person_name', 'created_at', 'updated_at'])
+            ->map(fn ($a) => ['application_id' => $a->id, 'applicant_name' => $a->startup_name ?: ($a->contact_person_name ?: '#'.$a->id), 'queued_at' => $a->updated_at ?? $a->created_at]);
+        $queue = $queuedRows->concat($freshRows)->sortByDesc(fn ($q) => $q['queued_at']->timestamp)->take(15)->values();
 
         // The one the queue takes next (oldest first, the order it really works in), and whether anything is moving at all
-        $next = $base()->where('application_ai_reviews.status', 'queued')->orderBy('application_ai_reviews.updated_at')->orderBy('application_ai_reviews.id')->first();
-        $stalled = $working === 0 && $next !== null && $next->updated_at->lt(now()->subMinutes(2));
+        $nextRow = $base()->where('application_ai_reviews.status', 'queued')->orderBy('application_ai_reviews.updated_at')->orderBy('application_ai_reviews.id')->first();
+        $nextFresh = $unreviewed()->orderBy('id')->first(['id', 'startup_name', 'contact_person_name', 'created_at', 'updated_at']);
+        $next = $nextRow
+            ? (object) ['application_id' => $nextRow->application_id, 'name' => $name($nextRow), 'at' => $nextRow->updated_at]
+            : ($nextFresh ? (object) ['application_id' => $nextFresh->id, 'name' => $nextFresh->startup_name ?: ($nextFresh->contact_person_name ?: '#'.$nextFresh->id), 'at' => $nextFresh->updated_at ?? $nextFresh->created_at] : null);
+        $stalled = $working === 0 && $next !== null && $next->at->lt(now()->subMinutes(2));
 
         // Finished, newest first, with what the timeline needs
         $recent = $base()->whereIn('application_ai_reviews.status', ['ready', 'failed', 'needs_attention'])->orderByDesc('application_ai_reviews.completed_at')->limit(8)->get();
@@ -153,9 +163,9 @@ class AiReviewController extends Controller
             'state' => $state,
             'counts' => ['total' => $submitted, 'done' => $ready, 'working' => $working, 'waiting' => $waiting, 'attention' => $attention],
             'now' => $now ? ['application_id' => $now->application_id, 'applicant_name' => $name($now), 'step' => $now->status, 'started_at' => $now->started_at?->toIso8601String()] : null,
-            'next' => $next ? ['application_id' => $next->application_id, 'applicant_name' => $name($next), 'queued_at' => $next->updated_at->toIso8601String()] : null,
+            'next' => $next ? ['application_id' => $next->application_id, 'applicant_name' => $next->name, 'queued_at' => $next->at->toIso8601String()] : null,
             'stalled' => $stalled,
-            'queue' => $queue->map(fn ($r) => ['application_id' => $r->application_id, 'applicant_name' => $name($r), 'queued_at' => $r->updated_at->toIso8601String()])->values(),
+            'queue' => $queue->map(fn ($q) => ['application_id' => $q['application_id'], 'applicant_name' => $q['applicant_name'], 'queued_at' => $q['queued_at']->toIso8601String()])->values(),
             'queue_more' => max(0, $waiting - $queue->count()),
             'recent' => $recent->map(fn ($r) => [
                 'application_id' => $r->application_id, 'applicant_name' => $name($r), 'status' => $r->status,
@@ -223,7 +233,8 @@ class AiReviewController extends Controller
         }
         AiAudit::record('resume', $round->id, null, ['count' => $started]);
 
-        return response()->json(['message' => 'AI review continues.', 'data' => ['started' => $started]], 202);
+        // With no background worker each review ran inside this request, so the page asks again until nothing is left
+        return response()->json(['message' => 'AI review continues.', 'data' => ['started' => $started, 'inline' => config('queue.default') === 'sync']], 202);
     }
 
     /** POST applications/{application}/ai-review/rerun */

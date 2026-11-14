@@ -161,6 +161,7 @@ class TestApplicationGeneratorController extends Controller
                     ->update(['submitted_at' => now()]);
 
                 DB::commit();
+                \App\Service\AiReview\AiReviewDispatcher::safely($application);
                 $submitted[] = $application->fresh();
             } catch (\Exception $e) {
                 DB::rollBack();
@@ -254,6 +255,9 @@ class TestApplicationGeneratorController extends Controller
         ApplicationRoundHistory::where('application_id', $application->id)
             ->where('round_id', $round->id)
             ->update(['submitted_at' => now()]);
+
+        // A real submission queues its AI review right away; so does a generated one (the job runs as soon as the queue is working)
+        \App\Service\AiReview\AiReviewDispatcher::safely($application);
 
         return $application->fresh();
     }
