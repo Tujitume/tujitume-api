@@ -175,6 +175,7 @@ it('does not let a stranger resume the AI of a round', function () {
 });
 
 it('never sends the test-data generator\'s applications to the AI', function () {
+    \App\Service\Misc\AutomatedAccounts::$reviewWithAi = false;
     $user = \App\Models\Auth\User::factory()->create(['email' => 'testuser7@example123.com', 'user_type_id' => 1]);
     $app = \App\Models\Programs\ProgramApplication::factory()->create(['program_id' => $this->program->id, 'user_id' => $user->id, 'program_owner_id' => $this->orgUser->id, 'current_round_id' => $this->round->id, 'status' => 'pending', 'round_status' => 'submitted']);
 
@@ -194,3 +195,18 @@ it('sends no email to the test-data generator\'s accounts, but does to real ones
     $sent = collect(\Illuminate\Support\Facades\Mail::mailer('array')->getSymfonyTransport()->messages())->map(fn ($m) => $m->getEnvelope()->getRecipients()[0]->getAddress());
     expect($sent->all())->toBe(['owen@gmail.com']);
 });
+
+it('reviews the generator\'s applications only while the temporary switch is on', function () {
+    \App\Service\Misc\AutomatedAccounts::$reviewWithAi = false;
+    $user = \App\Models\Auth\User::factory()->create(['email' => 'testuser9@example321.com', 'user_type_id' => 1]);
+    $app = \App\Models\Programs\ProgramApplication::factory()->create(['program_id' => $this->program->id, 'user_id' => $user->id, 'program_owner_id' => $this->orgUser->id, 'current_round_id' => $this->round->id, 'status' => 'pending', 'round_status' => 'submitted']);
+
+    expect(app(AiReviewDispatcher::class)->dispatchFor($app))->toBeNull();
+
+    \App\Service\Misc\AutomatedAccounts::$reviewWithAi = true;
+    expect(app(AiReviewDispatcher::class)->dispatchFor($app))->not->toBeNull();
+    $d = $this->actingAsOrgOwner()->getJson("/api/v1/programs/rounds/{$this->round->id}/ai-reviews/activity")->assertOk()->json('data');
+    expect($d['counts']['total'])->toBe(2);
+});
+
+afterEach(fn () => \App\Service\Misc\AutomatedAccounts::$reviewWithAi = true);

@@ -118,6 +118,11 @@ class ProgramApplication extends Model
     /** Leaves out applications made by the test-data generator (no real person: no emails, no AI). */
     public function scopeNotAutomated($query)
     {
+        // Unless the AI is being tried out with generated applications (see AutomatedAccounts::$reviewWithAi)
+        if (\App\Service\Misc\AutomatedAccounts::$reviewWithAi) {
+            return $query;
+        }
+
         return $query->whereNotIn('user_id', \App\Models\Auth\User::where('email', 'like', \App\Service\Misc\AutomatedAccounts::EMAIL_LIKE)->select('id'));
     }
 

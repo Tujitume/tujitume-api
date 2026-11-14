@@ -10,6 +10,12 @@ use App\Models\Programs\ProgramApplication;
  */
 class AutomatedAccounts
 {
+    /**
+     * TEMPORARY while the AI review is being tried out: generated applications ARE reviewed by the AI (each costs tokens).
+     * To go back to never spending tokens on them, set this to false. Emails to them are never sent either way.
+     */
+    public static bool $reviewWithAi = true;
+
     /** SQL LIKE pattern of the generator's addresses (see TestApplicationGeneratorController). */
     public const EMAIL_LIKE = 'testuser%@example%.com';
 
