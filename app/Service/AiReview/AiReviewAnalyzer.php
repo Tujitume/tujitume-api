@@ -13,9 +13,8 @@ class AiReviewAnalyzer
     /** Providers that rejected our key during this run (the caller tells the owner once). */
     public array $authFailures = [];
 
-    /** Tokens kept free for the model's answer (reasoning models spend part of it thinking). */
-    private const OUTPUT_RESERVE = 2500;
-    /** Maximum extracted document characters sent to the model for each file. */
+    /** Maximum tokens kept for a normal report; small provider limits get a proportional reserve. */
+    private const MAX_OUTPUT_RESERVE = 2500;
 
     public function __construct(
         private ProviderRouter $router,
@@ -25,11 +24,11 @@ class AiReviewAnalyzer
         private ResponseValidator $validator,
         private QuoteVerifier $verifier,
         private Redactor $redactor,
-    ) {
-    }
+    ) {}
 
     /**
      * @return array{data:array, findings:array, quality:array, usage:array, provider:string, model:string, notes:array}
+     *
      * @throws AiUnavailableException
      */
     public function analyze(ApplicationAiReview $review, ProgramRound $round, Program $program, array $input, bool $withScores): array
@@ -46,15 +45,18 @@ class AiReviewAnalyzer
                 $blocks[] = ['type' => 'answer', 'id' => $source['id'], 'label' => $source['label'], 'text' => $this->redactor->redact($source['text'], $name)];
             } else {
                 foreach ($source['pages'] ?? [1 => $source['text']] as $page => $text) {
-                    if (trim($text) === '') continue;
+                    if (trim($text) === '') {
+                        continue;
+                    }
                     $blocks[] = ['type' => 'document', 'id' => $source['id'], 'label' => $source['label'], 'page' => $page, 'text' => $this->redactor->redact($text, $name)];
                 }
             }
         }
 
         // 2. Fit the provider budget; too big means map (cached per-document digests) then reduce
-        $budgetChars = $this->budgetChars($program);
-        $reserveOut = self::OUTPUT_RESERVE;
+        $limit = $this->tokenLimit($program);
+        $reserveOut = $this->outputReserve($limit);
+        $budgetChars = $this->budgetChars($limit, $reserveOut);
         $totalChars = array_sum(array_map(fn ($b) => mb_strlen($b['text']), $blocks));
         $messagesProbe = $this->prompts->review($program, $round, $input, [], $withScores);
         $overhead = mb_strlen(json_encode($messagesProbe));
@@ -68,11 +70,12 @@ class AiReviewAnalyzer
 
         // 3. Reduce / single pass. The wrappers around each block and the JSON escaping add to the size that the character count above does not
         // see, so measure the real request and trim the content until it fits the provider's limit (a request that can never fit is refused, not delayed).
-        $limit = $this->tokenLimit($program);
         for ($i = 0; $i < 6; $i++) {
             $messages = $this->prompts->review($program, $round, $input, $blocks, $withScores);
             $estimate = (int) ceil(mb_strlen(json_encode($messages)) / 3.3) + $reserveOut;
-            if ($estimate <= $limit) break;
+            if ($estimate <= $limit) {
+                break;
+            }
             $kept = array_sum(array_map(fn ($b) => mb_strlen($b['text']), $blocks));
             $blocks = $this->trimToFit($blocks, max(1200, $kept - (int) (($estimate - $limit + 150) * 3.3)), $notes);
         }
@@ -107,7 +110,9 @@ class AiReviewAnalyzer
                 $ref = ['type' => $f['source_type'], 'id' => $f['source_id'], 'page' => $f['page']];
                 $src = $this->verifier->find($ref, $sources);
                 $ok = $src ? $this->verifier->verify($f['quote'], $ref, $sources) : false;
-                if ($ok) $verified++;
+                if ($ok) {
+                    $verified++;
+                }
                 $ref['label'] = $src['label'] ?? null;
                 if ($f['source_type'] === 'document' && $docMeta->has($f['source_id'])) {
                     $d = $docMeta[$f['source_id']];
@@ -145,9 +150,14 @@ class AiReviewAnalyzer
         return $tokens === PHP_INT_MAX ? 6000 : $tokens;
     }
 
-    private function budgetChars(Program $program): int
+    private function outputReserve(int $limit): int
     {
-        return max(2500, (int) (($this->tokenLimit($program) - self::OUTPUT_RESERVE - 400) * 3.3));
+        return min(self::MAX_OUTPUT_RESERVE, max(1200, (int) floor($limit * 0.25)));
+    }
+
+    private function budgetChars(int $limit, int $reserveOut): int
+    {
+        return max(2500, (int) (($limit - $reserveOut - 400) * 3.3));
     }
 
     private function trimToFit(array $blocks, int $available, array &$notes): array
@@ -159,14 +169,21 @@ class AiReviewAnalyzer
             $len = mb_strlen($b['text']);
             if ($used + $len > $available) {
                 $room = $available - $used;
-                if ($room > 300) { $b['text'] = mb_substr($b['text'], 0, $room); $out[] = $b; $used = $available; }
+                if ($room > 300) {
+                    $b['text'] = mb_substr($b['text'], 0, $room);
+                    $out[] = $b;
+                    $used = $available;
+                }
                 $cut = true;
+
                 continue;
             }
             $out[] = $b;
             $used += $len;
         }
-        if ($cut) $notes[] = 'Some content was cut to fit the AI provider limits.';
+        if ($cut) {
+            $notes[] = 'Some content was cut to fit the AI provider limits.';
+        }
 
         return $out;
     }
@@ -176,12 +193,22 @@ class AiReviewAnalyzer
     {
         $answers = array_values(array_filter($blocks, fn ($b) => $b['type'] === 'answer'));
         $docsById = [];
-        foreach ($blocks as $b) if ($b['type'] === 'document') $docsById[$b['id']][] = $b;
+        foreach ($blocks as $b) {
+            if ($b['type'] === 'document') {
+                $docsById[$b['id']][] = $b;
+            }
+        }
 
         $answerChars = array_sum(array_map(fn ($b) => mb_strlen($b['text']), $answers));
         $perDoc = max(800, (int) (($available - $answerChars) / max(1, count($docsById))));
         $out = $answers;
-        $perChunk = max(1500, (int) ($available * 0.8));
+        // Include the full map prompt in the estimate. Previously only document characters were budgeted, so a
+        // 6k-token Amari limit could reject the request before extraction summaries were even produced.
+        $limit = $this->tokenLimit($program);
+        $mapOutput = min(1200, max(700, (int) floor($limit * 0.18)));
+        $mapOverhead = mb_strlen(json_encode($this->prompts->map('D0', '')));
+        $mapContentBudget = max(1200, (int) (($limit - $mapOutput - 300) * 3.3) - $mapOverhead);
+        $perChunk = max(1200, min((int) ($available * 0.8), $mapContentBudget));
 
         foreach ($docsById as $id => $pages) {
             $ext = ApplicationDocumentExtraction::find($id);
@@ -190,9 +217,11 @@ class AiReviewAnalyzer
                 $facts = [];
                 $text = collect($pages)->map(fn ($p) => "[page {$p['page']}]\n{$p['text']}")->implode("\n");
                 foreach (str_split($text, $perChunk) as $chunk) {
-                    $resp = $this->call(new LlmRequest($this->prompts->map("D{$id}", $chunk), $this->prompts->mapSchema(), 2000), $program, $review, $usage);
+                    $resp = $this->call(new LlmRequest($this->prompts->map("D{$id}", $chunk), $this->prompts->mapSchema(), $mapOutput), $program, $review, $usage);
                     foreach (($resp->json['facts'] ?? []) as $fact) {
-                        if (is_array($fact) && is_string($fact['fact'] ?? null)) $facts[] = ['fact' => mb_substr($fact['fact'], 0, 300), 'page' => $fact['page'] ?? null, 'quote' => mb_substr((string) ($fact['quote'] ?? ''), 0, 300)];
+                        if (is_array($fact) && is_string($fact['fact'] ?? null)) {
+                            $facts[] = ['fact' => mb_substr($fact['fact'], 0, 300), 'page' => $fact['page'] ?? null, 'quote' => mb_substr((string) ($fact['quote'] ?? ''), 0, 300)];
+                        }
                     }
                 }
                 $ext?->update(['digest' => ['facts' => $facts]]);

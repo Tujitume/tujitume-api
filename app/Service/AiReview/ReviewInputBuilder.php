@@ -13,9 +13,7 @@ class ReviewInputBuilder
 {
     private const PROFILE_FIELDS = ['sector', 'stage', 'headquarters_location', 'business_description', 'problem_statement', 'solution', 'traction', 'team_size', 'funding_amount_requested'];
 
-    public function __construct(private DocumentExtractor $extractor)
-    {
-    }
+    public function __construct(private DocumentExtractor $extractor) {}
 
     /** Cheap hash that needs no extraction: answers + file identities. Used to detect stale reviews. */
     public function quickHash(ProgramApplication $application, ProgramRound $round): string
@@ -53,7 +51,9 @@ class ReviewInputBuilder
 
         foreach ($responses as $response) {
             $q = $questionsById->get($response->question_id);
-            if (! $q) continue;
+            if (! $q) {
+                continue;
+            }
 
             $text = trim((string) $response->response);
             if (($q['type'] ?? '') !== 'file_upload' && $text !== '') {
@@ -96,7 +96,9 @@ class ReviewInputBuilder
 
     private function addDocument(string $sourceType, int $sourceId, string $path, string $declaredType, string $label, ?int $questionId, array &$documents, array &$sources, array &$issues, int &$count, int $max): void
     {
-        if ($path === '') return;
+        if ($path === '') {
+            return;
+        }
         $count++;
         if ($count > $max) {
             $issues[] = "Document not read (limit of {$max} documents per application): {$label}";
@@ -112,9 +114,8 @@ class ReviewInputBuilder
         ];
 
         if (in_array($ext->status, ['ok', 'ocr_ok'], true) && $ext->text_content) {
-            $pages = [];
-            foreach (explode("\f", $ext->text_content) as $i => $t) $pages[$i + 1] = $t;
-            $sources[] = ['type' => 'document', 'id' => $ext->id, 'label' => $label, 'text' => str_replace("\f", "\n\n", $ext->text_content), 'pages' => $pages];
+            $pages = $this->compactDocumentPages($ext->text_content, (int) config('ai_review.max_document_chars', 4000));
+            $sources[] = ['type' => 'document', 'id' => $ext->id, 'label' => $label, 'text' => implode("\n\n", $pages), 'pages' => $pages];
         } else {
             $issues[] = match ($ext->status) {
                 'excluded' => "Not read by AI (identity/verification document): {$label}",
@@ -123,5 +124,52 @@ class ReviewInputBuilder
                 default => "Could not read: {$label}".($ext->error ? " ({$ext->error})" : ''),
             };
         }
+    }
+
+    /**
+     * Same low-token shape used by the frontend reader: remove empty/symbol/page-number lines and repeated
+     * headers or footers, then cap the evidence for one file while retaining its real page numbers.
+     * The full extraction remains cached privately; this only limits what is placed in an AI prompt.
+     */
+    private function compactDocumentPages(string $content, int $limit): array
+    {
+        $seen = [];
+        $used = 0;
+        $pages = [];
+
+        foreach (explode("\f", $content) as $index => $page) {
+            $kept = [];
+            foreach (preg_split('/\R/u', $page) ?: [] as $line) {
+                $line = trim((string) preg_replace('/[ \t]+/u', ' ', $line));
+                if ($line === '' || preg_match('/^[\W_]+$/u', $line) || preg_match('/^(?:page\s*)?\d+(?:\s*(?:of|\/)\s*\d+)?$/iu', $line)) {
+                    continue;
+                }
+
+                $key = mb_strtolower($line);
+                if (mb_strlen($line) > 3 && isset($seen[$key])) {
+                    continue;
+                }
+                $seen[$key] = true;
+
+                $remaining = $limit - $used;
+                if ($remaining <= 0) {
+                    break 2;
+                }
+                $line = mb_substr($line, 0, $remaining);
+                $kept[] = $line;
+                $used += mb_strlen($line) + 1;
+                if ($used >= $limit) {
+                    break;
+                }
+            }
+            if ($kept) {
+                $pages[$index + 1] = implode("\n", $kept);
+            }
+            if ($used >= $limit) {
+                break;
+            }
+        }
+
+        return $pages;
     }
 }

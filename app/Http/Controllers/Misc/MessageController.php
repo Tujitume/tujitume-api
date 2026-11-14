@@ -232,6 +232,12 @@ class MessageController extends Controller
                 }
             }
 
+            // A team member writes as the organization, except to the organization's own owner: that is a reply between two people, so it
+            // goes as themselves (otherwise the owner would be writing to the owner)
+            if ((int) $to_id === (int) $from_id && (int) $user->id !== (int) $to_id) {
+                $from_id = $user->id;
+            }
+
             if($to_id == $from_id){
                 return response()->json(['message' => 'You cannot send message to yourself'], 422);
             }

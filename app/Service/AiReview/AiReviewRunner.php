@@ -39,7 +39,7 @@ class AiReviewRunner
             return ['release' => null];
         }
 
-        $review->update(['status' => ApplicationAiReview::STATUS_EXTRACTING, 'started_at' => $review->started_at ?? now(), 'attempts' => $review->attempts + 1]);
+        $review->update(['status' => ApplicationAiReview::STATUS_EXTRACTING, 'started_at' => now(), 'attempts' => $review->attempts + 1]);
 
         // 1. Extract documents locally, 2. deterministic checks (always saved, even if AI fails)
         try {

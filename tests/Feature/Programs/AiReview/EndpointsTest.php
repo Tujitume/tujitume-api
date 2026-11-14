@@ -95,6 +95,24 @@ it('gives the owner a round overview with capacity, provider and status counts',
     $this->actingAsReviewer()->getJson("/api/v1/programs/rounds/{$this->round->id}/ai-reviews")->assertStatus(403);
 });
 
+it('shows only the latest AI review attempt for each application in round activity', function () {
+    $old = \App\Models\Programs\Ai\ApplicationAiReview::where('application_id', $this->application->id)->firstOrFail();
+    $latest = $old->replicate();
+    $latest->input_hash = hash('sha256', $old->input_hash.'latest-attempt');
+    $latest->status = 'needs_attention';
+    $latest->error = 'Latest attempt needs attention.';
+    $latest->completed_at = now();
+    $latest->save();
+
+    $data = $this->actingAsOrgOwner()->getJson("/api/v1/programs/rounds/{$this->round->id}/ai-reviews/activity")->assertOk()->json('data');
+
+    expect($data['recent'])->toHaveCount(1)
+        ->and($data['recent'][0]['status'])->toBe('needs_attention')
+        ->and($data['recent'][0]['error'])->toBe('Latest attempt needs attention.')
+        ->and($data['counts']['attention'])->toBe(1)
+        ->and($data['counts']['done'])->toBe(0);
+});
+
 it('lets only the owner rerun a review, and audits it', function () {
     $this->actingAsReviewer()->postJson("{$this->base}/rerun")->assertStatus(403);
     $this->actingAsOrgOwner()->postJson("{$this->base}/rerun")->assertStatus(202);
@@ -136,4 +154,19 @@ it('lists waiting reviews with the latest first and counts the ones not shown', 
 
 it('keeps the activity of a round away from people who do not own the program', function () {
     $this->getJson("/api/v1/programs/rounds/{$this->round->id}/ai-reviews/activity")->assertStatus(401);
+});
+
+it('carries on with waiting reviews without re-scoring a finished one', function () {
+    $review = \App\Models\Programs\Ai\ApplicationAiReview::where('application_id', $this->application->id)->first();
+    $before = $review->completed_at;
+
+    $this->actingAsOrgOwner()->postJson("/api/v1/programs/rounds/{$this->round->id}/ai-reviews/resume")->assertStatus(202)->assertJsonPath('data.started', 0);
+    expect($review->fresh()->status)->toBe('ready')->and($review->fresh()->completed_at->equalTo($before))->toBeTrue();
+
+    $review->update(['status' => 'queued']);
+    $this->actingAsOrgOwner()->postJson("/api/v1/programs/rounds/{$this->round->id}/ai-reviews/resume")->assertStatus(202)->assertJsonPath('data.started', 1);
+});
+
+it('does not let a stranger resume the AI of a round', function () {
+    $this->postJson("/api/v1/programs/rounds/{$this->round->id}/ai-reviews/resume")->assertStatus(401);
 });

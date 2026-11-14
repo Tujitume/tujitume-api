@@ -50,7 +50,9 @@ class AiReviewController extends Controller
     /** GET rounds/{round}/ai-reviews: owner dashboard for the round. */
     public function roundOverview(ProgramRound $round, RateGovernor $governor, PrivacyGate $gate)
     {
-        if (! ProgramAccess::owns($round->program)) return response()->json(['message' => 'Unauthorized.'], 403);
+        if (! ProgramAccess::owns($round->program)) {
+            return response()->json(['message' => 'Unauthorized.'], 403);
+        }
 
         $reviews = ApplicationAiReview::where('round_id', $round->id)->where('status', '!=', 'stale')->get()->keyBy('application_id');
         $apps = ProgramApplication::where('current_round_id', $round->id)->get(['id', 'startup_name', 'contact_person_name', 'round_status']);
@@ -88,15 +90,22 @@ class AiReviewController extends Controller
      */
     public function roundActivity(ProgramRound $round, RateGovernor $governor, PrivacyGate $gate)
     {
-        if (! ProgramAccess::owns($round->program)) return response()->json(['message' => 'Unauthorized.'], 403);
+        if (! ProgramAccess::owns($round->program)) {
+            return response()->json(['message' => 'Unauthorized.'], 403);
+        }
 
+        // A rerun may leave an older completed row for the same application. Activity is current state, not an
+        // attempt log, so every count and list uses only that application's newest non-stale review.
+        $latestReviewIds = ApplicationAiReview::query()
+            ->where('round_id', $round->id)->where('status', '!=', 'stale')
+            ->selectRaw('MAX(id)')->groupBy('application_id');
         $base = fn () => ApplicationAiReview::query()
             ->join('program_applications as pa', 'pa.id', '=', 'application_ai_reviews.application_id')
-            ->where('application_ai_reviews.round_id', $round->id)->where('application_ai_reviews.status', '!=', 'stale')
+            ->whereIn('application_ai_reviews.id', clone $latestReviewIds)
             ->select('application_ai_reviews.*', 'pa.startup_name', 'pa.contact_person_name');
         $name = fn ($r) => $r->startup_name ?: ($r->contact_person_name ?: '#'.$r->application_id);
 
-        $byStatus = ApplicationAiReview::where('round_id', $round->id)->where('status', '!=', 'stale')->selectRaw('status, count(*) as n')->groupBy('status')->pluck('n', 'status');
+        $byStatus = ApplicationAiReview::whereIn('id', clone $latestReviewIds)->selectRaw('status, count(*) as n')->groupBy('status')->pluck('n', 'status');
         $submitted = ProgramApplication::where('current_round_id', $round->id)->whereIn('round_status', ['submitted', 'scored'])->count();
         $working = (int) ($byStatus['extracting'] ?? 0) + (int) ($byStatus['analyzing'] ?? 0);
         $queued = (int) ($byStatus['queued'] ?? 0);
@@ -123,7 +132,10 @@ class AiReviewController extends Controller
         $capacity = $governor->capacity($provider);
         // Never faster than the provider's own pace: one request a minute costs at least 60 / rpm seconds
         $floor = $capacity['rpm'] > 0 ? (int) ceil(60 / $capacity['rpm']) : 0;
-        $perApplication = $durations ? max($floor, (int) round(array_sum($durations) / count($durations))) : null;
+        // The middle value, so one review that waited hours for the provider's quota does not stretch every estimate
+        sort($durations);
+        $median = $durations ? $durations[(int) floor((count($durations) - 1) / 2)] : null;
+        $perApplication = $median !== null ? max($floor, (int) $median) : null;
         $cooldown = $governor->cooldownRemaining($provider);
         $remaining = $waiting + $working;
         $finishAt = $perApplication && $remaining > 0 ? now()->addSeconds($cooldown + $remaining * $perApplication)->toIso8601String() : null;
@@ -153,14 +165,67 @@ class AiReviewController extends Controller
         ]]);
     }
 
+    /**
+     * POST rounds/{round}/ai-reviews/resume: carry on with the applications that are still waiting (never re-scores a finished one).
+     * Picks up queued reviews and submitted applications that have none yet, a limited number at a time; the queue then works through
+     * them one by one at the provider's pace.
+     */
+    public function resume(ProgramRound $round)
+    {
+        if (! ProgramAccess::owns($round->program)) {
+            return response()->json(['message' => 'Unauthorized.'], 403);
+        }
+        if (! $round->usesAi()) {
+            return response()->json(['message' => 'This round does not use AI review.'], 422);
+        }
+        if ($round->status === 'finalized') {
+            return response()->json(['message' => 'This round has been finalized.'], 422);
+        }
+        if (! config('ai_review.enabled')) {
+            return response()->json(['message' => 'AI review is not switched on.'], 422);
+        }
+
+        $limit = 200;
+        $started = 0;
+        // 1. Reviews already waiting (the job is unique per review, so asking again never doubles the work)
+        ApplicationAiReview::where('round_id', $round->id)->where('status', 'queued')->orderBy('id')->limit($limit)->pluck('id')
+            ->each(function ($id) use (&$started) {
+                \App\Jobs\RunApplicationAiReviewJob::dispatch($id);
+                $started++;
+            });
+        // 2. Submitted applications that have no review at all yet
+        if ($started < $limit) {
+            $dispatcher = app(AiReviewDispatcher::class);
+            ProgramApplication::where('current_round_id', $round->id)->whereIn('round_status', ['submitted', 'scored'])
+                ->whereNotIn('id', ApplicationAiReview::where('round_id', $round->id)->where('status', '!=', 'stale')->select('application_id'))
+                ->orderBy('id')->limit($limit - $started)->get()
+                ->each(function ($application) use ($dispatcher, $round, &$started) {
+                    if ($dispatcher->dispatchFor($application, $round)) {
+                        $started++;
+                    }
+                });
+        }
+        AiAudit::record('resume', $round->id, null, ['count' => $started]);
+
+        return response()->json(['message' => 'AI review continues.', 'data' => ['started' => $started]], 202);
+    }
+
     /** POST applications/{application}/ai-review/rerun */
     public function rerun(ProgramApplication $application)
     {
         $round = $application->currentRound;
-        if (! $round || ! ProgramAccess::owns($round->program)) return response()->json(['message' => 'Unauthorized.'], 403);
-        if (! $round->usesAi()) return response()->json(['message' => 'This round does not use AI review.'], 422);
-        if ($round->status === 'finalized') return response()->json(['message' => 'This round has been finalized.'], 422);
-        if (! config('ai_review.enabled')) return response()->json(['message' => 'AI review is not switched on.'], 422);
+        if (! $round || ! ProgramAccess::owns($round->program)) {
+            return response()->json(['message' => 'Unauthorized.'], 403);
+        }
+        if (! $round->usesAi()) {
+            return response()->json(['message' => 'This round does not use AI review.'], 422);
+        }
+        if ($round->status === 'finalized') {
+            return response()->json(['message' => 'This round has been finalized.'], 422);
+        }
+        if (! config('ai_review.enabled')) {
+            return response()->json(['message' => 'AI review is not switched on.'], 422);
+        }
 
         $review = app(AiReviewDispatcher::class)->dispatchFor($application, $round, true);
         AiAudit::record('rerun', $round->id, $application->id);
@@ -172,7 +237,9 @@ class AiReviewController extends Controller
     public function show(ProgramApplication $application)
     {
         [$round, $denied] = $this->authorizeApplication($application);
-        if ($denied) return $denied;
+        if ($denied) {
+            return $denied;
+        }
 
         $review = ApplicationAiReview::where(['application_id' => $application->id, 'round_id' => $round->id])
             ->where('status', '!=', 'stale')->latest('id')->first()
@@ -189,7 +256,9 @@ class AiReviewController extends Controller
     public function storeFinding(Request $request, ProgramApplication $application)
     {
         [$round, $denied] = $this->authorizeApplication($application);
-        if ($denied) return $denied;
+        if ($denied) {
+            return $denied;
+        }
 
         $data = $request->validate([
             'dimension' => 'required|in:'.implode(',', [...ApplicationAiFinding::DIMENSIONS, 'data_quality']),
@@ -199,7 +268,9 @@ class AiReviewController extends Controller
         ]);
 
         $review = ApplicationAiReview::where(['application_id' => $application->id, 'round_id' => $round->id])->where('status', '!=', 'stale')->latest('id')->first();
-        if (! $review) return response()->json(['message' => 'There is no AI review to add a finding to yet.'], 422);
+        if (! $review) {
+            return response()->json(['message' => 'There is no AI review to add a finding to yet.'], 422);
+        }
 
         $finding = ApplicationAiFinding::create($data + [
             'review_id' => $review->id, 'author_type' => 'human', 'author_user_id' => auth()->id(), 'status' => 'open',
@@ -214,8 +285,12 @@ class AiReviewController extends Controller
         $review = $finding->review;
         $application = $review->application;
         [$round, $denied] = $this->authorizeApplication($application);
-        if ($denied) return $denied;
-        if ($round->status === 'finalized') return response()->json(['message' => 'This round has been finalized.'], 422);
+        if ($denied) {
+            return $denied;
+        }
+        if ($round->status === 'finalized') {
+            return response()->json(['message' => 'This round has been finalized.'], 422);
+        }
 
         $data = $request->validate([
             'action' => 'required|in:confirm,dismiss,override',
@@ -241,6 +316,7 @@ class AiReviewController extends Controller
 
     /**
      * The program owner (and their team), or a reviewer assigned to this application. Applicants never.
+     *
      * @return array{0:?ProgramRound, 1:?\Illuminate\Http\JsonResponse}
      */
     private function authorizeApplication(ProgramApplication $application): array
@@ -250,10 +326,14 @@ class AiReviewController extends Controller
             return [null, response()->json(['message' => 'This round does not use AI review.'], 404)];
         }
         $user = auth()->user();
-        if (ProgramAccess::owns($round->program)) return [$round, null];
+        if (ProgramAccess::owns($round->program)) {
+            return [$round, null];
+        }
 
         $assigned = ReviewerApplicationAssignment::where(['round_id' => $round->id, 'application_id' => $application->id, 'reviewer_id' => $user->id])->exists();
-        if ($assigned) return [$round, null];
+        if ($assigned) {
+            return [$round, null];
+        }
 
         return [null, response()->json(['message' => 'You do not have access to this application.'], 403)];
     }

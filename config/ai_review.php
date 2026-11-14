@@ -32,6 +32,8 @@ return [
     'max_file_mb' => (int) env('AI_REVIEW_MAX_FILE_MB', 20),
     'max_pages_per_document' => (int) env('AI_REVIEW_MAX_PAGES', 60),
     'max_answer_chars' => (int) env('AI_REVIEW_MAX_ANSWER_CHARS', 4000),
+    // Match the browser document reader: compact locally and send only the useful opening evidence per file.
+    'max_document_chars' => (int) env('AI_REVIEW_MAX_DOCUMENT_CHARS', 4000),
     'max_sheet_rows' => (int) env('AI_REVIEW_MAX_SHEET_ROWS', 200),
     'extraction_retention_days' => (int) env('AI_REVIEW_RETENTION_DAYS', 90),
     'redact_pii' => env('AI_REVIEW_REDACT_PII', true),
@@ -75,7 +77,9 @@ return [
             'supports_json_mode' => env('AMARI_AI_JSON_MODE', true),
             'context_tokens' => (int) env('AMARI_AI_CONTEXT_TOKENS', 128000),
             'max_output_tokens' => (int) env('AMARI_AI_MAX_OUTPUT', 4096),
-            'limits' => ['rpm' => (int) env('AMARI_RATE_PER_MIN', 20), 'tpm' => (int) env('AMARI_AI_TPM', 6000), 'rpd' => (int) env('AMARI_AI_RPD', 900), 'reset_tz' => 'UTC'],
+            // Amari already enforces the upstream account limit. Keep the local request ceiling aligned with its
+            // context window; the review pipeline separately compacts documents and trims every actual request.
+            'limits' => ['rpm' => (int) env('AMARI_RATE_PER_MIN', 20), 'tpm' => (int) env('AMARI_AI_TPM', 128000), 'rpd' => (int) env('AMARI_AI_RPD', 900), 'reset_tz' => 'UTC'],
             'trains_on_data' => env('AMARI_AI_TRAINS_ON_DATA', 'unknown'),
             'allow_applicant_data' => env('AMARI_AI_ALLOW_APPLICANT_DATA', false),
             'notes' => 'Uses Amari chat URL, key and model.',
