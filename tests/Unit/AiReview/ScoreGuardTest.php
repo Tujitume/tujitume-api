@@ -87,3 +87,11 @@ it('gives full credit to a valid name for a criterion worded "Provision of perso
 
     expect($out[0]['score'])->toBe(5.0);
 });
+
+it('explains a checked name, phone and free webmail email in specific, friendly words', function () {
+    $out = collect(app(ScoreGuard::class)->apply(guardScores(), guardRound(), guardInput('Bazu@gmail.com', '254721601031', 'Richard Branson Smith')))->keyBy('criterion');
+
+    expect($out['Full name provided']['rationale'])->toBe('Both a first and a last name were provided (3 words), so this is complete.')
+        ->and($out['Mobile phone number completeness']['rationale'])->toBe('The number includes the +254 country code (Kenya) and a valid 9-digit mobile number, so this is complete.')
+        ->and($out['Company email validity']['rationale'])->toContain('free webmail address (gmail.com)')->toContain('1 of 5');
+});

@@ -45,11 +45,14 @@ class AiReviewAnalyzer
                 $isName = ScoreGuard::kind((string) $source['label']) === 'name';
                 $blocks[] = ['type' => 'answer', 'id' => $source['id'], 'label' => $source['label'], 'text' => $isName ? $this->redactor->describeName((string) $source['text']) : $this->redactor->redact($source['text'], $name)];
             } else {
+                // What a reviewer would notice about the document at a glance (it says it is fictional, has a placeholder email...), told to the model with its label
+                $flags = DocumentFlags::of((string) ($source['text'] ?? ''));
+                $label = $source['label'].($flags ? ' (notes: '.implode('; ', $flags).')' : '');
                 foreach ($source['pages'] ?? [1 => $source['text']] as $page => $text) {
                     if (trim($text) === '') {
                         continue;
                     }
-                    $blocks[] = ['type' => 'document', 'id' => $source['id'], 'label' => $source['label'], 'page' => $page, 'text' => $this->redactor->redact($text, $name)];
+                    $blocks[] = ['type' => 'document', 'id' => $source['id'], 'label' => $label, 'page' => $page, 'text' => $this->redactor->redact($text, $name)];
                 }
             }
         }

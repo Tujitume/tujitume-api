@@ -315,7 +315,15 @@ class ProgramRoundController extends Controller
 
         $historyByApplication = $history->keyBy('application_id');
 
-        $mapped = $applications->map(function ($app) use ($round_id, $round, $scoresByApplication, $assignmentsByApplication, $historyByApplication) {
+        // Where the AI is with each application (its newest review), so the table can say "AI suggestion 57" or "AI needs attention" and not just "Not scored"
+        $aiByApplication = collect();
+        if ($round->usesAi()) {
+            $latestAi = \App\Models\Programs\Ai\ApplicationAiReview::where('round_id', $round_id)->where('status', '!=', 'stale')
+                ->whereIn('application_id', $applications->pluck('id'))->selectRaw('MAX(id) as id')->groupBy('application_id');
+            $aiByApplication = \App\Models\Programs\Ai\ApplicationAiReview::whereIn('id', $latestAi)->get(['id', 'application_id', 'status', 'suggested_total'])->keyBy('application_id');
+        }
+
+        $mapped = $applications->map(function ($app) use ($round_id, $round, $scoresByApplication, $assignmentsByApplication, $historyByApplication, $aiByApplication) {
             // Get this app's outcome in this specific round from history
             $roundHistory = $historyByApplication->get($app->id);
 
@@ -363,6 +371,7 @@ class ProgramRoundController extends Controller
                         : null,
                 ],
                 'participation' => $participation,
+                'ai_review' => ($ai = $aiByApplication->get($app->id)) ? ['status' => $ai->status, 'suggested_total' => $ai->suggested_total !== null ? (float) $ai->suggested_total : null] : null,
                 'round_outcome' => $roundHistory?->outcome,      // ← what happened in THIS round
                 'round_score'   => $roundHistory?->average_score, // ← score in THIS round
                 'status' => [

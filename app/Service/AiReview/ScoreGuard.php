@@ -56,7 +56,7 @@ class ScoreGuard
             // number with a valid country code and length, gets full credit however the model worded it
             if (in_array($kind, ['name', 'phone'], true) && preg_match('/provi|suppl|present|given|complete|imetolewa|kamili/i', (string) $s['criterion'])
                 && ! preg_match('/quality|relevan|detail|depth|credib|verif/i', (string) $s['criterion'])) {
-                return ['score' => (float) $max, 'rationale' => $kind === 'name' ? 'A first and last name are both given.' : 'The number has a valid country code and length.'] + $s;
+                return ['score' => (float) $max, 'rationale' => $kind === 'name' ? $this->nameNote($text) : $this->phoneNote($text)] + $s;
             }
 
             // A free mailbox (Gmail, Yahoo, Outlook...) is a valid address but not a company one: part credit for a company-email criterion
@@ -65,7 +65,9 @@ class ScoreGuard
                 if ($address && RoundMatchScore::isFreeEmailDomain(substr(strrchr($address, '@'), 1))) {
                     $partial = (float) max(1, round($max * 0.2));
 
-                    return ['score' => min((float) $s['score'], $partial), 'rationale' => 'This is a valid email, but it is a free webmail address and not a company one, so it earns only part of the points.'] + $s;
+                    $domain = strtolower(substr(strrchr($address, '@'), 1));
+
+                    return ['score' => min((float) $s['score'], $partial), 'rationale' => "The email is valid, but it is a free webmail address ({$domain}), not a company one, so it earns only part of the points ({$partial} of ".(int) $max.')'.'.'] + $s;
                 }
             }
 
@@ -95,6 +97,22 @@ class ScoreGuard
 
             return $score;
         })->first();
+    }
+
+    private function nameNote(string $text): string
+    {
+        $n = count(preg_split('/\s+/u', trim($text), -1, PREG_SPLIT_NO_EMPTY));
+
+        return "Both a first and a last name were provided ({$n} words), so this is complete.";
+    }
+
+    private function phoneNote(string $text): string
+    {
+        $digits = preg_replace('/\D+/', '', $text);
+        if (str_starts_with($digits, '254')) return 'The number includes the +254 country code (Kenya) and a valid 9-digit mobile number, so this is complete.';
+        if (str_starts_with($digits, '0')) return 'The number is a local mobile number with the right length, so this is complete.';
+
+        return 'The number has a country code and a valid length, so this is complete.';
     }
 
     /** Why the answer is not what was asked for, in plain words; null when it is fine. */

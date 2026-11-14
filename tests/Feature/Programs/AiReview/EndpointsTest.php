@@ -370,3 +370,11 @@ it('lets a finished review made by an older version of the AI check be run again
     expect($this->actingAsOrgOwner()->getJson($this->base)->json('data.outdated'))->toBeTrue();
     $this->actingAsOrgOwner()->postJson("{$this->base}/rerun")->assertStatus(202);
 });
+
+it('puts where the AI is with each application into the round\'s applicant list, so the table can show it', function () {
+    $d = $this->actingAsOrgOwner()->getJson("/api/v1/programs/rounds/{$this->round->id}/applications")->assertOk()->json();
+    $rows = collect($d['applications'] ?? $d['data'] ?? []);
+    $row = $rows->firstWhere('id', $this->application->id);
+
+    expect($row['ai_review']['status'])->toBe('ready')->and($row['ai_review'])->toHaveKey('suggested_total');
+});
