@@ -378,3 +378,34 @@ it('puts where the AI is with each application into the round\'s applicant list,
 
     expect($row['ai_review']['status'])->toBe('ready')->and($row['ai_review'])->toHaveKey('suggested_total');
 });
+
+it('works the queue first come first served: an application with no review yet that arrived earlier goes before a later queued one', function () {
+    $make = function (string $name, $arrived) {
+        $u = \App\Models\Auth\User::factory()->create(['user_type_id' => 1]);
+
+        return \App\Models\Programs\ProgramApplication::factory()->create(['program_id' => $this->program->id, 'user_id' => $u->id, 'program_owner_id' => $this->orgUser->id, 'current_round_id' => $this->round->id, 'status' => 'pending', 'round_status' => 'submitted', 'startup_name' => $name, 'created_at' => $arrived, 'updated_at' => $arrived]);
+    };
+    $queue = function ($app, $at) {
+        $r = \App\Models\Programs\Ai\ApplicationAiReview::create(['application_id' => $app->id, 'round_id' => $this->round->id, 'program_id' => $this->program->id, 'mode' => 'ai_assisted', 'status' => 'queued', 'input_hash' => 'q'.$app->id]);
+        \Illuminate\Support\Facades\DB::table('application_ai_reviews')->where('id', $r->id)->update(['updated_at' => $at]);
+
+        return $r;
+    };
+    // The existing application (already ready) is not waiting. Three arrive: A (queued, 10 min ago), B (no review row, 20 min ago), C (queued, 5 min ago)
+    \App\Models\Programs\Ai\ApplicationAiReview::where('application_id', $this->application->id)->delete();
+    $this->application->update(['round_status' => 'draft']);
+    $a = $make('A', now()->subMinutes(10)); $queue($a, now()->subMinutes(10));
+    $b = $make('B', now()->subMinutes(20));
+    $c = $make('C', now()->subMinutes(5)); $queue($c, now()->subMinutes(5));
+
+    $order = [];
+    $skip = [];
+    for ($i = 0; $i < 3; $i++) {
+        $n = \App\Service\AiReview\QueueOrder::next($this->round, $skip);
+        $app = $n['application'] ?? \App\Models\Programs\ProgramApplication::find($n['review']->application_id);
+        $order[] = $app->startup_name;
+        if ($n['review']) { $skip[] = $n['review']->id; } else { $queue($b, now()->subMinutes(20)); \App\Models\Programs\Ai\ApplicationAiReview::where('application_id', $b->id)->update(['status' => 'ready']); }
+    }
+
+    expect($order)->toBe(['B', 'A', 'C']);
+});

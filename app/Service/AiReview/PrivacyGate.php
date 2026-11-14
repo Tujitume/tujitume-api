@@ -33,7 +33,14 @@ class PrivacyGate
             return true;
         }
 
-        return $organization && $organization->ai_data_ack_at && $organization->ai_data_ack_provider === $provider;
+        if (! $organization || ! $organization->ai_data_ack_at) return false;
+        if ($organization->ai_data_ack_provider === $provider) return true;
+
+        // Accepted for 'amari' counts for 'groq' (and the other way) when both talk to the same service: it is the same company receiving the text
+        $accepted = $this->providerConfig((string) $organization->ai_data_ack_provider);
+        $host = fn (?array $c) => strtolower((string) parse_url((string) ($c['base_url'] ?? ''), PHP_URL_HOST));
+
+        return $accepted && $host($accepted) !== '' && $host($accepted) === $host($cfg);
     }
 
     /** Providers usable for this program right now: configured, credentialed and passing the gate. */

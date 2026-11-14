@@ -50,7 +50,7 @@ class AiReviewsSweep extends Command
                 } else {
                     // A batch at a time; the next sweep takes the next batch
                     ApplicationAiReview::where('round_id', $round->id)->where('status', ApplicationAiReview::STATUS_QUEUED)->whereIn('application_id', $submittedQuery()->select('id'))
-                        ->orderBy('id')->limit(500)->pluck('id')->each(fn ($id) => RunApplicationAiReviewJob::dispatch($id));
+                        ->orderBy('updated_at')->orderBy('id')->limit(500)->pluck('id')->each(fn ($id) => RunApplicationAiReviewJob::dispatch($id));
                     $submittedQuery()->whereNotIn('id', ApplicationAiReview::where('round_id', $round->id)->where('status', '!=', ApplicationAiReview::STATUS_STALE)->select('application_id'))
                         ->orderBy('id')->limit(500)->get()->each(fn ($application) => $dispatcher->dispatchFor($application, $round));
                 }

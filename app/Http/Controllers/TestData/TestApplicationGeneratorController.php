@@ -226,7 +226,7 @@ class TestApplicationGeneratorController extends Controller
             'team_experience_avg_years' => rand(2, 15),
             
             // Description
-            'traction_kpis' => $this->generateLoremIpsum(150),
+            'traction_kpis' => 'About '.rand(40, 300).' regular customers, KES '.rand(80, 400).',000 in sales a month and growing '.rand(5, 20).'% a quarter.',
             
             // Match score
             'match_score' => $matchScore,
@@ -324,17 +324,22 @@ class TestApplicationGeneratorController extends Controller
     {
         // Get all questions for this round
         $allQuestions = RoundCustomQuestion::where('round_id', $round->id)->get();
-        
+        // Answers follow each question as the owner set it up (a name, an email, a Kenyan phone number, one of the choices, a readable file...)
+        $answers = new \App\Service\TestData\RealisticAnswers((int) $application->id);
+
         foreach ($allQuestions as $question) {
-            $response = $question->question_type === 'knockout' 
-                ? $this->generateKnockoutAnswer($question)
-                : $this->generateQuestionAnswer($question);
-            
+            if ($question->question_type === 'knockout') {
+                $made = ['response' => $this->generateKnockoutAnswer($question), 'file_path' => null];
+            } else {
+                $made = $answers->forQuestion($question, (string) $application->startup_name, (string) $application->contact_person_name, (string) ($application->sector ?? 'retail'), (string) ($application->headquarters_location ?? 'Nairobi'));
+            }
+
             ApplicationRoundResponse::create([
                 'application_id' => $application->id,
                 'round_id' => $round->id,
                 'question_id' => $question->id,
-                'response' => $response,
+                'response' => $made['response'],
+                'file_path' => $made['file_path'],
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
@@ -404,7 +409,10 @@ class TestApplicationGeneratorController extends Controller
             $docType = $docConfig['type'] ?? $docConfig['label'] ?? 'document';
             
             // Create a dummy PDF file
-            $filePath = $this->createDummyDocument($program->id, $round->id, $docType);
+            $filePath = (new \App\Service\TestData\RealisticAnswers((int) $application->id))->makePdfFile($program->id, $round->id, (string) $docType, [
+                (string) $docType.' — '.$application->startup_name, '', 'Prepared by '.$application->contact_person_name.'.',
+                'This document supports the application of '.$application->startup_name.', a '.strtolower((string) ($application->sector ?? 'retail')).' business based in '.($application->headquarters_location ?? 'Nairobi').'.',
+            ]);
             
             RoundRequiredDocument::create([
                 'application_id' => $application->id,

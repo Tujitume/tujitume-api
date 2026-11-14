@@ -4,11 +4,17 @@
 |--------------------------------------------------------------------------
 | AI-assisted / AI-only application review
 |--------------------------------------------------------------------------
-| Every provider is an OpenAI-compatible chat endpoint, so changing provider, URL, key or model is an .env change.
+| Every provider is an OpenAI-compatible chat endpoint. 'amari' and 'groq' are both ready (same Groq service); the one used is set by $provider below.
 | Values below were checked against public pages on 2026-11-11, but free-tier limits, model IDs and data terms change
 | often and the sources disagree. Treat every limit as a conservative default that THIS system enforces; confirm the
 | numbers in each provider's console before relying on them. Anything not confirmed is trains_on_data = 'unknown'.
 */
+
+/*
+| WHICH PROVIDER: change this one word to switch ('amari' or 'groq'). Both are fully set up below and use the same Groq service, so no .env change
+| is needed. (A server may still override it with AI_REVIEW_PROVIDER in its .env; leave that line out and this word decides.)
+*/
+$provider = 'amari';
 
 $list = fn (string $key, string $default = '') => array_values(array_filter(array_map('trim', explode(',', (string) env($key, $default)))));
 $amariChatUrl = rtrim((string) env('AMARI_AI_URL', 'https://api.groq.com/openai/v1/chat/completions'), '/');
@@ -16,7 +22,7 @@ $amariBaseUrl = preg_replace('~/chat/completions$~', '', $amariChatUrl) ?: $amar
 
 return [
     'enabled' => true,
-    'default_provider' => env('AI_REVIEW_PROVIDER', 'amari'),
+    'default_provider' => env('AI_REVIEW_PROVIDER') ?: $provider,
     'fallbacks' => $list('AI_REVIEW_FALLBACKS', ''),
     'prompt_version' => env('AI_REVIEW_PROMPT_VERSION', 'v7'),
     'queue' => env('AI_REVIEW_QUEUE', 'ai-review'),
@@ -69,7 +75,7 @@ return [
         'amari' => [
             'driver' => 'openai_compatible',
             'base_url' => $amariBaseUrl,
-            'api_key' => env('AMARI_AI_API_KEY'),
+            'api_key' => env('AMARI_AI_API_KEY') ?: env('GROQ_API_KEY'),
             'model' => env('AMARI_AI_MODEL', 'openai/gpt-oss-120b'),
             'vision_model' => env('AMARI_AI_VISION_MODEL'),
             'extra' => array_filter(['reasoning_effort' => env('AMARI_AI_REASONING_EFFORT', 'low')]),
@@ -89,18 +95,20 @@ return [
         'groq' => [
             'driver' => 'openai_compatible',
             'base_url' => env('GROQ_BASE_URL', 'https://api.groq.com/openai/v1'),
-            'api_key' => env('GROQ_API_KEY'),
-            'model' => env('GROQ_MODEL', 'openai/gpt-oss-120b'),
+            // Either key works for either provider: they are the same service
+            'api_key' => env('GROQ_API_KEY') ?: env('AMARI_AI_API_KEY'),
+            'model' => env('GROQ_MODEL', env('AMARI_AI_MODEL', 'openai/gpt-oss-120b')),
             'vision_model' => env('GROQ_VISION_MODEL'),
             // Extra request fields. gpt-oss models reason before answering; low effort keeps the token cost down.
-            'extra' => array_filter(['reasoning_effort' => env('GROQ_REASONING_EFFORT', 'low')]),
+            'extra' => array_filter(['reasoning_effort' => env('GROQ_REASONING_EFFORT', env('AMARI_AI_REASONING_EFFORT', 'low'))]),
             'supports_json_schema' => env('GROQ_JSON_SCHEMA', true), // schema-enforced output works on the gpt-oss models (live-tested 2026-11-11); models are listed at /openai/v1/models
             'supports_json_mode' => env('GROQ_JSON_MODE', true),
             'context_tokens' => (int) env('GROQ_CONTEXT_TOKENS', 128000),
             'max_output_tokens' => (int) env('GROQ_MAX_OUTPUT', 4096),
-            'limits' => ['rpm' => (int) env('GROQ_RPM', 20), 'tpm' => (int) env('GROQ_TPM', 6000), 'rpd' => (int) env('GROQ_RPD', 900), 'reset_tz' => 'UTC'],
-            'trains_on_data' => env('GROQ_TRAINS_ON_DATA', 'unknown'),
-            'allow_applicant_data' => env('GROQ_ALLOW_APPLICANT_DATA', false),
+            // Same defaults as 'amari' (one Groq account), so switching between the two changes nothing but the name; set GROQ_* only to differ
+            'limits' => ['rpm' => (int) env('GROQ_RPM', env('AMARI_RATE_PER_MIN', 20)), 'tpm' => (int) env('GROQ_TPM', env('AMARI_AI_TPM', 128000)), 'rpd' => (int) env('GROQ_RPD', env('AMARI_AI_RPD', 900)), 'reset_tz' => 'UTC'],
+            'trains_on_data' => env('GROQ_TRAINS_ON_DATA', env('AMARI_AI_TRAINS_ON_DATA', 'unknown')),
+            'allow_applicant_data' => env('GROQ_ALLOW_APPLICANT_DATA', env('AMARI_AI_ALLOW_APPLICANT_DATA', false)),
             'notes' => 'Verify terms at https://groq.com/privacy-policy (2026-11-11: not confirmed from an official page).',
         ],
         // https://inference-docs.cerebras.ai/support/rate-limits  (2026-11-11: a permanent free tier may no longer exist;

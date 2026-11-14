@@ -130,11 +130,13 @@ class AiReviewController extends Controller
         $queue = $queuedRows->concat($freshRows)->sortByDesc(fn ($q) => $q['queued_at']->timestamp)->take(15)->values();
 
         // The one the queue takes next (oldest first, the order it really works in), and whether anything is moving at all
-        $nextRow = $base()->where('application_ai_reviews.status', 'queued')->orderBy('application_ai_reviews.updated_at')->orderBy('application_ai_reviews.id')->first();
-        $nextFresh = $unreviewed()->orderBy('id')->first(['id', 'startup_name', 'contact_person_name', 'created_at', 'updated_at']);
-        $next = $nextRow
-            ? (object) ['application_id' => $nextRow->application_id, 'name' => $name($nextRow), 'at' => $nextRow->updated_at]
-            : ($nextFresh ? (object) ['application_id' => $nextFresh->id, 'name' => $nextFresh->startup_name ?: ($nextFresh->contact_person_name ?: '#'.$nextFresh->id), 'at' => $nextFresh->updated_at ?? $nextFresh->created_at] : null);
+        // Who the queue takes next: first come first served, the same rule the worker uses
+        $nextOrder = \App\Service\AiReview\QueueOrder::next($round);
+        $next = null;
+        if ($nextOrder) {
+            $nextApp = $nextOrder['application'] ?? ProgramApplication::find($nextOrder['review']->application_id);
+            $next = (object) ['application_id' => $nextApp->id, 'name' => $nextApp->startup_name ?: ($nextApp->contact_person_name ?: '#'.$nextApp->id), 'at' => $nextOrder['at']];
+        }
         // Stopped by the program owner: nothing is meant to be running, so that is not a fault
         $stopped = $round->ai_review_paused_at !== null;
 
@@ -382,7 +384,7 @@ class AiReviewController extends Controller
         } else {
             // 1. Reviews already waiting (the job is unique per review, so asking again never doubles the work)
             $stuckBefore = now()->subMinutes(2);
-            ApplicationAiReview::where('round_id', $round->id)->where('status', 'queued')->orderBy('id')->limit($limit)->get(['id', 'updated_at'])
+            ApplicationAiReview::where('round_id', $round->id)->where('status', 'queued')->orderBy('updated_at')->orderBy('id')->limit($limit)->get(['id', 'updated_at'])
                 ->each(function ($review) use (&$started, $stuckBefore) {
                     // A review untouched for a couple of minutes may hold a leftover "one at a time" lock from a run that never finished
                     if ($review->updated_at->lt($stuckBefore)) {

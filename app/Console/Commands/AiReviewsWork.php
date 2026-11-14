@@ -7,6 +7,7 @@ use App\Models\Programs\Ai\ApplicationAiReview;
 use App\Models\Programs\ProgramApplication;
 use App\Models\Programs\Rounds\ProgramRound;
 use App\Service\AiReview\AiReviewDispatcher;
+use App\Service\AiReview\QueueOrder;
 use App\Service\AiReview\RateGovernor;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Cache;
@@ -79,20 +80,14 @@ class AiReviewsWork extends Command
         return self::SUCCESS;
     }
 
-    /** The oldest waiting review, else a submitted application that has none yet (its review is created now). */
+    /** Who is next, first come first served (see QueueOrder); an application with no review row yet gets its row now. */
     private function next(ProgramRound $round, AiReviewDispatcher $dispatcher, array $skip = []): ?ApplicationAiReview
     {
-        $queued = ApplicationAiReview::where('round_id', $round->id)->where('status', ApplicationAiReview::STATUS_QUEUED)->whereNotIn('id', $skip)
-            ->whereIn('application_id', ProgramApplication::where('current_round_id', $round->id)->whereIn('round_status', ProgramApplication::AI_REVIEWABLE_STATUSES)->notAutomated()->select('id'))
-            ->orderBy('updated_at')->orderBy('id')->first();
-        if ($queued) return $queued;
-
-        $application = ProgramApplication::where('current_round_id', $round->id)->whereIn('round_status', ProgramApplication::AI_REVIEWABLE_STATUSES)->notAutomated()
-            ->whereNotIn('id', ApplicationAiReview::where('round_id', $round->id)->where('status', '!=', ApplicationAiReview::STATUS_STALE)->select('application_id'))
-            ->orderBy('id')->first();
-        if (! $application) return null;
+        $next = QueueOrder::next($round, $skip);
+        if (! $next) return null;
+        if ($next['review']) return $next['review'];
 
         // This command is the worker: the review row is only created here and the loop above runs it itself
-        return $dispatcher->dispatchFor($application, $round, false, false);
+        return $dispatcher->dispatchFor($next['application'], $round, false, false);
     }
 }
