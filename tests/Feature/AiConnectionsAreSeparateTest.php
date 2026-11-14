@@ -4,12 +4,14 @@ use Illuminate\Support\Facades\Http;
 
 uses(Tests\TestCase::class);
 
-it('gives application review an Amari provider without changing the Groq provider', function () {
+it('gives application review both an Amari and a Groq provider, chosen by one word in the config file', function () {
     $review = file_get_contents(config_path('ai_review.php'));
     $services = file_get_contents(config_path('services.php'));
     $amariBlock = substr($services, strpos($services, "'amari' => ["), 900);
 
-    expect($review)->toContain("'default_provider' => env('AI_REVIEW_PROVIDER', 'amari')")
+    // The provider is set in code ($provider = 'amari' or 'groq'); AI_REVIEW_PROVIDER in .env only overrides it on a server
+    expect($review)->toContain("\$provider = 'amari';")
+        ->toContain("'default_provider' => env('AI_REVIEW_PROVIDER') ?: \$provider")
         ->toContain("'api_key' => env('AMARI_AI_API_KEY')")
         ->toContain("'model' => env('AMARI_AI_MODEL'")
         ->toContain("'api_key' => env('GROQ_API_KEY')")
