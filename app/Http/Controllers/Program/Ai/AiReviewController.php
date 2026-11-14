@@ -82,6 +82,77 @@ class AiReviewController extends Controller
         ]]);
     }
 
+    /**
+     * GET rounds/{round}/ai-reviews/activity: what the AI is doing for the round right now, in a form that stays small however many
+     * applications there are (counts by SQL, and only the few newest rows of each kind).
+     */
+    public function roundActivity(ProgramRound $round, RateGovernor $governor, PrivacyGate $gate)
+    {
+        if (! ProgramAccess::owns($round->program)) return response()->json(['message' => 'Unauthorized.'], 403);
+
+        $base = fn () => ApplicationAiReview::query()
+            ->join('program_applications as pa', 'pa.id', '=', 'application_ai_reviews.application_id')
+            ->where('application_ai_reviews.round_id', $round->id)->where('application_ai_reviews.status', '!=', 'stale')
+            ->select('application_ai_reviews.*', 'pa.startup_name', 'pa.contact_person_name');
+        $name = fn ($r) => $r->startup_name ?: ($r->contact_person_name ?: '#'.$r->application_id);
+
+        $byStatus = ApplicationAiReview::where('round_id', $round->id)->where('status', '!=', 'stale')->selectRaw('status, count(*) as n')->groupBy('status')->pluck('n', 'status');
+        $submitted = ProgramApplication::where('current_round_id', $round->id)->whereIn('round_status', ['submitted', 'scored'])->count();
+        $working = (int) ($byStatus['extracting'] ?? 0) + (int) ($byStatus['analyzing'] ?? 0);
+        $queued = (int) ($byStatus['queued'] ?? 0);
+        $ready = (int) ($byStatus['ready'] ?? 0);
+        $attention = (int) ($byStatus['failed'] ?? 0) + (int) ($byStatus['needs_attention'] ?? 0);
+        // Submitted applications that have no review row yet are also waiting
+        $notQueuedYet = max(0, $submitted - $ready - $attention - $working - $queued);
+        $waiting = $queued + $notQueuedYet;
+
+        // The application being worked on now (the longest-running one if several run at once)
+        $now = $base()->whereIn('application_ai_reviews.status', ['extracting', 'analyzing'])->orderBy('application_ai_reviews.started_at')->first();
+
+        // Waiting requests, the latest at the top
+        $queue = $base()->where('application_ai_reviews.status', 'queued')->orderByDesc('application_ai_reviews.updated_at')->limit(15)->get();
+
+        // Finished, newest first, with what the timeline needs
+        $recent = $base()->whereIn('application_ai_reviews.status', ['ready', 'failed', 'needs_attention'])->orderByDesc('application_ai_reviews.completed_at')->limit(8)->get();
+
+        // How long one application takes, from the most recent ones that really ran
+        $durations = ApplicationAiReview::where('round_id', $round->id)->where('status', 'ready')->whereNotNull('started_at')->whereNotNull('completed_at')
+            ->orderByDesc('completed_at')->limit(30)->get(['started_at', 'completed_at'])
+            ->map(fn ($r) => max(1, $r->started_at->diffInSeconds($r->completed_at)))->all();
+        $provider = (string) config('ai_review.default_provider');
+        $capacity = $governor->capacity($provider);
+        // Never faster than the provider's own pace: one request a minute costs at least 60 / rpm seconds
+        $floor = $capacity['rpm'] > 0 ? (int) ceil(60 / $capacity['rpm']) : 0;
+        $perApplication = $durations ? max($floor, (int) round(array_sum($durations) / count($durations))) : null;
+        $cooldown = $governor->cooldownRemaining($provider);
+        $remaining = $waiting + $working;
+        $finishAt = $perApplication && $remaining > 0 ? now()->addSeconds($cooldown + $remaining * $perApplication)->toIso8601String() : null;
+
+        $state = $working > 0 ? 'working' : ($waiting > 0 ? ($cooldown > 0 || $capacity['requests_remaining_today'] <= 0 ? 'paused' : 'starting') : ($submitted > 0 && $ready + $attention >= $submitted ? 'done' : 'idle'));
+
+        return response()->json(['data' => [
+            'state' => $state,
+            'counts' => ['total' => $submitted, 'done' => $ready, 'working' => $working, 'waiting' => $waiting, 'attention' => $attention],
+            'now' => $now ? ['application_id' => $now->application_id, 'applicant_name' => $name($now), 'step' => $now->status, 'started_at' => $now->started_at?->toIso8601String()] : null,
+            'queue' => $queue->map(fn ($r) => ['application_id' => $r->application_id, 'applicant_name' => $name($r), 'queued_at' => $r->updated_at->toIso8601String()])->values(),
+            'queue_more' => max(0, $waiting - $queue->count()),
+            'recent' => $recent->map(fn ($r) => [
+                'application_id' => $r->application_id, 'applicant_name' => $name($r), 'status' => $r->status,
+                'queued_at' => $r->created_at?->toIso8601String(), 'started_at' => $r->started_at?->toIso8601String(), 'completed_at' => $r->completed_at?->toIso8601String(),
+                'seconds' => $r->started_at && $r->completed_at ? max(1, $r->started_at->diffInSeconds($r->completed_at)) : null,
+                'suggested_total' => $r->suggested_total, 'error' => $r->error,
+            ])->values(),
+            'seconds_per_application' => $perApplication,
+            'estimated_finish_at' => $finishAt,
+            'paused_for_seconds' => $cooldown ?: null,
+            'daily_limit_reached' => $capacity['requests_remaining_today'] <= 0,
+            'provider' => $provider,
+            'model' => config("ai_review.providers.{$provider}.model"),
+            'privacy_gate_satisfied' => $gate->satisfied($provider, $gate->organizationFor($round->program)),
+            'server_time' => now()->toIso8601String(),
+        ]]);
+    }
+
     /** POST applications/{application}/ai-review/rerun */
     public function rerun(ProgramApplication $application)
     {

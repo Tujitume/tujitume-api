@@ -66,8 +66,17 @@ class AiReviewAnalyzer
         }
         $blocks = $this->trimToFit($blocks, $available, $notes);
 
-        // 3. Reduce / single pass
-        $messages = $this->prompts->review($program, $round, $input, $blocks, $withScores);
+        // 3. Reduce / single pass. The wrappers around each block and the JSON escaping add to the size that the character count above does not
+        // see, so measure the real request and trim the content until it fits the provider's limit (a request that can never fit is refused, not delayed).
+        $limit = $this->tokenLimit($program);
+        for ($i = 0; $i < 6; $i++) {
+            $messages = $this->prompts->review($program, $round, $input, $blocks, $withScores);
+            $estimate = (int) ceil(mb_strlen(json_encode($messages)) / 3.3) + $reserveOut;
+            if ($estimate <= $limit) break;
+            $kept = array_sum(array_map(fn ($b) => mb_strlen($b['text']), $blocks));
+            $blocks = $this->trimToFit($blocks, max(1200, $kept - (int) (($estimate - $limit + 150) * 3.3)), $notes);
+        }
+        $notes = array_values(array_unique($notes));
         $criteria = collect($round->scoring_criteria ?? [])->pluck('name')->all();
         $schema = $this->prompts->schema($withScores);
         $repairs = 0;
@@ -124,16 +133,21 @@ class AiReviewAnalyzer
 
     // ── budget & chunking ─────────────────────────────────────────────────────
 
-    private function budgetChars(Program $program): int
+    /** The smallest context or tokens-per-minute limit among the providers this program may use. */
+    private function tokenLimit(Program $program): int
     {
         $tokens = PHP_INT_MAX;
         foreach ($this->gate->allowedProviders($program) as $p) {
             $cfg = config("ai_review.providers.{$p}");
             $tokens = min($tokens, (int) $cfg['context_tokens'], (int) $cfg['limits']['tpm']);
         }
-        if ($tokens === PHP_INT_MAX) $tokens = 6000;
 
-        return max(2500, (int) (($tokens - self::OUTPUT_RESERVE - 400) * 3.3));
+        return $tokens === PHP_INT_MAX ? 6000 : $tokens;
+    }
+
+    private function budgetChars(Program $program): int
+    {
+        return max(2500, (int) (($this->tokenLimit($program) - self::OUTPUT_RESERVE - 400) * 3.3));
     }
 
     private function trimToFit(array $blocks, int $available, array &$notes): array

@@ -69,7 +69,13 @@ class AiReviewRunner
             // No provider will become usable by itself: keep the deterministic report and flag it
             $review->update([
                 'status' => ApplicationAiReview::STATUS_NEEDS_ATTENTION,
-                'error' => $e->authError ? 'The AI provider rejected its credentials.' : 'No AI provider is available ('.$e->reason.'). Only the automatic checks ran.',
+                'error' => $e->authError ? 'The AI provider rejected its credentials.' : match ($e->reason) {
+                    'too_large' => 'This application has more content than the AI provider can read at once, so the AI could not score it. Only the automatic checks ran. You can score it yourself, or press Run again later.',
+                    'quota', 'daily_requests', 'requests_per_minute', 'tokens_per_minute' => 'The AI provider is busy or has reached its limit for now. Only the automatic checks ran. Press Run again in a few minutes.',
+                    'disabled' => 'AI review is switched off on this platform. Only the automatic checks ran.',
+                    'no_provider' => 'No AI provider is set up for this organization. Only the automatic checks ran.',
+                    default => 'The AI provider could not be reached. Only the automatic checks ran. Press Run again in a few minutes.',
+                },
                 'completed_at' => now(),
             ]);
 

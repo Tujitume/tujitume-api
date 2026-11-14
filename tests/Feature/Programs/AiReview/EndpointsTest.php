@@ -111,3 +111,29 @@ it('never leaks AI data in any applicant-facing response', function () {
         }
     }
 });
+
+it('tells the owner what the AI is doing for the round: counts, the finished timeline and an estimate, in a small answer', function () {
+    $res = $this->actingAsOrgOwner()->getJson("/api/v1/programs/rounds/{$this->round->id}/ai-reviews/activity")->assertOk();
+    $d = $res->json('data');
+
+    expect($d['counts']['total'])->toBe(1)->and($d['counts']['done'])->toBe(1)->and($d['counts']['waiting'])->toBe(0)
+        ->and($d['state'])->toBe('done')
+        ->and($d['now'])->toBeNull()->and($d['queue'])->toBe([])
+        ->and($d['recent'])->toHaveCount(1)->and($d['recent'][0]['application_id'])->toBe($this->application->id)
+        ->and($d['recent'][0]['status'])->toBe('ready')->and($d['recent'][0]['completed_at'])->not->toBeNull()
+        ->and(json_encode($d))->not->toContain('text_content');
+});
+
+it('lists waiting reviews with the latest first and counts the ones not shown', function () {
+    $review = \App\Models\Programs\Ai\ApplicationAiReview::where('application_id', $this->application->id)->first();
+    $review->update(['status' => 'queued', 'completed_at' => null, 'started_at' => null]);
+
+    $d = $this->actingAsOrgOwner()->getJson("/api/v1/programs/rounds/{$this->round->id}/ai-reviews/activity")->assertOk()->json('data');
+
+    expect($d['state'])->toBeIn(['starting', 'paused'])->and($d['counts']['waiting'])->toBe(1)
+        ->and($d['queue'])->toHaveCount(1)->and($d['queue'][0]['queued_at'])->not->toBeNull()->and($d['queue_more'])->toBe(0);
+});
+
+it('keeps the activity of a round away from people who do not own the program', function () {
+    $this->getJson("/api/v1/programs/rounds/{$this->round->id}/ai-reviews/activity")->assertStatus(401);
+});
