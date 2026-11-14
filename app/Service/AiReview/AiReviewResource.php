@@ -16,7 +16,7 @@ class AiReviewResource
     {
         $data = [
             'id' => $review->id, 'status' => $review->status, 'mode' => $review->mode, 'origin' => 'ai',
-            'provider' => $review->provider, 'model' => $review->model, 'prompt_version' => $review->prompt_version,
+            'provider' => $review->provider, 'model' => $review->model, 'prompt_version' => $review->prompt_version, 'outdated' => $review->status === 'ready' && $review->prompt_version !== config('ai_review.prompt_version'),
             'summary' => $review->summary,
             'suggested_scores' => collect($review->suggested_scores ?? [])->map(fn ($s) => $s + ['origin' => 'ai'])->all(),
             'suggested_total' => $review->suggested_total,

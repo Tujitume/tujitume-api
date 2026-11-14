@@ -71,13 +71,14 @@ it('clamps scores to each criterion range, so an injected 100 cannot exceed the 
         ->and(collect(ApplicationScore::first()->criterion_scores)->max('score'))->toEqual(10);
 });
 
-it('lets a human score override the AI score in the average, and finalize runs unchanged', function () {
+it('does not let anyone enter or edit a score by hand in an AI-only round, and finalize runs unchanged', function () {
     $this->aiRound('ai_only');
     $this->llm->push($this->report());
     app(AiReviewDispatcher::class)->dispatchFor($this->application);
-    $this->actingAsOrgOwner()->postJson("/api/v1/programs/applications/{$this->application->id}/scores", ['criterion_scores' => [['criterion' => 'Impact', 'score' => 3], ['criterion' => 'Viability', 'score' => 3]]])->assertStatus(201);
-    expect((float) $this->application->fresh()->average_score)->toBe(30.0);
-    expect(ApplicationScore::count())->toBe(2);
+    $ai = (float) $this->application->fresh()->average_score;
+
+    $this->actingAsOrgOwner()->postJson("/api/v1/programs/applications/{$this->application->id}/scores", ['criterion_scores' => [['criterion' => 'Impact', 'score' => 3], ['criterion' => 'Viability', 'score' => 3]]])->assertStatus(422);
+    expect((float) $this->application->fresh()->average_score)->toBe($ai)->and(ApplicationScore::count())->toBe(1);
 
     $this->actingAsOrgOwner()->postJson("/api/v1/programs/rounds/{$this->round->id}/finalize", ['decisions' => []])->assertStatus(422)->assertJsonMissing(['exception']);
 });

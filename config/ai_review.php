@@ -18,7 +18,7 @@ return [
     'enabled' => true,
     'default_provider' => env('AI_REVIEW_PROVIDER', 'amari'),
     'fallbacks' => $list('AI_REVIEW_FALLBACKS', ''),
-    'prompt_version' => env('AI_REVIEW_PROMPT_VERSION', 'v4'),
+    'prompt_version' => env('AI_REVIEW_PROMPT_VERSION', 'v5'),
     'queue' => env('AI_REVIEW_QUEUE', 'ai-review'),
     // Cache store holding the live rate counters (null = the app default; use 'redis' in production).
     'cache_store' => env('AI_REVIEW_CACHE_STORE'),

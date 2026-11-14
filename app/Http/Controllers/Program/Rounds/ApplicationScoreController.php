@@ -40,6 +40,11 @@ class ApplicationScoreController extends Controller
             return response()->json(['error' => 'Application not in an active round'], 422);
         }
 
+        // An AI-only round is scored by the AI alone: nobody enters or edits a score by hand
+        if ($round->isAiOnly()) {
+            return response()->json(['message' => 'This round is scored by the AI only, so scores cannot be entered or changed by hand.'], 422);
+        }
+
         // Scoring closes once the round is finalized; results and reviewer pay are based on the scores as they stand.
         if ($round->status === 'finalized') {
             return response()->json(['message' => 'This round has been finalized. Scores can no longer be submitted or changed.'], 422);

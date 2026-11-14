@@ -42,7 +42,7 @@ class ScoreGuard
             $kind = self::kind((string) ($s['criterion'] ?? ''));
             if (! $criterion || ! $kind) return $s;
 
-            $answer = $answers->first(fn ($a) => self::kind((string) ($a['label'] ?? '')) === $kind);
+            $answer = $this->answerFor($answers, $kind, $criterion);
             if (! $answer) return $s; // nothing to check it against: the model's score stands
 
             $max = $this->rubric->maxScoreFor($criterion);
@@ -50,6 +50,13 @@ class ScoreGuard
             $problem = $this->problem($kind, $text);
             if ($problem) {
                 return ['score' => 0.0, 'rationale' => $problem] + $s;
+            }
+
+            // "Full name provided" / "phone number completeness" only ask whether it is there and in order: a name with a first and last name, or a
+            // number with a valid country code and length, gets full credit however the model worded it
+            if (in_array($kind, ['name', 'phone'], true) && preg_match('/provided|supplied|present|given|complete|completeness|imetolewa|kamili/i', (string) $s['criterion'])
+                && ! preg_match('/quality|relevan|detail|depth|credib|verif/i', (string) $s['criterion'])) {
+                return ['score' => (float) $max, 'rationale' => $kind === 'name' ? 'A first and last name are both given.' : 'The number has a valid country code and length.'] + $s;
             }
 
             // A free mailbox (Gmail, Yahoo, Outlook...) is a valid address but not a company one: part credit for a company-email criterion
@@ -64,6 +71,30 @@ class ScoreGuard
 
             return $s;
         }, $scores);
+    }
+
+    /**
+     * The answer a criterion is about. A form can ask for the same kind of thing twice (an "Email" and a "Your company email"), so the first
+     * of that kind is not enough: the question named in the criterion (its description says "Based on: Q3 "Your company email"") wins, then the
+     * one that shares the most words with it, and a company-email criterion prefers a question that mentions the company.
+     */
+    private function answerFor($answers, string $kind, array $criterion)
+    {
+        $candidates = $answers->filter(fn ($a) => self::kind((string) ($a['label'] ?? '')) === $kind)->values();
+        if ($candidates->count() <= 1) return $candidates->first();
+
+        $criterionText = mb_strtolower(trim(($criterion['name'] ?? '').' '.($criterion['description'] ?? '')));
+        $words = fn (string $t) => array_values(array_filter(preg_split('/[^\p{L}\p{N}]+/u', mb_strtolower($t)), fn ($w) => mb_strlen($w) > 2));
+        $company = (bool) preg_match('/company|business|official|organi[sz]ation|kampuni|biashara|rasmi|shirika/i', $criterionText);
+
+        return $candidates->sortByDesc(function ($a) use ($criterionText, $words, $company) {
+            $label = mb_strtolower(trim((string) $a['label']));
+            $score = ($label !== '' && str_contains($criterionText, $label)) ? 100 : 0;
+            $score += count(array_intersect($words($label), $words($criterionText)));
+            if ($company && preg_match('/company|business|official|organi[sz]ation|kampuni|biashara|rasmi|shirika/i', $label)) $score += 50;
+
+            return $score;
+        })->first();
     }
 
     /** Why the answer is not what was asked for, in plain words; null when it is fine. */

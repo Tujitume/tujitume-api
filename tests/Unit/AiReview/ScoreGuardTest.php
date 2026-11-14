@@ -52,3 +52,30 @@ it('gives a free webmail address only part credit for a company email', function
 
     expect($out['Company email validity']['score'])->toBe(1.0)->and($out['Company email validity']['rationale'])->toContain('free webmail');
 });
+
+it('checks the question the criterion is about when a form asks for two emails', function () {
+    $round = new ProgramRound(['scoring_criteria' => [
+        ['name' => 'Company email validity', 'description' => 'Confirm that a corporate email address is supplied. Based on: Q3 “Your company email”.', 'score_range' => '0-5'],
+    ]]);
+    $input = ['sources' => [
+        ['type' => 'answer', 'id' => 1, 'label' => 'Email', 'text' => 'ofulakelvin@gmail.com'],
+        ['type' => 'answer', 'id' => 2, 'label' => 'Your first and last name', 'text' => 'Richard Branson smith'],
+        ['type' => 'answer', 'id' => 3, 'label' => 'Your company email', 'text' => 'kelvin@lipr.io'],
+    ]];
+    $scores = [['criterion' => 'Company email validity', 'score' => 5.0, 'max' => 5.0, 'rationale' => 'A company-domain address was given.']];
+
+    $out = app(ScoreGuard::class)->apply($scores, $round, $input);
+
+    // The company email is a company domain, so the full score stands (it is not judged by the gmail address in the other question)
+    expect($out[0]['score'])->toBe(5.0)->and($out[0]['rationale'])->toBe('A company-domain address was given.');
+});
+
+it('gives full credit to a plainly valid name and phone for a "provided / complete" criterion', function () {
+    $out = collect(app(ScoreGuard::class)->apply(
+        [['criterion' => 'Full name provided', 'score' => 3.0, 'max' => 5.0, 'rationale' => 'extra wording'], ['criterion' => 'Mobile phone number completeness', 'score' => 4.0, 'max' => 5.0, 'rationale' => 'ok']],
+        guardRound(),
+        guardInput('bazu@tujitume.com', '+254712345678', 'Richard Branson smith')
+    ))->keyBy('criterion');
+
+    expect($out['Full name provided']['score'])->toBe(5.0)->and($out['Mobile phone number completeness']['score'])->toBe(5.0);
+});

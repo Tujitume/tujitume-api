@@ -358,3 +358,15 @@ it('lists the applications of the round that the AI does not count, with the rea
     $byStatus = collect($d['not_counted'])->pluck('count', 'status');
     expect($d['counts']['total'])->toBe(1)->and($byStatus['draft'])->toBe(1)->and($byStatus['advanced'])->toBe(1);
 });
+
+it('lets a finished review made by an older version of the AI check be run again once, and nothing else', function () {
+    $review = \App\Models\Programs\Ai\ApplicationAiReview::where('application_id', $this->application->id)->first();
+
+    $current = $this->actingAsOrgOwner()->getJson($this->base)->json('data');
+    expect($current['outdated'])->toBeFalse();
+    $this->actingAsOrgOwner()->postJson("{$this->base}/rerun")->assertStatus(422);
+
+    $review->update(['prompt_version' => 'v0']);
+    expect($this->actingAsOrgOwner()->getJson($this->base)->json('data.outdated'))->toBeTrue();
+    $this->actingAsOrgOwner()->postJson("{$this->base}/rerun")->assertStatus(202);
+});

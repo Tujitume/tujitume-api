@@ -430,7 +430,9 @@ class AiReviewController extends Controller
         // The AI scores an application once. A finished review is never run again (it costs tokens): the reviewer edits the scores by hand.
         // Only an application with no review yet, or one the AI could not finish, can be tried again.
         $current = ApplicationAiReview::where(['application_id' => $application->id, 'round_id' => $round->id])->where('status', '!=', 'stale')->latest('id')->first();
-        if ($current && ! in_array($current->status, ['failed', 'needs_attention', 'queued'], true)) {
+        // The exception: a finished review made by an older version of the AI check (its rules have changed since) may be run again once
+        $outdated = $current && $current->status === 'ready' && $current->prompt_version !== config('ai_review.prompt_version');
+        if ($current && ! $outdated && ! in_array($current->status, ['failed', 'needs_attention', 'queued'], true)) {
             return response()->json(['message' => $current->status === 'ready'
                 ? 'The AI has already scored this application. If a score looks wrong, change it yourself.'
                 : 'The AI is already working on this application.'], 422);
