@@ -202,21 +202,8 @@ class MessageController extends Controller
             $from_id = $user->id;
             $to_id = $validated['to_id'];
 
-            // Program Editor
-            if($user->user_type_id == 4) { // Organization program member
-                $user->loadMissing('organizationRole.role');
-                $role = $user->organizationRole?->role?->name;
-                if($role == 'editor' || $role == 'admin'){
-                    $from_id = $user->organizationOwnerId();
-                }
-            }
-            else if ($userTo->user_type_id == 4) { // Organization program member
-                $userTo->loadMissing('organizationRole.role');
-                $role = $userTo->organizationRole?->role?->name;
-                if ($role == 'editor' || $role == 'admin') {
-                    $to_id = $userTo->organizationOwnerId();
-                }
-            }
+            // A program team member (Editor, Admin) writes as THEMSELVES, and a message to them reaches them: each person is their own dialog,
+            // not one dialog under the owner's name. (Capital organizations below still write as their owner.)
 
             //Capital Editor
             if($user->user_type_id == 3) { //Capital From
