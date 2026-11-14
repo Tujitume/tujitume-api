@@ -23,6 +23,14 @@ describe('Program read endpoints follow the response contract', function () {
         expect($status['color'])->toBeIn(['success', 'warning', 'danger', 'info', 'neutral']);
     });
 
+    it('returns real applicant previews with the owner program list', function () {
+        $items = $this->actingAsOrgOwner()->getJson('/api/v1/programs/programs')->assertOk()
+            ->json('data.items');
+
+        expect($items[0])->toHaveKey('applicant_previews')
+            ->and($items[0]['applicant_previews'])->toBeArray();
+    });
+
     it('pages the list only when asked, with the pagination block', function () {
         $response = $this->actingAsOrgOwner()->getJson('/api/v1/programs/programs?page=1&per_page=1')->assertOk();
 
@@ -54,7 +62,7 @@ describe('Program read endpoints follow the response contract', function () {
             ->assertJsonStructure(['data' => ['items'], 'rounds'])->json('data.items.0');
 
         expect($round['status']['value'])->toBe($this->round->status);
-        expect($round['status']['color'])->toBe(config('status.program_round.' . $this->round->status));
+        expect($round['status']['color'])->toBe(config('status.program_round.'.$this->round->status));
     });
 });
 

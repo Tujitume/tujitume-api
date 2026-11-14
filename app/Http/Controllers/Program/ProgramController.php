@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers\Program;
 
-use App\Support\ApiContract;
 use App\Http\Controllers\Controller;
 use App\Models\Auth\User;
 use App\Models\Capital\CapitalProfile;
@@ -25,6 +24,7 @@ use App\Service\File\ImageUploadService;
 use App\Service\Misc\ErrorLogService;
 use App\Service\Notification\NotificationService;
 use App\Service\Organization\TeamMemberNotifier;
+use App\Support\ApiContract;
 use Hash;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
@@ -42,8 +42,11 @@ class ProgramController extends Controller
      * Display a listing of programs.
      */
     protected $Client;
+
     protected $balance;
+
     protected $checkoutCalculator;
+
     public function __construct(StripeClient $client)
     {
         parent::__construct();
@@ -58,7 +61,46 @@ class ProgramController extends Controller
         $user->role = $user->organizationRole?->role?->name ?? 'super-admin';
         // The organization owner's id (the user's own id when they are the owner), whose data a team member works on
         $user->program_owner_id = $user->organizationOwnerId();
+
         return $user;
+    }
+
+    /** Add a small, real applicant preview to owner program lists without loading every application model. */
+    private function attachApplicantPreviews($programs): void
+    {
+        $programIds = collect($programs)->pluck('id')->filter()->values();
+        if ($programIds->isEmpty()) {
+            return;
+        }
+
+        $ranked = DB::table('program_applications as pa')
+            ->leftJoin('users as applicant_users', 'applicant_users.id', '=', 'pa.user_id')
+            ->whereIn('pa.program_id', $programIds)
+            ->select([
+                'pa.id', 'pa.program_id', 'pa.startup_name', 'pa.business_id',
+                'applicant_users.first_name', 'applicant_users.last_name', 'applicant_users.image',
+            ])
+            ->selectRaw('ROW_NUMBER() OVER (PARTITION BY pa.program_id ORDER BY pa.created_at DESC, pa.id DESC) as preview_rank');
+
+        $previews = DB::query()->fromSub($ranked, 'ranked_applications')
+            ->where('preview_rank', '<=', 3)
+            ->get()
+            ->groupBy('program_id');
+
+        collect($programs)->each(function ($program) use ($previews): void {
+            $program->applicant_previews = collect($previews->get($program->id, []))->map(function ($application): array {
+                $accountName = trim(implode(' ', array_filter([
+                    $application->first_name,
+                    $application->last_name,
+                ], fn ($value) => $value && $value !== 'null')));
+
+                return [
+                    'id' => $application->id,
+                    'name' => ! $application->business_id && $accountName !== '' ? $accountName : $application->startup_name,
+                    'image' => ! $application->business_id ? $application->image : null,
+                ];
+            })->values()->all();
+        });
     }
     // C O R E  Methods
     public function index()
@@ -83,6 +125,7 @@ class ProgramController extends Controller
                     }
 
                     [$programs, $page] = ApiContract::fetch($query, request());
+                    $this->attachApplicantPreviews($programs);
 
                     foreach ($programs as $program){
                         $program->pitch_count = $program->applications_count ?? 0;
