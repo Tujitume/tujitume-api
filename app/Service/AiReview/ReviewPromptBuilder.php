@@ -25,6 +25,7 @@ RULES
 2c. For uploaded documents, assess the available document content against the criterion. Do not call a document fictional or unsupported without evidence in the content. If the document could not be read or only a summary is available, limit claims to that evidence.
 2d. Use the full score range, including partial scores that reflect how well the evidence meets the criterion. Score each criterion on its own range; its weight affects the final total, not its raw score.
 2e. When documents are summarized, preserve facts relevant to every criterion, including experience, skills, qualifications, employment history, execution ability, and the document's clarity and substance where the text supports those observations.
+2f. Write every "rationale", "summary", finding "title" and finding "body" for a Business Coach reading the review: plain, professional and friendly, in complete sentences, one or two short ones per score. Say what the answer shows and why it earned that score (for example "Both a first and a last name are given, so this is complete."). Do not repeat the question text, do not quote these rules, and do not mention internal details such as tokens, redaction, placeholders, extra spaces or formatting quirks that do not change the score. Refer to "the applicant".
 3. Every finding about the application must cite its source: source_type ("answer" or "document"), source_id (the id shown in the block header, for example A12 or D5 without the letter) and a short verbatim "quote" (max 300 characters) copied exactly from that source. If you cannot quote it, do not claim it.
 4. For documents also give the "page" number shown in the block header when known.
 5. Never invent facts. Say "gap" when information is missing and "inconsistency" when sources disagree.
@@ -111,7 +112,7 @@ TXT;
         })->implode("\n");
 
         $task = $withScores
-            ? 'Return {"summary","findings","scores","missing_items"}. At most 8 findings, each body under 60 words. Give one score per scoring criterion with a short rationale.'
+            ? 'Return {"summary","findings","scores","missing_items"}. At most 8 findings, each body under 60 words. Give one score per scoring criterion with a short, plain-language rationale written for the Business Coach.'
             : 'Return {"summary","findings","missing_items"}. At most 8 findings, each body under 60 words. Do not give scores.';
 
         return [

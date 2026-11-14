@@ -978,7 +978,7 @@ class ProgramNotificationService
             // ── AI-ASSISTED / AI-ONLY REVIEW ─────────────────────────────────
             'ai_review.reports_ready' => [
                 'title'         => 'AI Reports Ready',
-                'message'       => "{$this->v($data, 'count')} AI report(s) are ready for {$this->v($data, 'round_name')} in {$this->v($data, 'program_title')}. Check the findings before you score.",
+                'message'       => "{$this->v($data, 'count')} AI report(s) are ready for {$this->v($data, 'round_name')} in {$this->v($data, 'program_title')}. Open an application to see the AI's suggested scores, change anything you disagree with, then submit.",
                 'email_subject' => 'AI Review Reports Ready',
                 'email_view'    => $this->view_base . 'ai_review_reports_ready',
                 'link'          => $this->reviewerProgramLink($data),

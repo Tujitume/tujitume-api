@@ -47,7 +47,9 @@ class AiReviewsSweep extends Command
                 $reviewerIds = ReviewerApplicationAssignment::where('round_id', $round->id)->distinct()->pluck('reviewer_id');
                 foreach ($reviewerIds as $id) $notifier->flushReviewer($round, (int) $id);
                 if ($allReady && ! $round->ai_review_notified_at) {
-                    if ($owner = $notifier->owner($round)) {
+                    // Only the owner who scores the round themselves is told. When Business Coaches or team members review, the
+                    // reports-ready notice already goes to them above, and the owner has nothing to review.
+                    if ($round->assignment_type === 'owner_only' && ($owner = $notifier->owner($round))) {
                         (new \App\Service\Notification\ProgramNotificationService())->send('ai_review.reports_ready', [$owner], ['program_id' => $round->program_id, 'round_id' => $round->id, 'program_title' => $round->program?->program_title, 'round_name' => $round->round_name, 'count' => $submitted->count()]);
                     }
                     $round->update(['ai_review_notified_at' => now()]);
