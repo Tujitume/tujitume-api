@@ -29,7 +29,7 @@ class AiReviewsSweep extends Command
 
             // Everything below is counted in the database and handled in small batches, so one round with a very large number of
             // applications (or many rounds at once) never loads them all into memory.
-            $submittedQuery = fn () => ProgramApplication::where('current_round_id', $round->id)->whereIn('round_status', ['submitted', 'scored'])->notAutomated();
+            $submittedQuery = fn () => ProgramApplication::where('current_round_id', $round->id)->whereIn('round_status', ProgramApplication::AI_REVIEWABLE_STATUSES)->notAutomated();
             $latestIds = fn () => ApplicationAiReview::query()->where('round_id', $round->id)->where('status', '!=', 'stale')
                 ->whereIn('application_id', $submittedQuery()->select('id'))->selectRaw('MAX(id)')->groupBy('application_id');
             $byStatus = ApplicationAiReview::whereIn('id', $latestIds())->selectRaw('status, count(*) as n')->groupBy('status')->pluck('n', 'status');

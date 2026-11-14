@@ -309,3 +309,41 @@ it('runs again, in one go, only the reviews the AI could not finish', function (
     $this->actingAsOrgOwner()->postJson($url, ['application_ids' => [$this->application->id]])->assertStatus(202)->assertJsonPath('data.queued', 1);
     expect($review->fresh()->status)->not->toBe('needs_attention');
 });
+
+it('says how many seconds are left as a number, from the waiting count and the pace', function () {
+    $review = \App\Models\Programs\Ai\ApplicationAiReview::where('application_id', $this->application->id)->first();
+    $review->update(['status' => 'queued', 'completed_at' => null]);
+    $d = $this->actingAsOrgOwner()->getJson("/api/v1/programs/rounds/{$this->round->id}/ai-reviews/activity")->assertOk()->json('data');
+
+    expect($d['counts']['waiting'])->toBe(1);
+    if ($d['seconds_per_application'] !== null && ! $d['stalled']) {
+        expect($d['estimated_seconds_left'])->toBeInt()->toBeGreaterThanOrEqual($d['seconds_per_application']);
+    }
+});
+
+it('counts an application that has moved on to a Business Coach (assigned, under review), not only submitted and scored ones', function () {
+    $total = fn () => $this->actingAsOrgOwner()->getJson("/api/v1/programs/rounds/{$this->round->id}/ai-reviews/activity")->json('data.counts.total');
+    expect($total())->toBe(1);
+
+    foreach (['assigned', 'under_review'] as $i => $status) {
+        $u = \App\Models\Auth\User::factory()->create(['user_type_id' => 1]);
+        \App\Models\Programs\ProgramApplication::factory()->create(['program_id' => $this->program->id, 'user_id' => $u->id, 'program_owner_id' => $this->orgUser->id, 'current_round_id' => $this->round->id, 'status' => 'pending', 'round_status' => $status]);
+    }
+    // a draft (not submitted yet) is not an application to review
+    $d = \App\Models\Auth\User::factory()->create(['user_type_id' => 1]);
+    \App\Models\Programs\ProgramApplication::factory()->create(['program_id' => $this->program->id, 'user_id' => $d->id, 'program_owner_id' => $this->orgUser->id, 'current_round_id' => $this->round->id, 'status' => 'pending', 'round_status' => 'draft']);
+
+    expect($total())->toBe(3);
+});
+
+it('puts a newly submitted application in the queue and shows it under Pending', function () {
+    $u = \App\Models\Auth\User::factory()->create(['user_type_id' => 1]);
+    $new = \App\Models\Programs\ProgramApplication::factory()->create(['program_id' => $this->program->id, 'user_id' => $u->id, 'program_owner_id' => $this->orgUser->id, 'current_round_id' => $this->round->id, 'status' => 'pending', 'round_status' => 'submitted']);
+
+    // Before anything is created for it, it is already listed as waiting
+    $this->round->forceFill(['ai_review_paused_at' => now()])->save(); // held, so the review is queued but not run
+    app(AiReviewDispatcher::class)->dispatchFor($new);
+    $pending = $this->actingAsOrgOwner()->getJson("/api/v1/programs/rounds/{$this->round->id}/ai-reviews/items?tab=pending")->json('data');
+    expect(collect($pending['items'])->pluck('application_id')->all())->toContain($new->id)
+        ->and(\App\Models\Programs\Ai\ApplicationAiReview::where('application_id', $new->id)->value('status'))->toBe('queued');
+});

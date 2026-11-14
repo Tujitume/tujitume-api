@@ -21,8 +21,8 @@ class BackgroundWork
         if (! function_exists('exec')) {
             return false;
         }
-        // Many submissions in a few seconds ask once, not each
-        if (! Cache::add("ai:work:spawned:{$round->id}", 1, 5)) {
+        // Many submissions within a couple of seconds ask once, not each
+        if (! Cache::add("ai:work:spawned:{$round->id}", 1, 2)) {
             return true;
         }
         $php = (new \Symfony\Component\Process\PhpExecutableFinder())->find(false);

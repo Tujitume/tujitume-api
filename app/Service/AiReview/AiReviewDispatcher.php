@@ -19,7 +19,7 @@ class AiReviewDispatcher
     {
         try {
             if (! $application || ! config('ai_review.enabled')) return;
-            if ($onlyIfSubmitted && ! in_array($application->fresh()->round_status, ['submitted', 'scored'], true)) return;
+            if ($onlyIfSubmitted && ! in_array($application->fresh()->round_status, ProgramApplication::AI_REVIEWABLE_STATUSES, true)) return;
             app(self::class)->dispatchFor($application->fresh());
         } catch (\Throwable $e) {
             \Log::warning('AI review could not be queued', ['application_id' => $application?->id, 'class' => get_class($e)]);

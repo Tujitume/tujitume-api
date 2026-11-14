@@ -69,6 +69,13 @@ class AiReviewsWork extends Command
             $lock->release();
         }
 
+        // An application can arrive in the moment between "nothing left" and letting go of the lock (its own request found the lock held and
+        // did not start another worker). Look once more now, and carry on if something came in.
+        $round->refresh();
+        if (! $round->ai_review_paused_at && $this->next($round, $dispatcher, [])) {
+            return $this->handle($dispatcher, $governor);
+        }
+
         return self::SUCCESS;
     }
 
@@ -76,11 +83,11 @@ class AiReviewsWork extends Command
     private function next(ProgramRound $round, AiReviewDispatcher $dispatcher, array $skip = []): ?ApplicationAiReview
     {
         $queued = ApplicationAiReview::where('round_id', $round->id)->where('status', ApplicationAiReview::STATUS_QUEUED)->whereNotIn('id', $skip)
-            ->whereIn('application_id', ProgramApplication::where('current_round_id', $round->id)->whereIn('round_status', ['submitted', 'scored'])->notAutomated()->select('id'))
+            ->whereIn('application_id', ProgramApplication::where('current_round_id', $round->id)->whereIn('round_status', ProgramApplication::AI_REVIEWABLE_STATUSES)->notAutomated()->select('id'))
             ->orderBy('updated_at')->orderBy('id')->first();
         if ($queued) return $queued;
 
-        $application = ProgramApplication::where('current_round_id', $round->id)->whereIn('round_status', ['submitted', 'scored'])->notAutomated()
+        $application = ProgramApplication::where('current_round_id', $round->id)->whereIn('round_status', ProgramApplication::AI_REVIEWABLE_STATUSES)->notAutomated()
             ->whereNotIn('id', ApplicationAiReview::where('round_id', $round->id)->where('status', '!=', ApplicationAiReview::STATUS_STALE)->select('application_id'))
             ->orderBy('id')->first();
         if (! $application) return null;

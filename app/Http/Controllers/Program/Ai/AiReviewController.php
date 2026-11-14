@@ -99,7 +99,7 @@ class AiReviewController extends Controller
         $latestReviewIds = ApplicationAiReview::query()
             ->where('round_id', $round->id)->where('status', '!=', 'stale')
             // Only applications that are in this round and submitted count, so every number adds up to the same total
-            ->whereIn('application_id', ProgramApplication::where('current_round_id', $round->id)->whereIn('round_status', ['submitted', 'scored'])->notAutomated()->select('id'))
+            ->whereIn('application_id', ProgramApplication::where('current_round_id', $round->id)->whereIn('round_status', ProgramApplication::AI_REVIEWABLE_STATUSES)->notAutomated()->select('id'))
             ->selectRaw('MAX(id)')->groupBy('application_id');
         $base = fn () => ApplicationAiReview::query()
             ->join('program_applications as pa', 'pa.id', '=', 'application_ai_reviews.application_id')
@@ -108,7 +108,7 @@ class AiReviewController extends Controller
         $name = fn ($r) => $r->startup_name ?: ($r->contact_person_name ?: '#'.$r->application_id);
 
         $byStatus = ApplicationAiReview::whereIn('id', clone $latestReviewIds)->selectRaw('status, count(*) as n')->groupBy('status')->pluck('n', 'status');
-        $submitted = ProgramApplication::where('current_round_id', $round->id)->whereIn('round_status', ['submitted', 'scored'])->notAutomated()->count();
+        $submitted = ProgramApplication::where('current_round_id', $round->id)->whereIn('round_status', ProgramApplication::AI_REVIEWABLE_STATUSES)->notAutomated()->count();
         $working = (int) ($byStatus['extracting'] ?? 0) + (int) ($byStatus['analyzing'] ?? 0);
         $queued = (int) ($byStatus['queued'] ?? 0);
         $ready = (int) ($byStatus['ready'] ?? 0);
@@ -121,7 +121,7 @@ class AiReviewController extends Controller
         $now = $base()->whereIn('application_ai_reviews.status', ['extracting', 'analyzing'])->orderBy('application_ai_reviews.started_at')->first();
 
         // Waiting requests, the latest at the top: reviews already queued, and submitted applications that have no review row yet
-        $unreviewed = fn () => ProgramApplication::where('current_round_id', $round->id)->whereIn('round_status', ['submitted', 'scored'])->notAutomated()
+        $unreviewed = fn () => ProgramApplication::where('current_round_id', $round->id)->whereIn('round_status', ProgramApplication::AI_REVIEWABLE_STATUSES)->notAutomated()
             ->whereNotIn('id', ApplicationAiReview::where('round_id', $round->id)->where('status', '!=', 'stale')->select('application_id'));
         $queuedRows = $base()->where('application_ai_reviews.status', 'queued')->orderByDesc('application_ai_reviews.updated_at')->limit(15)->get()
             ->map(fn ($r) => ['application_id' => $r->application_id, 'applicant_name' => $name($r), 'queued_at' => $r->updated_at]);
@@ -161,7 +161,17 @@ class AiReviewController extends Controller
         // The middle value, so one review that waited hours for the provider's quota does not stretch every estimate
         sort($durations);
         $median = $durations ? $durations[(int) floor((count($durations) - 1) / 2)] : null;
-        $perApplication = $median !== null ? max($floor, (int) $median) : null;
+        // The real pace is also watched: the time between the last finished reviews (waits for the provider's limit included), ignoring long
+        // pauses (a stop, a night), so the estimate follows how fast it is actually going and not only how long one review takes
+        $stamps = ApplicationAiReview::whereIn('id', clone $latestReviewIds)->whereNotNull('completed_at')->orderByDesc('completed_at')->limit(12)->pluck('completed_at')->values();
+        $gaps = [];
+        for ($i = 0; $i < $stamps->count() - 1; $i++) {
+            $gap = $stamps[$i + 1]->diffInSeconds($stamps[$i]);
+            if ($gap > 0 && $gap <= 900) $gaps[] = $gap;
+        }
+        sort($gaps);
+        $observed = count($gaps) >= 2 ? $gaps[(int) floor((count($gaps) - 1) / 2)] : null;
+        $perApplication = $median !== null ? max($floor, (int) $median, (int) ($observed ?? 0)) : ($observed !== null ? max($floor, (int) $observed) : null);
         $cooldown = $governor->cooldownRemaining($provider);
         // Nothing is working although applications have waited over two minutes, and there is no reason for it: not stopped by the owner,
         // not the provider's pause or daily limit (that is "paused"), and no background worker running for this round
@@ -170,14 +180,16 @@ class AiReviewController extends Controller
             && ! $workerRunning && $cooldown === 0 && $capacity['requests_remaining_today'] > 0;
         $remaining = $waiting + $working;
         // Historical speed cannot predict a finish while the queue worker is offline.
-        $finishAt = ! $stalled && $perApplication && $remaining > 0 ? now()->addSeconds($cooldown + $remaining * $perApplication)->toIso8601String() : null;
+        // Seconds left, worked out here (the page must not compare dates written in different formats)
+        $secondsLeft = ! $stalled && $perApplication && $remaining > 0 ? (int) ($cooldown + $remaining * $perApplication) : null;
+        $finishAt = $secondsLeft !== null ? now()->addSeconds($secondsLeft)->toIso8601String() : null;
 
         $state = $stopped ? 'stopped' : ($working > 0 ? 'working' : ($stalled ? 'stalled' : ($waiting > 0 ? ($cooldown > 0 || $capacity['requests_remaining_today'] <= 0 ? 'paused' : 'starting') : ($submitted > 0 && $ready + $attention >= $submitted ? 'done' : 'idle'))));
 
         return response()->json(['data' => [
             'state' => $state,
             'counts' => ['total' => $submitted, 'done' => $ready, 'working' => $working, 'waiting' => $waiting, 'attention' => $attention],
-            'now' => $now ? ['application_id' => $now->application_id, 'applicant_name' => $name($now), 'step' => $now->status, 'started_at' => $now->started_at?->toIso8601String()] : null,
+            'now' => $now ? ['application_id' => $now->application_id, 'applicant_name' => $name($now), 'step' => $now->status, 'started_at' => $now->started_at?->toIso8601String(), 'elapsed_seconds' => $now->started_at ? max(0, (int) $now->started_at->diffInSeconds(now())) : null] : null,
             'next' => $next ? ['application_id' => $next->application_id, 'applicant_name' => $next->name, 'queued_at' => $next->at->toIso8601String()] : null,
             'stalled' => $stalled,
             'stopped' => $stopped,
@@ -188,6 +200,7 @@ class AiReviewController extends Controller
             'attention_list' => $attentionList->map($row)->values(),
             'seconds_per_application' => $perApplication,
             'estimated_finish_at' => $finishAt,
+            'estimated_seconds_left' => $secondsLeft,
             'paused_for_seconds' => $cooldown ?: null,
             'daily_limit_reached' => $capacity['requests_remaining_today'] <= 0,
             'provider' => $provider,
@@ -218,7 +231,7 @@ class AiReviewController extends Controller
         $query = \Illuminate\Support\Facades\DB::table('program_applications as pa')
             ->leftJoinSub($latest, 'lr', 'lr.application_id', '=', 'pa.id')
             ->leftJoin('application_ai_reviews as r', 'r.id', '=', 'lr.review_id')
-            ->where('pa.current_round_id', $round->id)->whereIn('pa.round_status', ['submitted', 'scored']);
+            ->where('pa.current_round_id', $round->id)->whereIn('pa.round_status', \App\Models\Programs\ProgramApplication::AI_REVIEWABLE_STATUSES);
         if (! \App\Service\Misc\AutomatedAccounts::$reviewWithAi) {
             $query->whereNotIn('pa.user_id', \Illuminate\Support\Facades\DB::table('users')->where('email', 'like', \App\Service\Misc\AutomatedAccounts::EMAIL_LIKE)->select('id'));
         }
@@ -273,7 +286,7 @@ class AiReviewController extends Controller
         $data = $request->validate(['application_ids' => 'nullable|array|max:500', 'application_ids.*' => 'integer']);
 
         $latestIds = ApplicationAiReview::query()->where('round_id', $round->id)->where('status', '!=', 'stale')
-            ->whereIn('application_id', ProgramApplication::where('current_round_id', $round->id)->whereIn('round_status', ['submitted', 'scored'])->notAutomated()->select('id'))
+            ->whereIn('application_id', ProgramApplication::where('current_round_id', $round->id)->whereIn('round_status', ProgramApplication::AI_REVIEWABLE_STATUSES)->notAutomated()->select('id'))
             ->selectRaw('MAX(id)')->groupBy('application_id');
         $query = ApplicationAiReview::whereIn('id', $latestIds)->whereIn('status', ['failed', 'needs_attention']);
         $total = (clone $query)->count();
@@ -353,7 +366,7 @@ class AiReviewController extends Controller
         $started = 0;
         if ($sync) {
             $started = ApplicationAiReview::where('round_id', $round->id)->where('status', 'queued')->count()
-                + ProgramApplication::where('current_round_id', $round->id)->whereIn('round_status', ['submitted', 'scored'])->notAutomated()
+                + ProgramApplication::where('current_round_id', $round->id)->whereIn('round_status', ProgramApplication::AI_REVIEWABLE_STATUSES)->notAutomated()
                     ->whereNotIn('id', ApplicationAiReview::where('round_id', $round->id)->where('status', '!=', 'stale')->select('application_id'))->count();
             if ($started > 0 && ! \App\Service\AiReview\BackgroundWork::start($round)) {
                 return response()->json(['message' => 'The AI could not be started in the background. Start the queue worker on the server (php artisan queue:work --queue=ai-review).'], 500);
@@ -373,7 +386,7 @@ class AiReviewController extends Controller
             // 2. Submitted applications that have no review at all yet
             if ($started < $limit) {
                 $dispatcher = app(AiReviewDispatcher::class);
-                ProgramApplication::where('current_round_id', $round->id)->whereIn('round_status', ['submitted', 'scored'])->notAutomated()
+                ProgramApplication::where('current_round_id', $round->id)->whereIn('round_status', ProgramApplication::AI_REVIEWABLE_STATUSES)->notAutomated()
                     ->whereNotIn('id', ApplicationAiReview::where('round_id', $round->id)->where('status', '!=', 'stale')->select('application_id'))
                     ->orderBy('id')->limit($limit - $started)->get()
                     ->each(function ($application) use ($dispatcher, $round, &$started) {

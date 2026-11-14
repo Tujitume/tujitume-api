@@ -115,6 +115,12 @@ class ProgramApplication extends Model
         return $this->belongsTo(User::class,'user_id','id');
     }
 
+    /**
+     * Where an application is when the applicant has submitted this round and nobody has decided it yet: waiting, given to a Business Coach
+     * (assigned, under review) or scored. These are the ones the AI reviews and counts. Drafts (not submitted) and decided ones are not.
+     */
+    public const AI_REVIEWABLE_STATUSES = ['submitted', 'assigned', 'under_review', 'scored'];
+
     /** Leaves out applications made by the test-data generator (no real person: no emails, no AI). */
     public function scopeNotAutomated($query)
     {
