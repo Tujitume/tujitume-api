@@ -184,6 +184,13 @@ class AiReviewController extends Controller
         $secondsLeft = ! $stalled && $perApplication && $remaining > 0 ? (int) ($cooldown + $remaining * $perApplication) : null;
         $finishAt = $secondsLeft !== null ? now()->addSeconds($secondsLeft)->toIso8601String() : null;
 
+        // The applications the table of applicants lists for this round but the AI does not count, and why (so the two totals can be reconciled)
+        $notCounted = ProgramApplication::query()
+            ->where(fn ($q) => $q->where('current_round_id', $round->id)->orWhereIn('id', \App\Models\ApplicationRoundHistory::where('round_id', $round->id)->select('application_id')))
+            ->whereNotIn('id', ProgramApplication::where('current_round_id', $round->id)->whereIn('round_status', ProgramApplication::AI_REVIEWABLE_STATUSES)->notAutomated()->select('id'))
+            ->selectRaw('round_status, current_round_id, count(*) as n')->groupBy('round_status', 'current_round_id')->get()
+            ->map(fn ($r) => ['status' => (string) $r->round_status, 'here' => (int) $r->current_round_id === (int) $round->id, 'count' => (int) $r->n])->values();
+
         $state = $stopped ? 'stopped' : ($working > 0 ? 'working' : ($stalled ? 'stalled' : ($waiting > 0 ? ($cooldown > 0 || $capacity['requests_remaining_today'] <= 0 ? 'paused' : 'starting') : ($submitted > 0 && $ready + $attention >= $submitted ? 'done' : 'idle'))));
 
         return response()->json(['data' => [
@@ -193,6 +200,7 @@ class AiReviewController extends Controller
             'next' => $next ? ['application_id' => $next->application_id, 'applicant_name' => $next->name, 'queued_at' => $next->at->toIso8601String()] : null,
             'stalled' => $stalled,
             'stopped' => $stopped,
+            'not_counted' => $notCounted,
             'queue' => $queue->map(fn ($q) => ['application_id' => $q['application_id'], 'applicant_name' => $q['applicant_name'], 'queued_at' => $q['queued_at']->toIso8601String()])->values(),
             'queue_more' => max(0, $waiting - $queue->count()),
             'recent' => $recent->map($row)->values(),

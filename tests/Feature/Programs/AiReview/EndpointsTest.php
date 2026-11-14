@@ -347,3 +347,14 @@ it('puts a newly submitted application in the queue and shows it under Pending',
     expect(collect($pending['items'])->pluck('application_id')->all())->toContain($new->id)
         ->and(\App\Models\Programs\Ai\ApplicationAiReview::where('application_id', $new->id)->value('status'))->toBe('queued');
 });
+
+it('lists the applications of the round that the AI does not count, with the reason, so the totals can be reconciled', function () {
+    foreach (['draft', 'advanced'] as $status) {
+        $u = \App\Models\Auth\User::factory()->create(['user_type_id' => 1]);
+        \App\Models\Programs\ProgramApplication::factory()->create(['program_id' => $this->program->id, 'user_id' => $u->id, 'program_owner_id' => $this->orgUser->id, 'current_round_id' => $this->round->id, 'status' => 'pending', 'round_status' => $status]);
+    }
+    $d = $this->actingAsOrgOwner()->getJson("/api/v1/programs/rounds/{$this->round->id}/ai-reviews/activity")->assertOk()->json('data');
+
+    $byStatus = collect($d['not_counted'])->pluck('count', 'status');
+    expect($d['counts']['total'])->toBe(1)->and($byStatus['draft'])->toBe(1)->and($byStatus['advanced'])->toBe(1);
+});
