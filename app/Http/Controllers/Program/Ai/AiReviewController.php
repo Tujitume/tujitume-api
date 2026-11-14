@@ -135,10 +135,20 @@ class AiReviewController extends Controller
         $next = $nextRow
             ? (object) ['application_id' => $nextRow->application_id, 'name' => $name($nextRow), 'at' => $nextRow->updated_at]
             : ($nextFresh ? (object) ['application_id' => $nextFresh->id, 'name' => $nextFresh->startup_name ?: ($nextFresh->contact_person_name ?: '#'.$nextFresh->id), 'at' => $nextFresh->updated_at ?? $nextFresh->created_at] : null);
-        $stalled = $working === 0 && $next !== null && $next->at->lt(now()->subMinutes(2));
+        // Stopped by the program owner: nothing is meant to be running, so that is not a fault
+        $stopped = $round->ai_review_paused_at !== null;
 
         // Finished, newest first, with what the timeline needs
         $recent = $base()->whereIn('application_ai_reviews.status', ['ready', 'failed', 'needs_attention'])->orderByDesc('application_ai_reviews.completed_at')->limit(8)->get();
+        // The tabs: finished well, and needing a person, each its own newest-first list
+        $doneList = $base()->where('application_ai_reviews.status', 'ready')->orderByDesc('application_ai_reviews.completed_at')->limit(15)->get();
+        $attentionList = $base()->whereIn('application_ai_reviews.status', ['failed', 'needs_attention'])->orderByDesc('application_ai_reviews.completed_at')->limit(15)->get();
+        $row = fn ($r) => [
+            'application_id' => $r->application_id, 'applicant_name' => $name($r), 'status' => $r->status,
+            'queued_at' => $r->created_at?->toIso8601String(), 'started_at' => $r->started_at?->toIso8601String(), 'completed_at' => $r->completed_at?->toIso8601String(),
+            'seconds' => $r->started_at && $r->completed_at ? max(1, $r->started_at->diffInSeconds($r->completed_at)) : null,
+            'suggested_total' => $r->suggested_total, 'error' => $r->error,
+        ];
 
         // How long one application takes, from the most recent ones that really ran
         $durations = ApplicationAiReview::where('round_id', $round->id)->where('status', 'ready')->whereNotNull('started_at')->whereNotNull('completed_at')
@@ -153,11 +163,16 @@ class AiReviewController extends Controller
         $median = $durations ? $durations[(int) floor((count($durations) - 1) / 2)] : null;
         $perApplication = $median !== null ? max($floor, (int) $median) : null;
         $cooldown = $governor->cooldownRemaining($provider);
+        // Nothing is working although applications have waited over two minutes, and there is no reason for it: not stopped by the owner,
+        // not the provider's pause or daily limit (that is "paused"), and no background worker running for this round
+        $workerRunning = \Illuminate\Support\Facades\Cache::has("ai:work:{$round->id}");
+        $stalled = ! $stopped && $working === 0 && $next !== null && $next->at->lt(now()->subMinutes(2))
+            && ! $workerRunning && $cooldown === 0 && $capacity['requests_remaining_today'] > 0;
         $remaining = $waiting + $working;
         // Historical speed cannot predict a finish while the queue worker is offline.
         $finishAt = ! $stalled && $perApplication && $remaining > 0 ? now()->addSeconds($cooldown + $remaining * $perApplication)->toIso8601String() : null;
 
-        $state = $working > 0 ? 'working' : ($stalled ? 'stalled' : ($waiting > 0 ? ($cooldown > 0 || $capacity['requests_remaining_today'] <= 0 ? 'paused' : 'starting') : ($submitted > 0 && $ready + $attention >= $submitted ? 'done' : 'idle')));
+        $state = $stopped ? 'stopped' : ($working > 0 ? 'working' : ($stalled ? 'stalled' : ($waiting > 0 ? ($cooldown > 0 || $capacity['requests_remaining_today'] <= 0 ? 'paused' : 'starting') : ($submitted > 0 && $ready + $attention >= $submitted ? 'done' : 'idle'))));
 
         return response()->json(['data' => [
             'state' => $state,
@@ -165,14 +180,12 @@ class AiReviewController extends Controller
             'now' => $now ? ['application_id' => $now->application_id, 'applicant_name' => $name($now), 'step' => $now->status, 'started_at' => $now->started_at?->toIso8601String()] : null,
             'next' => $next ? ['application_id' => $next->application_id, 'applicant_name' => $next->name, 'queued_at' => $next->at->toIso8601String()] : null,
             'stalled' => $stalled,
+            'stopped' => $stopped,
             'queue' => $queue->map(fn ($q) => ['application_id' => $q['application_id'], 'applicant_name' => $q['applicant_name'], 'queued_at' => $q['queued_at']->toIso8601String()])->values(),
             'queue_more' => max(0, $waiting - $queue->count()),
-            'recent' => $recent->map(fn ($r) => [
-                'application_id' => $r->application_id, 'applicant_name' => $name($r), 'status' => $r->status,
-                'queued_at' => $r->created_at?->toIso8601String(), 'started_at' => $r->started_at?->toIso8601String(), 'completed_at' => $r->completed_at?->toIso8601String(),
-                'seconds' => $r->started_at && $r->completed_at ? max(1, $r->started_at->diffInSeconds($r->completed_at)) : null,
-                'suggested_total' => $r->suggested_total, 'error' => $r->error,
-            ])->values(),
+            'recent' => $recent->map($row)->values(),
+            'done_list' => $doneList->map($row)->values(),
+            'attention_list' => $attentionList->map($row)->values(),
             'seconds_per_application' => $perApplication,
             'estimated_finish_at' => $finishAt,
             'paused_for_seconds' => $cooldown ?: null,
@@ -182,6 +195,80 @@ class AiReviewController extends Controller
             'privacy_gate_satisfied' => $gate->satisfied($provider, $gate->organizationFor($round->program)),
             'server_time' => now()->toIso8601String(),
         ]]);
+    }
+
+    /**
+     * GET rounds/{round}/ai-reviews/items?tab=pending|success|attention&page=1&per_page=10: one page of the AI tab's table, newest first.
+     * pending = waiting or being worked on (including applications with no review yet), success = scored, attention = the AI could not finish.
+     */
+    public function roundItems(Request $request, ProgramRound $round)
+    {
+        if (! ProgramAccess::owns($round->program)) {
+            return response()->json(['message' => 'Unauthorized.'], 403);
+        }
+        $data = $request->validate([
+            'tab' => 'required|in:pending,success,attention',
+            'page' => 'nullable|integer|min:1',
+            'per_page' => 'nullable|integer|in:10,25,50,100',
+        ]);
+
+        // Each application's newest non-stale review (or none)
+        $latest = ApplicationAiReview::query()->where('round_id', $round->id)->where('status', '!=', 'stale')
+            ->selectRaw('application_id, MAX(id) as review_id')->groupBy('application_id');
+        $query = \Illuminate\Support\Facades\DB::table('program_applications as pa')
+            ->leftJoinSub($latest, 'lr', 'lr.application_id', '=', 'pa.id')
+            ->leftJoin('application_ai_reviews as r', 'r.id', '=', 'lr.review_id')
+            ->where('pa.current_round_id', $round->id)->whereIn('pa.round_status', ['submitted', 'scored']);
+        if (! \App\Service\Misc\AutomatedAccounts::$reviewWithAi) {
+            $query->whereNotIn('pa.user_id', \Illuminate\Support\Facades\DB::table('users')->where('email', 'like', \App\Service\Misc\AutomatedAccounts::EMAIL_LIKE)->select('id'));
+        }
+
+        if ($data['tab'] === 'pending') {
+            $query->where(fn ($q) => $q->whereNull('r.id')->orWhereIn('r.status', ['queued', 'extracting', 'analyzing']))
+                ->orderByRaw('COALESCE(r.updated_at, pa.updated_at) DESC');
+        } elseif ($data['tab'] === 'success') {
+            $query->where('r.status', 'ready')->orderByDesc('r.completed_at');
+        } else {
+            $query->whereIn('r.status', ['failed', 'needs_attention'])->orderByDesc('r.completed_at');
+        }
+
+        $page = $query->orderByDesc('pa.id')
+            ->select('pa.id as application_id', 'pa.startup_name', 'pa.contact_person_name', 'pa.updated_at as app_updated_at', 'r.status', 'r.updated_at as review_updated_at', 'r.started_at', 'r.completed_at', 'r.suggested_total', 'r.error')
+            ->paginate((int) ($data['per_page'] ?? 10), ['*'], 'page', (int) ($data['page'] ?? 1));
+
+        $iso = fn ($value) => $value ? \Illuminate\Support\Carbon::parse($value)->toIso8601String() : null;
+
+        return response()->json(['data' => [
+            'items' => collect($page->items())->map(fn ($r) => [
+                'application_id' => $r->application_id,
+                'applicant_name' => $r->startup_name ?: ($r->contact_person_name ?: '#'.$r->application_id),
+                'status' => $r->status ?? 'not_started',
+                'at' => $iso($data['tab'] === 'pending' ? ($r->review_updated_at ?? $r->app_updated_at) : $r->completed_at),
+                'seconds' => $r->started_at && $r->completed_at ? max(1, \Illuminate\Support\Carbon::parse($r->started_at)->diffInSeconds(\Illuminate\Support\Carbon::parse($r->completed_at))) : null,
+                'suggested_total' => $r->suggested_total !== null ? (float) $r->suggested_total : null,
+                'error' => $r->error,
+            ])->values(),
+            'meta' => ['current_page' => $page->currentPage(), 'last_page' => $page->lastPage(), 'per_page' => $page->perPage(), 'total' => $page->total()],
+        ]]);
+    }
+
+    /**
+     * POST rounds/{round}/ai-reviews/stop: stop sending this round's applications to the AI. A review already being written finishes;
+     * nothing new starts, and nothing is lost: Continue starts the waiting ones again.
+     */
+    public function stop(ProgramRound $round)
+    {
+        if (! ProgramAccess::owns($round->program)) {
+            return response()->json(['message' => 'Unauthorized.'], 403);
+        }
+        if (! $round->usesAi()) {
+            return response()->json(['message' => 'This round does not use AI review.'], 422);
+        }
+
+        $round->forceFill(['ai_review_paused_at' => now()])->save();
+        AiAudit::record('stop', $round->id);
+
+        return response()->json(['message' => 'AI review stopped.', 'data' => ['stopped_at' => $round->ai_review_paused_at->toIso8601String()]]);
     }
 
     /**
@@ -204,37 +291,53 @@ class AiReviewController extends Controller
             return response()->json(['message' => 'AI review is not switched on.'], 422);
         }
 
-        // With no background worker (QUEUE_CONNECTION=sync) each review runs inside this request, so only a few at a time
-        $limit = config('queue.default') === 'sync' ? 5 : 200;
+        // Continuing lifts a stop
+        if ($round->ai_review_paused_at) {
+            $round->forceFill(['ai_review_paused_at' => null])->save();
+        }
+
+        // With a queue worker, the waiting reviews are queued and the worker takes them one by one. Without one (QUEUE_CONNECTION=sync) nothing
+        // would ever pick them up, so a background command is started that works through the whole list by itself, one application after another.
+        // Either way the page only has to ask once.
+        $sync = config('queue.default') === 'sync';
+        $limit = $sync ? 0 : 200;
         $started = 0;
-        // 1. Reviews already waiting (the job is unique per review, so asking again never doubles the work)
-        // A queued review untouched for a couple of minutes is stuck: its job's "only one at a time" lock may be left over from a run that
-        // never finished, which would make this dispatch do nothing. Free that lock first.
-        $stuckBefore = now()->subMinutes(2);
-        ApplicationAiReview::where('round_id', $round->id)->where('status', 'queued')->orderBy('id')->limit($limit)->get(['id', 'updated_at'])
-            ->each(function ($review) use (&$started, $stuckBefore) {
-                if ($review->updated_at->lt($stuckBefore)) {
-                    \Illuminate\Support\Facades\Cache::lock('laravel_unique_job:'.\App\Jobs\RunApplicationAiReviewJob::class.'ai-review-'.$review->id)->forceRelease();
-                }
-                \App\Jobs\RunApplicationAiReviewJob::dispatch($review->id);
-                $started++;
-            });
-        // 2. Submitted applications that have no review at all yet
-        if ($started < $limit) {
-            $dispatcher = app(AiReviewDispatcher::class);
-            ProgramApplication::where('current_round_id', $round->id)->whereIn('round_status', ['submitted', 'scored'])->notAutomated()
-                ->whereNotIn('id', ApplicationAiReview::where('round_id', $round->id)->where('status', '!=', 'stale')->select('application_id'))
-                ->orderBy('id')->limit($limit - $started)->get()
-                ->each(function ($application) use ($dispatcher, $round, &$started) {
-                    if ($dispatcher->dispatchFor($application, $round)) {
-                        $started++;
+        if ($sync) {
+            $started = ApplicationAiReview::where('round_id', $round->id)->where('status', 'queued')->count()
+                + ProgramApplication::where('current_round_id', $round->id)->whereIn('round_status', ['submitted', 'scored'])->notAutomated()
+                    ->whereNotIn('id', ApplicationAiReview::where('round_id', $round->id)->where('status', '!=', 'stale')->select('application_id'))->count();
+            if ($started > 0 && ! \App\Service\AiReview\BackgroundWork::start($round)) {
+                return response()->json(['message' => 'The AI could not be started in the background. Start the queue worker on the server (php artisan queue:work --queue=ai-review).'], 500);
+            }
+        } else {
+            // 1. Reviews already waiting (the job is unique per review, so asking again never doubles the work)
+            $stuckBefore = now()->subMinutes(2);
+            ApplicationAiReview::where('round_id', $round->id)->where('status', 'queued')->orderBy('id')->limit($limit)->get(['id', 'updated_at'])
+                ->each(function ($review) use (&$started, $stuckBefore) {
+                    // A review untouched for a couple of minutes may hold a leftover "one at a time" lock from a run that never finished
+                    if ($review->updated_at->lt($stuckBefore)) {
+                        \Illuminate\Support\Facades\Cache::lock('laravel_unique_job:'.\App\Jobs\RunApplicationAiReviewJob::class.'ai-review-'.$review->id)->forceRelease();
                     }
+                    \App\Jobs\RunApplicationAiReviewJob::dispatch($review->id);
+                    $started++;
                 });
+            // 2. Submitted applications that have no review at all yet
+            if ($started < $limit) {
+                $dispatcher = app(AiReviewDispatcher::class);
+                ProgramApplication::where('current_round_id', $round->id)->whereIn('round_status', ['submitted', 'scored'])->notAutomated()
+                    ->whereNotIn('id', ApplicationAiReview::where('round_id', $round->id)->where('status', '!=', 'stale')->select('application_id'))
+                    ->orderBy('id')->limit($limit - $started)->get()
+                    ->each(function ($application) use ($dispatcher, $round, &$started) {
+                        if ($dispatcher->dispatchFor($application, $round)) {
+                            $started++;
+                        }
+                    });
+            }
         }
         AiAudit::record('resume', $round->id, null, ['count' => $started]);
 
         // With no background worker each review ran inside this request, so the page asks again until nothing is left
-        return response()->json(['message' => 'AI review continues.', 'data' => ['started' => $started, 'inline' => config('queue.default') === 'sync']], 202);
+        return response()->json(['message' => 'AI review continues.', 'data' => ['started' => $started, 'background' => $sync]], 202);
     }
 
     /** POST applications/{application}/ai-review/rerun */

@@ -17,9 +17,10 @@ class ResponseValidator
         if (! is_string($summary) || trim($summary) === '') $errors[] = 'summary must be a non-empty string';
 
         $findings = [];
-        if (! isset($json['findings']) || ! is_array($json['findings'])) {
+        // Findings are no longer asked for (the reviewer reads the score and the reason for each criterion), so none is fine; any sent are still checked
+        if (isset($json['findings']) && ! is_array($json['findings'])) {
             $errors[] = 'findings must be an array';
-        } else {
+        } elseif (isset($json['findings'])) {
             foreach ($json['findings'] as $i => $f) {
                 if (! is_array($f)) { $errors[] = "findings[{$i}] must be an object"; continue; }
                 $e = [];

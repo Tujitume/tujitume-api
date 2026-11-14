@@ -40,6 +40,9 @@ class RunApplicationAiReviewJob implements ShouldQueue, ShouldBeUnique
         $review = ApplicationAiReview::find($this->reviewId);
         if (! $review || $review->isFinished() && $review->status !== ApplicationAiReview::STATUS_QUEUED) return;
 
+        // Stopped by the program owner after this job was queued: leave the review waiting; Continue starts it again
+        if ($review->round?->ai_review_paused_at) return;
+
         $result = $runner->run($review);
         if ($result['release'] !== null) {
             $this->release($result['release']);

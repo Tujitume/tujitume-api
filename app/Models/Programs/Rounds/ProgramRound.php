@@ -24,7 +24,7 @@ class ProgramRound extends Model
      * What the program owner configured for AI review is private: it never appears in an applicant-facing response.
      * Owner endpoints add these back with makeVisible(ProgramRound::AI_PRIVATE_FIELDS).
      */
-    public const AI_PRIVATE_FIELDS = ['ai_review_config', 'ai_only_acknowledged_at', 'ai_only_acknowledged_by', 'ai_review_notified_at', 'ai_capacity_notified_at'];
+    public const AI_PRIVATE_FIELDS = ['ai_review_config', 'ai_only_acknowledged_at', 'ai_only_acknowledged_by', 'ai_review_notified_at', 'ai_capacity_notified_at', 'ai_review_paused_at'];
 
     protected $hidden = self::AI_PRIVATE_FIELDS;
 
@@ -49,6 +49,7 @@ class ProgramRound extends Model
         'ai_only_acknowledged_at' => 'datetime',
         'ai_review_notified_at' => 'datetime',
         'ai_capacity_notified_at' => 'datetime',
+        'ai_review_paused_at' => 'datetime',
         'open_date' => 'date',
         'close_date' => 'date',
         'review_period_end' => 'date',

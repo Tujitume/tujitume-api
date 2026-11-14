@@ -95,6 +95,11 @@ class AiReviewAnalyzer
             throw new \UnexpectedValueException('The model did not return a valid report after one repair: '.implode('; ', array_slice($result['errors'], 0, 3)));
         }
 
+        // A name, email and phone number are checked in code, whatever the model made of the masked value
+        if ($withScores) {
+            $result['data']['scores'] = app(ScoreGuard::class)->apply($result['data']['scores'], $round, $input);
+        }
+
         // 4. Verify every quote against the locally extracted source text
         $sources = collect($input['sources'])->all();
         $docMeta = collect($input['documents'])->keyBy('extraction_id');

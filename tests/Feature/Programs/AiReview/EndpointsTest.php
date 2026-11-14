@@ -210,3 +210,85 @@ it('reviews the generator\'s applications only while the temporary switch is on'
 });
 
 afterEach(fn () => \App\Service\Misc\AutomatedAccounts::$reviewWithAi = true);
+
+it('lets the owner stop the AI of a round, holds new work back, and continues it later', function () {
+    $this->actingAsReviewer()->postJson("/api/v1/programs/rounds/{$this->round->id}/ai-reviews/stop")->assertStatus(403);
+    $this->actingAsOrgOwner()->postJson("/api/v1/programs/rounds/{$this->round->id}/ai-reviews/stop")->assertOk();
+
+    $d = $this->actingAsOrgOwner()->getJson("/api/v1/programs/rounds/{$this->round->id}/ai-reviews/activity")->json('data');
+    expect($d['state'])->toBe('stopped')->and($d['stopped'])->toBeTrue()->and($d['stalled'])->toBeFalse();
+
+    // A queued review is not started while stopped, but the row is kept
+    $review = \App\Models\Programs\Ai\ApplicationAiReview::where('application_id', $this->application->id)->first();
+    $review->update(['status' => 'queued']);
+    \App\Jobs\RunApplicationAiReviewJob::dispatchSync($review->id);
+    expect($review->fresh()->status)->toBe('queued');
+
+    // Continue lifts the stop
+    $this->actingAsOrgOwner()->postJson("/api/v1/programs/rounds/{$this->round->id}/ai-reviews/resume")->assertStatus(202);
+    expect($this->round->fresh()->ai_review_paused_at)->toBeNull();
+});
+
+it('works through every waiting review by itself with one command, and stops when the owner stops it', function () {
+    $review = \App\Models\Programs\Ai\ApplicationAiReview::where('application_id', $this->application->id)->first();
+    $review->update(['status' => 'queued', 'completed_at' => null]);
+
+    // Stopped: nothing is started
+    $this->round->forceFill(['ai_review_paused_at' => now()])->save();
+    \Illuminate\Support\Facades\Artisan::call('ai-reviews:work', ['round' => $this->round->id]);
+    expect($review->fresh()->status)->toBe('queued');
+
+    // Continued: it finishes the waiting one with no further asking
+    $this->round->forceFill(['ai_review_paused_at' => null])->save();
+    \Illuminate\Support\Facades\Artisan::call('ai-reviews:work', ['round' => $this->round->id]);
+    expect($review->fresh()->status)->toBe('ready');
+});
+
+it('gives the finished and the needs-attention reviews as separate lists for the tabs', function () {
+    $review = \App\Models\Programs\Ai\ApplicationAiReview::where('application_id', $this->application->id)->first();
+    $d = $this->actingAsOrgOwner()->getJson("/api/v1/programs/rounds/{$this->round->id}/ai-reviews/activity")->json('data');
+    expect($d['done_list'])->toHaveCount(1)->and($d['attention_list'])->toBe([]);
+
+    $review->update(['status' => 'needs_attention', 'error' => 'x']);
+    $d = $this->actingAsOrgOwner()->getJson("/api/v1/programs/rounds/{$this->round->id}/ai-reviews/activity")->json('data');
+    expect($d['done_list'])->toBe([])->and($d['attention_list'])->toHaveCount(1)->and($d['attention_list'][0]['status'])->toBe('needs_attention');
+});
+
+it('pages the AI tab tables: pending, success and needs attention, newest first', function () {
+    $url = fn (string $tab, string $extra = '') => "/api/v1/programs/rounds/{$this->round->id}/ai-reviews/items?tab={$tab}{$extra}";
+
+    $success = $this->actingAsOrgOwner()->getJson($url('success'))->assertOk()->json('data');
+    expect($success['items'])->toHaveCount(1)->and($success['items'][0]['status'])->toBe('ready')->and($success['meta']['total'])->toBe(1)
+        ->and($this->actingAsOrgOwner()->getJson($url('pending'))->json('data.meta.total'))->toBe(0)
+        ->and($this->actingAsOrgOwner()->getJson($url('attention'))->json('data.meta.total'))->toBe(0);
+
+    \App\Models\Programs\Ai\ApplicationAiReview::where('application_id', $this->application->id)->update(['status' => 'queued', 'completed_at' => null]);
+    $pending = $this->actingAsOrgOwner()->getJson($url('pending', '&per_page=10&page=1'))->json('data');
+    expect($pending['items'])->toHaveCount(1)->and($pending['items'][0]['status'])->toBe('queued')->and($pending['items'][0]['at'])->not->toBeNull();
+
+    $this->actingAsOrgOwner()->getJson($url('pending', '&per_page=7'))->assertStatus(422);
+});
+
+it('keeps the AI tab tables away from people who are not signed in', function () {
+    $this->getJson("/api/v1/programs/rounds/{$this->round->id}/ai-reviews/items?tab=pending")->assertStatus(401);
+});
+
+it('keeps two rounds of two programs apart: stopping or working one never touches the other', function () {
+    $program2 = \App\Models\Programs\Program::factory()->create(['user_id' => $this->orgUser->id, 'status' => 'published']);
+    $round5 = \App\Models\Programs\Rounds\ProgramRound::factory()->create(['program_id' => $program2->id, 'round_number' => 1, 'status' => 'published', 'advancement_mode' => 'manual', 'review_method' => 'ai_assisted', 'scoring_criteria' => $this->round->scoring_criteria]);
+    $applicant = \App\Models\Auth\User::factory()->create(['user_type_id' => 1]);
+    $app2 = \App\Models\Programs\ProgramApplication::factory()->create(['program_id' => $program2->id, 'user_id' => $applicant->id, 'program_owner_id' => $this->orgUser->id, 'current_round_id' => $round5->id, 'status' => 'pending', 'round_status' => 'submitted']);
+    $review2 = \App\Models\Programs\Ai\ApplicationAiReview::create(['application_id' => $app2->id, 'round_id' => $round5->id, 'program_id' => $program2->id, 'mode' => 'ai_assisted', 'status' => 'queued', 'input_hash' => 'x']);
+
+    // Stop the first round only
+    $this->actingAsOrgOwner()->postJson("/api/v1/programs/rounds/{$this->round->id}/ai-reviews/stop")->assertOk();
+    $a = $this->actingAsOrgOwner()->getJson("/api/v1/programs/rounds/{$this->round->id}/ai-reviews/activity")->json('data');
+    $b = $this->actingAsOrgOwner()->getJson("/api/v1/programs/rounds/{$round5->id}/ai-reviews/activity")->json('data');
+    expect($a['state'])->toBe('stopped')->and($b['state'])->not->toBe('stopped')
+        ->and($a['counts']['total'])->toBe(1)->and($b['counts']['total'])->toBe(1)->and($b['counts']['waiting'])->toBe(1);
+
+    // Working the other round touches only its own review
+    \Illuminate\Support\Facades\Artisan::call('ai-reviews:work', ['round' => $round5->id]);
+    expect($review2->fresh()->status)->not->toBe('queued')
+        ->and(\App\Models\Programs\Ai\ApplicationAiReview::where('application_id', $this->application->id)->first()->round_id)->toBe($this->round->id);
+});

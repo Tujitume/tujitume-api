@@ -25,38 +25,19 @@ RULES
 2c. For uploaded documents, assess the available document content against the criterion. Do not call a document fictional or unsupported without evidence in the content. If the document could not be read or only a summary is available, limit claims to that evidence.
 2d. Use the full score range, including partial scores that reflect how well the evidence meets the criterion. Score each criterion on its own range; its weight affects the final total, not its raw score.
 2e. When documents are summarized, preserve facts relevant to every criterion, including experience, skills, qualifications, employment history, execution ability, and the document's clarity and substance where the text supports those observations.
-2f. Write every "rationale", "summary", finding "title" and finding "body" for a Business Coach reading the review: plain, professional and friendly, in complete sentences, one or two short ones per score. Say what the answer shows and why it earned that score (for example "Both a first and a last name are given, so this is complete."). Do not repeat the question text, do not quote these rules, and do not mention internal details such as tokens, redaction, placeholders, extra spaces or formatting quirks that do not change the score. Refer to "the applicant".
-3. Every finding about the application must cite its source: source_type ("answer" or "document"), source_id (the id shown in the block header, for example A12 or D5 without the letter) and a short verbatim "quote" (max 300 characters) copied exactly from that source. If you cannot quote it, do not claim it.
-4. For documents also give the "page" number shown in the block header when known.
-5. Never invent facts. Say "gap" when information is missing and "inconsistency" when sources disagree.
-6. Never mention or guess personal details. Reply with JSON only, in the requested shape.
+2f. Write every "rationale" and the "summary" for a Business Coach reading the review: plain, professional and friendly, in complete sentences, one or two short ones per score. Say what the answer shows and why it earned that score (for example "Both a first and a last name are given, so this is complete."). Do not repeat the question text, do not quote these rules, and do not mention internal details such as tokens, redaction, placeholders, extra spaces or formatting quirks that do not change the score. Refer to "the applicant".
+3. Never invent facts. When information is missing or sources disagree, say so in the rationale.
+4. Never mention or guess personal details. Reply with JSON only, in the requested shape.
 TXT;
     }
 
     public function schema(bool $withScores): array
     {
-        $finding = [
-            'type' => 'object',
-            'required' => ['dimension', 'polarity', 'title', 'body'],
-            'properties' => [
-                'dimension' => ['type' => 'string', 'enum' => [...ApplicationAiFinding::DIMENSIONS, 'data_quality']],
-                'polarity' => ['type' => 'string', 'enum' => ApplicationAiFinding::POLARITIES],
-                'title' => ['type' => 'string', 'maxLength' => 200],
-                'body' => ['type' => 'string'],
-                'confidence' => ['type' => 'string', 'enum' => ['low', 'medium', 'high']],
-                'source_type' => ['type' => 'string', 'enum' => ['answer', 'document', 'program']],
-                'source_id' => ['type' => 'integer'],
-                'page' => ['type' => 'integer'],
-                'quote' => ['type' => 'string', 'maxLength' => 300],
-            ],
-        ];
-
         $schema = [
             'type' => 'object',
-            'required' => ['summary', 'findings'],
+            'required' => ['summary'],
             'properties' => [
                 'summary' => ['type' => 'string'],
-                'findings' => ['type' => 'array', 'items' => $finding],
                 'missing_items' => ['type' => 'array', 'items' => ['type' => 'string']],
             ],
         ];
@@ -112,8 +93,8 @@ TXT;
         })->implode("\n");
 
         $task = $withScores
-            ? 'Return {"summary","findings","scores","missing_items"}. At most 8 findings, each body under 60 words. Give one score per scoring criterion with a short, plain-language rationale written for the Business Coach.'
-            : 'Return {"summary","findings","missing_items"}. At most 8 findings, each body under 60 words. Do not give scores.';
+            ? 'Return {"summary","scores","missing_items"}. Give one score per scoring criterion with a short, plain-language rationale written for the Business Coach (one or two sentences). The summary is two or three sentences. Do not write findings.'
+            : 'Return {"summary","missing_items"}. The summary is two or three sentences. Do not give scores or findings.';
 
         return [
             ['role' => 'system', 'content' => $this->system()],

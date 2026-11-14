@@ -26,7 +26,7 @@ class AiReviewDispatcher
         }
     }
 
-    public function dispatchFor(ProgramApplication $application, ?ProgramRound $round = null, bool $force = false): ?ApplicationAiReview
+    public function dispatchFor(ProgramApplication $application, ?ProgramRound $round = null, bool $force = false, bool $run = true): ?ApplicationAiReview
     {
         $round ??= $application->currentRound;
         if (! $round || ! $round->usesAi() || ! config('ai_review.enabled')) return null;
@@ -52,6 +52,20 @@ class AiReviewDispatcher
         }
         if (! $review->wasRecentlyCreated && $force && ! $busy) {
             $review->update(['status' => ApplicationAiReview::STATUS_QUEUED, 'attempts' => 0, 'error' => null, 'completed_at' => null]);
+        }
+
+        // Stopped by the program owner: the review waits (queued) and is started when they continue
+        if ($round->ai_review_paused_at) return $review;
+
+        // The review row exists; the caller (the background worker) will run it itself
+        if (! $run) return $review;
+
+        // With no queue worker the review would run inside this request (an applicant waiting on their own submit): start it in the
+        // background instead. With a worker it is queued as usual.
+        if (BackgroundWork::needed()) {
+            BackgroundWork::start($round);
+
+            return $review;
         }
 
         RunApplicationAiReviewJob::dispatch($review->id);
