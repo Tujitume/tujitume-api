@@ -42,7 +42,8 @@ class AiReviewAnalyzer
         $blocks = [];
         foreach ($input['sources'] as $source) {
             if ($source['type'] === 'answer') {
-                $blocks[] = ['type' => 'answer', 'id' => $source['id'], 'label' => $source['label'], 'text' => $this->redactor->redact($source['text'], $name)];
+                $isName = ScoreGuard::kind((string) $source['label']) === 'name';
+                $blocks[] = ['type' => 'answer', 'id' => $source['id'], 'label' => $source['label'], 'text' => $isName ? $this->redactor->describeName((string) $source['text']) : $this->redactor->redact($source['text'], $name)];
             } else {
                 foreach ($source['pages'] ?? [1 => $source['text']] as $page => $text) {
                     if (trim($text) === '') {

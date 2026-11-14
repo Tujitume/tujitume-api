@@ -52,6 +52,21 @@ class Redactor
         return $text;
     }
 
+    /**
+     * For the answer to a "your name" question the name itself is hidden, but not by swapping its parts for "the applicant" (which reads as
+     * placeholder text, so a real full name looked unfinished). The model is told what the answer is: how many words, and whether it looks like a name.
+     */
+    public function describeName(string $text): string
+    {
+        $words = preg_split('/\s+/u', trim($text), -1, PREG_SPLIT_NO_EMPTY);
+        $n = count($words);
+        $this->lastCount++;
+        if ($n >= 2 && ! preg_match('/\d/', $text)) return "[personal name given: {$n} words, plausible first and last name format]";
+        if ($n === 1) return '[personal name given: 1 word only, a last name or first name may be missing]';
+
+        return '[personal name: not in a plausible name format]';
+    }
+
     /** The address is hidden; what the model needs to judge it is not: that it is well formed, and whether it is a company's own domain or a free mailbox. */
     private function describeEmail(string $email): string
     {

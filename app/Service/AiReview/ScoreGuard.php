@@ -54,7 +54,7 @@ class ScoreGuard
 
             // "Full name provided" / "phone number completeness" only ask whether it is there and in order: a name with a first and last name, or a
             // number with a valid country code and length, gets full credit however the model worded it
-            if (in_array($kind, ['name', 'phone'], true) && preg_match('/provided|supplied|present|given|complete|completeness|imetolewa|kamili/i', (string) $s['criterion'])
+            if (in_array($kind, ['name', 'phone'], true) && preg_match('/provi|suppl|present|given|complete|imetolewa|kamili/i', (string) $s['criterion'])
                 && ! preg_match('/quality|relevan|detail|depth|credib|verif/i', (string) $s['criterion'])) {
                 return ['score' => (float) $max, 'rationale' => $kind === 'name' ? 'A first and last name are both given.' : 'The number has a valid country code and length.'] + $s;
             }

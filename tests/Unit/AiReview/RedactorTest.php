@@ -32,3 +32,11 @@ it('says what a hidden email or phone number was, so it is not mistaken for a pl
         ->and($r->redact('25439939393939939'))->toContain('not a valid Kenyan mobile format')
         ->and($r->redact('93721601031'))->toBe('[number: 11 digits, starts with country code +93]');
 });
+
+it('describes the answer to a name question instead of swapping its parts for "the applicant"', function () {
+    $r = new Redactor();
+    expect($r->describeName('Richard Branson Smith'))->toBe('[personal name given: 3 words, plausible first and last name format]')
+        ->and($r->describeName('Owen'))->toContain('1 word only')
+        ->and($r->describeName('Owen 2'))->toContain('not in a plausible name format')
+        ->and($r->describeName('Richard Branson Smith'))->not->toContain('the applicant');
+});

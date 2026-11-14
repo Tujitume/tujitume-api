@@ -79,3 +79,11 @@ it('gives full credit to a plainly valid name and phone for a "provided / comple
 
     expect($out['Full name provided']['score'])->toBe(5.0)->and($out['Mobile phone number completeness']['score'])->toBe(5.0);
 });
+
+it('gives full credit to a valid name for a criterion worded "Provision of personal name"', function () {
+    $round = new ProgramRound(['scoring_criteria' => [['name' => 'Provision of personal name', 'score_range' => '0-5']]]);
+    $input = ['sources' => [['type' => 'answer', 'id' => 1, 'label' => 'Your first and last name', 'text' => 'Richard Branson Smith']]];
+    $out = app(ScoreGuard::class)->apply([['criterion' => 'Provision of personal name', 'score' => 3.0, 'max' => 5.0, 'rationale' => 'unclear']], $round, $input);
+
+    expect($out[0]['score'])->toBe(5.0);
+});
