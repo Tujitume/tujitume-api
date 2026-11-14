@@ -24,9 +24,18 @@ describe('Application endpoints', function () {
             ->assertJsonPath('data.program_id', $this->program->id)
             ->assertJsonPath('data.user_id', $applicant->id)
             ->assertJsonPath('data.email', 'amina@example.test')
-            ->assertJsonPath('data.status', 'pending');
+            ->assertJsonPath('data.status', 'pending')
+            ->assertJsonPath('data.round_status', 'submitted');
 
-        $this->assertDatabaseHas('program_applications', ['program_id' => $this->program->id, 'user_id' => $applicant->id, 'status' => 'pending']);
+        $application = \App\Models\Programs\ProgramApplication::where('program_id', $this->program->id)
+            ->where('user_id', $applicant->id)->firstOrFail();
+        expect($application->round_status)->toBe('submitted');
+        $this->assertDatabaseHas('application_round_history', [
+            'application_id' => $application->id,
+            'round_id' => $application->current_round_id,
+        ]);
+        expect(\App\Models\ApplicationRoundHistory::where('application_id', $application->id)
+            ->where('round_id', $application->current_round_id)->value('submitted_at'))->not->toBeNull();
     });
 
     it('allows a guest to submit and stores the email with a null user id', function () {
@@ -42,7 +51,41 @@ describe('Application endpoints', function () {
             'user_id' => null,
             'email' => 'amina@example.test',
             'startup_name' => 'GreenField Agri',
+            'round_status' => 'submitted',
         ]);
+    });
+
+    it('repairs submitted first-round applications without changing legitimate later-round drafts', function () {
+        $firstRoundDraft = $this->application;
+        $firstRoundDraft->update(['status' => 'pending', 'round_status' => 'draft']);
+        \App\Models\ApplicationRoundHistory::create([
+            'application_id' => $firstRoundDraft->id,
+            'round_id' => $firstRoundDraft->current_round_id,
+            'round_number' => 1,
+            'entered_at' => now()->subMinute(),
+            'submitted_at' => null,
+            'outcome' => 'in_progress',
+        ]);
+
+        $laterRound = \App\Models\Programs\Rounds\ProgramRound::factory()->create([
+            'program_id' => $this->program->id,
+            'round_number' => 2,
+        ]);
+        $laterDraft = \App\Models\Programs\ProgramApplication::factory()->create([
+            'program_id' => $this->program->id,
+            'program_owner_id' => $this->program->user_id,
+            'current_round_id' => $laterRound->id,
+            'status' => 'pending',
+            'round_status' => 'draft',
+        ]);
+
+        $migration = require database_path('migrations/2026_11_14_000200_repair_submitted_first_round_applications.php');
+        $migration->up();
+
+        expect($firstRoundDraft->fresh()->round_status)->toBe('submitted')
+            ->and($laterDraft->fresh()->round_status)->toBe('draft')
+            ->and(\App\Models\ApplicationRoundHistory::where('application_id', $firstRoundDraft->id)
+                ->where('round_id', $firstRoundDraft->current_round_id)->value('submitted_at'))->not->toBeNull();
     });
 
     it('rejects a duplicate application with conflict status', function () {

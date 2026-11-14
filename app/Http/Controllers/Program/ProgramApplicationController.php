@@ -356,6 +356,10 @@ class ProgramApplicationController extends Controller
             $validated['user_id'] = auth('sanctum')->id(); // empty for a guest: no account is needed to apply
             $validated['email'] = $validated['contact_person_email'];
             $validated['status'] = 'pending';
+            // This endpoint submits immediately; it is not a draft-saving endpoint.
+            // Keep the round state consistent with the successful response and
+            // overall application status so reviewers and AI can see it.
+            $validated['round_status'] = 'submitted';
             // New applications always enter the first round; later rounds only take advanced applicants
             $validated['current_round_id'] = $program->applicationRound()?->id;
 
@@ -439,6 +443,9 @@ class ProgramApplicationController extends Controller
 
             // Save round document uploads & answers
             $this->handleRoundData($request, $application, $doc_path, $uploadedFiles, $validated['current_round_id']);
+            ApplicationRoundHistory::where('application_id', $application->id)
+                ->where('round_id', $application->current_round_id)
+                ->update(['submitted_at' => now()]);
             $scoreResult = app(RoundMatchScore::class)->recalculateApplication($application);
 
             // The program's minimum match score is checked here, on the score the server just worked out from the answers
