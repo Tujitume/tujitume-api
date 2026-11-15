@@ -78,7 +78,39 @@ class CapitalController extends Controller
             $capital->pitch_count = $pitches;
             $capital->owner_website = $capital->owner->website;
         }
+
+        // Signed-in entrepreneur: add their own application to each offer (one query) so
+        // My Capital Applications and the Capital Deal Room can list them.
+        if (Auth::check()) {
+            $this->attachMyApplications($capitals, Auth::user());
+        }
+
         return response()->json(['capital' => $capitals]);
+    }
+
+    /**
+     * Adds applied, application_status (pending | approved), applied_at, application_id and
+     * amount_requested to each offer for the given user (or their organization owner).
+     * A rejected application is deleted by reject(), so it shows as not applied.
+     */
+    private function attachMyApplications($capitals, $user): void
+    {
+        $ownerIds = array_unique([$user->id, $user->organizationOwnerId()]);
+        $mine = StartupPitches::whereIn('capital_id', collect($capitals)->pluck('id'))
+            ->whereIn('user_id', $ownerIds)
+            ->orderByDesc('created_at')
+            ->get(['id', 'capital_id', 'status', 'created_at', 'total_amount_requested'])
+            ->unique('capital_id')
+            ->keyBy('capital_id');
+
+        foreach ($capitals as $capital) {
+            $pitch = $mine->get($capital->id);
+            $capital->applied = (bool) $pitch;
+            $capital->application_id = $pitch?->id;
+            $capital->application_status = $pitch ? ((int) $pitch->status === 1 ? 'approved' : 'pending') : null;
+            $capital->applied_at = $pitch?->created_at;
+            $capital->amount_requested = $pitch?->total_amount_requested;
+        }
     }
 
     public function get_capital($id)
@@ -553,8 +585,7 @@ class CapitalController extends Controller
     {
         try{
             $pitch = StartupPitches::with('capital_offer')->where('id',$pitch_id)->first();
-            $text = 'Your application to the Capital'.$pitch->capital_offer->offer_title.'
-                 has been accepted. You can now connect with the Capital owner';
+            $text = 'Your application to the Capital '.$pitch->capital_offer->offer_title.' was not selected this time.';
             $notification = new NotificationService();
             $notification->create($pitch->user_id,$pitch->capital_offer->user_id,$text
                 ,'capital-overview/capital/discover',' capital');

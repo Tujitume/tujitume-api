@@ -8,6 +8,7 @@ use App\Models\Capital\CapitalOffer;
 use App\Models\Programs\Program;
 use App\Service\AI\InvestorPersonalizedListing;
 use Illuminate\Http\Request;
+use Illuminate\Support\Arr;
 use App\Models\Auth\User;
 use App\Models\Business\AcceptedBids;
 use App\Models\Business\BusinessSubscriptions;
@@ -121,6 +122,13 @@ class BusinessController extends Controller
 
         $uploadedFiles = [];
 
+        // Same field names as updateListing are accepted too (name, stage, video link)
+        $request->merge(array_filter([
+            'title'          => $request->input('title', $request->input('name')),
+            'business_stage' => $request->input('business_stage', $request->input('stage')),
+            'videoLink'      => $request->input('videoLink', is_string($request->input('video')) ? $request->input('video') : null),
+        ], fn ($value) => $value !== null));
+
         DB::beginTransaction();
         try {
             $validated = $request->validate([
@@ -148,7 +156,15 @@ class BusinessController extends Controller
                 'investors_fee'       => 'nullable|integer',
                 'id_no'               => 'required|string|max:255',
                 'tax_pin'             => 'required|string|max:255',
+                // Business verification (KYB) details asked by the form
+                'business_type'        => 'nullable|string|max:60',
+                'registration_number'  => 'nullable|string|max:100',
+                'registration_country' => 'nullable|string|max:2',
+                'proof_of_address'     => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:2048',
+                'business_registration_certificate' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:2048',
             ]);
+            // Files are saved after the listing exists (below), not as columns from the validated input
+            unset($validated['proof_of_address'], $validated['business_registration_certificate']);
 
             if (!$spam->check($validated['title'], $validated['details'], $validated['reason'] ?? '')) {
                 return response()->json(['message' => 'Inappropriate language detected.'], 422);
@@ -201,6 +217,8 @@ class BusinessController extends Controller
                 'identification'      => $saveFile('identification'),
                 'document'            => $saveFile('document'),
                 'yeary_fin_statement' => $saveFile('yeary_fin_statement'),
+                'proof_of_address'    => $saveFile('proof_of_address'),
+                'business_registration_certificate' => $saveFile('business_registration_certificate'),
                 'video'               => $request->hasFile('video') ? $saveFile('video') : $request->videoLink,
             ]);
 
@@ -226,21 +244,48 @@ class BusinessController extends Controller
     {
         $uploadedFiles = [];
 
+        // Same field names as storeListing are accepted too (title, business_stage, videoLink)
+        $request->merge(array_filter([
+            'name'  => $request->input('name', $request->input('title')),
+            'stage' => $request->input('stage', $request->input('business_stage')),
+            'link'  => $request->input('link', $request->input('videoLink')),
+        ], fn ($value) => $value !== null));
+
         try {
             $validated = $request->validate([
-                'id'             => 'required|integer|exists:listings,id',
-                'name'           => 'required|string|max:300',
-                'details'        => 'required|string|max:1500',
-                'reason'         => 'sometimes|required|string|max:500',
-                //'image'          => 'sometimes|required|file|mimes:jpg,jpeg,png,webp|max:2048',
-                //'pin'            => 'sometimes|required|file|mimes:pdf,docx|max:2048',
-                //'identification' => 'sometimes|required|file|mimes:pdf,docx|max:2048',
-                //'document'       => 'sometimes|required|file|mimes:pdf,docx|max:2048',
-                //'video'          => 'sometimes|required|file|mimes:mp4,mov,avi,webm,mpg,mpeg,wmv|max:51200',
-                'link'           => 'nullable|string|url',
+                'id'                   => 'required|integer|exists:listings,id',
+                'name'                 => 'required|string|max:300',
+                'details'              => 'required|string|max:1500',
+                'reason'               => 'sometimes|nullable|string|max:500',
+                'category'             => 'sometimes|required|string|max:255',
+                'location'             => 'sometimes|required|string|max:300',
+                'lat'                  => 'nullable|string|max:100',
+                'lng'                  => 'nullable|string|max:100',
+                'contact'              => 'nullable|string|max:255',
+                'contact_mail'         => 'nullable|email|max:100',
+                'stage'                => 'nullable|string|max:70',
+                'investors_fee'        => 'nullable|integer|min:0',
+                'social_impact_areas'  => 'nullable|array',
+                'business_type'        => 'nullable|string|max:60',
+                'registration_number'  => 'nullable|string|max:100',
+                'registration_country' => 'nullable|string|max:2',
+                'link'                 => 'nullable|string|url',
+                'image'                => 'nullable|file|mimes:jpg,jpeg,png,webp|max:2048',
+                'pin'                  => 'nullable|file|mimes:pdf,docx|max:2048',
+                'identification'       => 'nullable|file|mimes:pdf,docx,jpg,jpeg,png|max:2048',
+                'document'             => 'nullable|file|mimes:pdf,docx|max:2048',
+                'yeary_fin_statement'  => 'nullable|file|mimes:pdf,docx|max:2048',
+                'proof_of_address'     => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:2048',
+                'business_registration_certificate' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:2048',
+                'video'                => 'nullable|file|mimes:mp4,mov,avi,webm,mpg,mpeg,wmv|max:51200',
             ]);
 
-            $listing = Listing::findOrFail($validated['id']);
+            // Only the business owner (or their organization) may change it
+            $ownerIds = array_unique([Auth::id(), $request->user()->organizationOwnerId()]);
+            $listing = Listing::where('id', $validated['id'])->whereIn('user_id', $ownerIds)->first();
+            if (! $listing) {
+                return response()->json(['message' => 'Business not found.'], 404);
+            }
 
             if (!$spam->check($validated['name'], $validated['details'], $validated['reason'] ?? '')) {
                 return response()->json(['message' => 'Inappropriate language detected.'], 422);
@@ -263,7 +308,14 @@ class BusinessController extends Controller
             }
 
             $fileDir = 'files/business/' . $listing->id;
-            $data    = $request->except(['_token', 'link', 'created_at', 'updated_at', 'id', 'image_url']);
+
+            // Only these fields can change after creation. investment_needed, share, y_turnover, id_no and
+            // tax_pin stay read-only; anything else in the request (user_id, active, amount_collected…) is ignored.
+            $editable = [
+                'name', 'category', 'details', 'location', 'lat', 'lng', 'contact', 'contact_mail', 'stage',
+                'investors_fee', 'social_impact_areas', 'reason', 'business_type', 'registration_number', 'registration_country',
+            ];
+            $data = Arr::only($validated, array_filter($editable, fn ($key) => $request->has($key)));
 
             $replaceFile = function ($key, $oldPath) use ($request, $fileDir, &$data, &$uploadedFiles) {
                 if (!$request->hasFile($key)) return;
@@ -279,10 +331,13 @@ class BusinessController extends Controller
                 if ($listing->image && file_exists(public_path($listing->image))) unlink(public_path($listing->image));
             }
 
-            $replaceFile('pin',            $listing->pin);
-            $replaceFile('identification', $listing->identification);
-            $replaceFile('document',       $listing->document);
-            $replaceFile('video',          $listing->video);
+            $replaceFile('pin',                               $listing->pin);
+            $replaceFile('identification',                    $listing->identification);
+            $replaceFile('document',                          $listing->document);
+            $replaceFile('yeary_fin_statement',               $listing->yeary_fin_statement);
+            $replaceFile('proof_of_address',                  $listing->proof_of_address);
+            $replaceFile('business_registration_certificate', $listing->business_registration_certificate);
+            $replaceFile('video',                             $listing->video);
 
             if ($request->filled('link')) $data['video'] = $request->link;
 
