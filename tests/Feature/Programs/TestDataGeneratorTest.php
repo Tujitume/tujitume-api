@@ -48,3 +48,10 @@ it('builds a PDF whose offsets are valid, with the text in it', function () {
     preg_match('/startxref\n(\d+)\n/', $pdf, $m);
     expect(substr($pdf, (int) $m[1], 4))->toBe('xref');
 });
+
+it('truncates generated short answers without relying on mb_strimwidth', function () {
+    $question = new RoundCustomQuestion(['question_text' => 'Describe your experience', 'question_type' => 'short_answer']);
+    $answer = (new RealisticAnswers())->forQuestion($question, 'Sample Business', 'Taylor Example');
+
+    expect(mb_strlen((string) $answer['response'], 'UTF-8'))->toBeLessThanOrEqual(160);
+});

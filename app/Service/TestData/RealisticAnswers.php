@@ -224,7 +224,9 @@ class RealisticAnswers
         $template = $good ? $pool[0] : ($pool[1] ?? $pool[0]);
         $text = strtr($template, ['{y}' => (string) mt_rand(3, 12), '{s}' => strtolower($sector), '{n}' => explode(' ', trim($personName))[0] ?: 'Our lead', '{p}' => strtolower($sector).' products', '{l}' => $location]);
 
-        return $short ? Str::limit($text, 160, '') : $text;
+        // Str::limit uses mb_strimwidth, which Symfony's mbstring polyfill does not implement.
+        // This generator limits by characters, so mb_substr is sufficient and works with the polyfill.
+        return $short ? mb_substr($text, 0, 160, 'UTF-8') : $text;
     }
 
     private function pdf(RoundCustomQuestion $q, string $businessName, string $personName, string $sector, bool $good): string
