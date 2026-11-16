@@ -157,6 +157,23 @@ class ProgramApplicationController extends Controller
             ])->where('user_id',$user->id)->latest()->get();
         }
 
+        // Summary, worked out from the raw status strings BEFORE they are turned into {value, color} below.
+        // Drafts are not applications yet, so they are left out of every count.
+        $statuses = $pitches->pluck('status')->map(fn ($s) => strtolower((string) $s));
+        $submitted = $pitches->filter(fn ($p) => strtolower((string) $p->status) !== 'draft');
+        $countIn = fn (array $values) => $statuses->filter(fn ($s) => in_array($s, $values, true))->count();
+
+        $pitch_count = $submitted->count();
+        $pitch_count_accept = $countIn(['approved', 'awarded', 'completed']);
+        $pitch_count_rejected = $countIn(['rejected']);
+        $pitch_count_pending = $countIn(['pending', 'submitted', 'under_review', 'in_review']);
+        $pitch_count_draft = $countIn(['draft']);
+        $scores = $submitted->pluck('match_score')->filter(fn ($v) => $v !== null && $v !== '')->map(fn ($v) => (float) $v);
+        $avg_match_score = $scores->count() ? round($scores->avg(), 2) : 0;
+        $decided = $pitch_count_accept + $pitch_count_rejected;
+        // Share of decided applications that were accepted
+        $accept_rate = $decided ? round(($pitch_count_accept / $decided) * 100, 2) : 0;
+
         foreach ($pitches as $pitch){
             $pitch->in_my_watchlist = in_array($pitch->id, $watchlistPitchIds);
 
@@ -168,19 +185,19 @@ class ProgramApplicationController extends Controller
             ];
         }
 
-        $match_score = $pitches->sum('score');
-        $pitch_count = $pitches->count();
-        $pitch_count_accept = $pitches->where('status', 1)->count();
-        $pitch_count_pending = $pitch_count-$pitch_count_accept;
-        $avg_match_score = round($pitch_count > 0 ? $match_score/$pitch_count : 0, 2);;
-        $accept_rate = $pitch_count ? round( ($pitch_count_accept/$pitch_count)*100, 2) : 0;
-
         return response()->json([
             'pitches' => $pitches,
             'avg_match_score' => $avg_match_score,
             'accept_rate' => $accept_rate,
             'pitch_count' => $pitch_count,
             'pitch_count_pending' => $pitch_count_pending,
+            'pitch_count_accepted' => $pitch_count_accept,
+            'pitch_count_rejected' => $pitch_count_rejected,
+            'pitch_count_draft' => $pitch_count_draft,
+            'scored_count' => $scores->count(),
+            'best_match_score' => $scores->count() ? round($scores->max(), 2) : null,
+            'total_requested' => round((float) $submitted->sum('total_amount_requested'), 2),
+            'total_awarded' => round((float) $submitted->sum('awarded_amount'), 2),
         ]);
     }
 

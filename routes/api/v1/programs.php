@@ -19,6 +19,7 @@ use App\Http\Controllers\Program\MEController;
 use App\Http\Controllers\Program\MilestonePreAgreementController;
 use App\Http\Controllers\Program\MilestoneVerificationController;
 use App\Http\Controllers\Program\ProgramApplicationController;
+use App\Http\Controllers\Program\ProgramApplicationsOverviewController;
 use App\Http\Controllers\Program\ProgramController;
 use App\Http\Controllers\Program\ProgramDealRoomController;
 use App\Http\Controllers\Program\ProgramDisbursementController;
@@ -73,6 +74,8 @@ Route::prefix('/programs')->middleware(['program', 'program.response'])->group(f
     Route::get('{program_id}/applications/awarded', [ProgramApplicationController::class, 'awarded']);
     Route::get('applications/{id}', [ProgramApplicationController::class, 'show']);
     Route::get('my-applications', [ProgramApplicationController::class, 'myPitches']);
+    // Owner Applications page: one summary row per program (counts done by the database)
+    Route::get('applications-overview', [ProgramApplicationsOverviewController::class, 'index']);
     Route::get('visibility/{program_id}', [ProgramController::class, 'visibility']);
     Route::delete('delete-program/{id}', [ProgramController::class, 'destroy']);
 
