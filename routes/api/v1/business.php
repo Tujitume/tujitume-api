@@ -7,6 +7,7 @@ use App\Http\Controllers\Auth\AuthController;
 use App\Http\Controllers\Business\AssetBidsController;
 use App\Http\Controllers\Business\BidsController;
 use App\Http\Controllers\Business\BusinessController;
+use App\Http\Controllers\Business\EntrepreneurDashboardStatsController;
 use App\Http\Controllers\Service\ServiceController;
 use App\Http\Controllers\Business\MilestoneController;
 use App\Http\Controllers\Business\SubscriptionController;
@@ -71,3 +72,5 @@ Route::prefix('/business')->middleware(['business'])->group(function () {
 Route::get('ratingListing/{id}/{rating}/{text}', [BusinessController::class, 'ratingListing'])->name('ratingListing');
 Route::get('unlockBySubs/{id}/{sub_id}/{plan}', [BusinessController::class, 'unlockBusiness'])->name('unlockBySubs');
 
+// Entrepreneur dashboard cards (Businesses, Programs, Capital) in one snapshot
+Route::get('dashboard/entrepreneur/stats', [EntrepreneurDashboardStatsController::class, 'index']);

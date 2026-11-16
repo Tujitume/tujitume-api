@@ -174,6 +174,7 @@ class ProgramController extends Controller
         try{
             $validated = $request->validate([
                 'program_title' => 'required|string|max:255',
+                'program_description' => 'nullable|string|max:500',
                 'program_industry_id' => 'required|exists:program_industries,id',
                 'organization_id' => 'sometimes|exists:organizations,id',
                 'total_program_amount' => 'required|numeric|min:0',
@@ -472,6 +473,7 @@ class ProgramController extends Controller
         try {
             $validated = $request->validate([
                 'program_title' => 'sometimes|required|string|max:255',
+                'program_description' => 'sometimes|nullable|string|max:500',
                 'program_industry_id' => 'sometimes|required|exists:program_industries,id',
                 'total_program_amount' => 'sometimes|required|numeric|min:0',
                 'available_amount' => 'sometimes|nullable|numeric|min:0',
