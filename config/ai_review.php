@@ -14,7 +14,8 @@
 | WHICH PROVIDER: change this one word to switch ('amari' or 'groq'). Both are fully set up below and use the same Groq service, so no .env change
 | is needed. (A server may still override it with AI_REVIEW_PROVIDER in its .env; leave that line out and this word decides.)
 */
-$provider = 'amari';
+//$provider = 'amari';
+$provider = 'groq'; // <-- change this to switch providers
 
 $list = fn (string $key, string $default = '') => array_values(array_filter(array_map('trim', explode(',', (string) env($key, $default)))));
 $amariChatUrl = rtrim((string) env('AMARI_AI_URL', 'https://api.groq.com/openai/v1/chat/completions'), '/');

@@ -19,6 +19,8 @@ return new class extends Migration
             $table->unsignedBigInteger('program_industry_id')->nullable();
 
             $table->string('program_title', 255);
+            $table->string('program_description', 500)->nullable();
+
             $table->decimal('total_program_amount', 15, 2);
             $table->decimal('available_amount', 15, 2)->nullable();
             $table->decimal('funding_per_business', 15, 2);
