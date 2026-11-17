@@ -24,6 +24,8 @@ use Illuminate\Support\Str;
 
 class TestApplicationGeneratorController extends Controller
 {
+    private const GENERATED_TEST_APPLICATION_NOTE = \App\Service\Misc\AutomatedAccounts::GENERATED_TEST_APPLICATION_NOTE;
+
     protected $roundHistory;
 
     public function __construct()
@@ -72,6 +74,19 @@ class TestApplicationGeneratorController extends Controller
             }
 
             $numToGenerate = $validated['num_applications'];
+            $businessUsers = User::where('user_type_id', 1)
+                ->inRandomOrder()
+                ->limit($numToGenerate)
+                ->get()
+                ->shuffle()
+                ->values();
+
+            if ($businessUsers->isEmpty()) {
+                return response()->json([
+                    'error' => 'No existing business users (user_type_id = 1) are available. Test applications were not generated.',
+                ], 422);
+            }
+
             $generatedApplications = [];
             $errors = [];
 
@@ -79,7 +94,8 @@ class TestApplicationGeneratorController extends Controller
             for ($i = 0; $i < $numToGenerate; $i++) {
                 DB::beginTransaction();
                 try {
-                    $application = $this->createTestApplication($program, $round, $i);
+                    $businessUser = $businessUsers[$i % $businessUsers->count()];
+                    $application = $this->createTestApplication($program, $round, $businessUser, $i);
                     $generatedApplications[] = $application;
                     DB::commit();
                 } catch (\Exception $e) {
@@ -132,7 +148,11 @@ class TestApplicationGeneratorController extends Controller
 
         $waiting = ProgramApplication::where('current_round_id', $round->id)
             ->where('round_status', 'draft')
-            ->whereHas('user', fn ($q) => $q->where('email', 'like', 'testuser%@example%.com'))
+            ->where(function ($query) {
+                $query->where('reviewer_notes', 'like', self::GENERATED_TEST_APPLICATION_NOTE.'%')
+                    // Continue to support test applications created before this endpoint stopped making test users.
+                    ->orWhereHas('user', fn ($q) => $q->where('email', 'like', 'testuser%@example%.com'));
+            })
             ->orderBy('id')
             ->limit($limit)
             ->get();
@@ -195,27 +215,24 @@ class TestApplicationGeneratorController extends Controller
     /**
      * Create a single test application with all required data
      */
-    private function createTestApplication(Program $program, ProgramRound $round, int $index): ProgramApplication
+    private function createTestApplication(Program $program, ProgramRound $round, User $businessUser, int $index): ProgramApplication
     {
-        // Create or get test user (SME)
-        $testUser = $this->getOrCreateTestUser($index);
-        
         // Create or get test business
-        $testBusiness = $this->getOrCreateTestBusiness($testUser, $index);
+        $testBusiness = $this->getOrCreateTestBusiness($businessUser, $index);
 
         // Generate application data
         $matchScore = rand(50, 100);
         $applicationData = [
             'program_id' => $program->id,
             'program_owner_id' => $program->user_id,
-            'user_id' => $testUser->id,
+            'user_id' => $businessUser->id,
             'business_id' => $testBusiness->id,
             'current_round_id' => $round->id,
             
             // Business info
             'startup_name' => $testBusiness->name,
-            'contact_person_name' => $testUser->first_name . ' ' . $testUser->last_name,
-            'contact_person_email' => $testUser->email,
+            'contact_person_name' => $businessUser->first_name . ' ' . $businessUser->last_name,
+            'contact_person_email' => $businessUser->email,
             'sector' => $this->getRandomSector(),
             'headquarters_location' => $this->getRandomLocation(),
             'stage' => $this->getRandomStage(),
@@ -236,6 +253,7 @@ class TestApplicationGeneratorController extends Controller
             'status' => 'pending',
             'round_status' => 'submitted',
             'knockout_status' => 'pending',
+            'reviewer_notes' => self::GENERATED_TEST_APPLICATION_NOTE.' Generated test application.',
             // No submitted_at here: that column is on application_round_history, not program_applications
         ];
 
@@ -260,31 +278,6 @@ class TestApplicationGeneratorController extends Controller
         \App\Service\AiReview\AiReviewDispatcher::safely($application);
 
         return $application->fresh();
-    }
-
-    /**
-     * Get or create test user (SME)
-     */
-    private function getOrCreateTestUser(int $index): User
-    {
-        $email = "testuser{$index}@example" . rand(100, 999) . ".com";
-        
-        // Check if user exists
-        $user = User::where('email', $email)->first();
-        
-        if (!$user) {
-            $user = User::create([
-                'first_name' => 'Test',
-                'last_name' => 'User' . $index,
-                'email' => $email,
-                'password' => bcrypt('password'),
-                'user_type_id' => 1, // SME
-                'phone' => '+254700' . str_pad(rand(100000, 999999), 6, '0', STR_PAD_LEFT),
-                'email_verified_at' => now(),
-            ]);
-        }
-        
-        return $user;
     }
 
     /**

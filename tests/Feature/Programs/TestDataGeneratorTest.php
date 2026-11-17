@@ -22,9 +22,18 @@ it('makes generated applications answer the round\'s own questions: names, email
     $team = $mk('How many people are on your team?', 'number', [], 5);
     $cv = $mk('Upload your CV', 'file_upload', ['category:document'], 6);
     $market = $mk('Describe your market opportunity', 'long_text', [], 7);
+    $businessUserIds = \App\Models\Auth\User::where('user_type_id', 1)->pluck('id')->all();
+    $userCountBefore = \App\Models\Auth\User::count();
 
     mt_srand(7);
     $this->actingAsOrgOwner()->postJson('/api/v1/programs/test-data/generate-applications', ['round_id' => $this->round->id, 'num_applications' => 12])->assertStatus(201);
+
+    $generated = \App\Models\Programs\ProgramApplication::where('current_round_id', $this->round->id)
+        ->where('reviewer_notes', 'like', '[TEST_DATA_GENERATOR]%')->get();
+    expect(\App\Models\Auth\User::count())->toBe($userCountBefore)
+        ->and($generated)->toHaveCount(12)
+        ->and($generated->every(fn ($application) => in_array($application->user_id, $businessUserIds, true)))->toBeTrue()
+        ->and($generated->every(fn ($application) => str_starts_with((string) $application->reviewer_notes, '[TEST_DATA_GENERATOR]')))->toBeTrue();
 
     $answers = fn ($q) => ApplicationRoundResponse::where('question_id', $q->id)->get();
     // Never filler: no answer is Latin placeholder text
