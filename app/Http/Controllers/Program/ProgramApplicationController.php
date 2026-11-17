@@ -369,6 +369,10 @@ class ProgramApplicationController extends Controller
             // }
 
             // Auto-set fields
+            // Custom fields the owner defined for applicants: validated from the stored definitions (options are never trusted)
+            $fieldValues = app(\App\Service\Program\CustomFields\CustomFieldValueService::class);
+            $customFields = $fieldValues->applicationFields($program);
+            $customAnswers = $customFields->isNotEmpty() ? ($request->validate($fieldValues->rules($customFields))['custom_answers'] ?? []) : [];
             $validated['program_id'] = $program->id;  $validated['program_owner_id'] = $program->user_id;
             $validated['user_id'] = auth('sanctum')->id(); // empty for a guest: no account is needed to apply
             $validated['email'] = $validated['contact_person_email'];
@@ -464,6 +468,15 @@ class ProgramApplicationController extends Controller
                 ->where('round_id', $application->current_round_id)
                 ->update(['submitted_at' => now()]);
             $scoreResult = app(RoundMatchScore::class)->recalculateApplication($application);
+            if ($customFields->isNotEmpty()) {
+                $fieldValues->storeAnswers($program, 'application', $application->id, $customAnswers, $customFields);
+                $custom = app(\App\Service\Program\MatchScore\MatchScoreEngine::class)->compute($program, $fieldValues->answersFor('application', $application->id, $customFields));
+                if ($custom['score'] !== null) {
+                    // The program scores with its own fields: this replaces the round-question score (server side only)
+                    $application->forceFill(['match_score' => $custom['score'], 'score_breakdown' => ['source' => 'custom_fields', 'breakdown' => $custom['breakdown'], 'bonus' => $custom['bonus']]])->save();
+                    $scoreResult['match_score'] = $custom['score'];
+                }
+            }
 
             // The program's minimum match score is checked here, on the score the server just worked out from the answers
             // (never one sent by the browser), so it cannot be bypassed by calling the API directly. Rolls everything back.

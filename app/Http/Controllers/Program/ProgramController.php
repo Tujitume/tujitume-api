@@ -191,6 +191,7 @@ class ProgramController extends Controller
                 'use_match_score' => 'nullable|boolean',
                 'match_score_limit' => 'nullable|integer|min:1|max:100',
                 
+                'custom_fields' => 'nullable|array|max:'.config('program_fields.max_active_fields'),
                 'application_round' => 'nullable|array',
                 'application_round.round_name' => 'nullable|string|max:100',
                 'application_round.open_date' => 'nullable|date',
@@ -249,8 +250,11 @@ class ProgramController extends Controller
             $validated['max_awardees'] = $validated['max_awardees'] ?? (int) floor($validated['total_program_amount'] / max($validated['funding_per_business'], 1));
             $validated['program_type'] = $validated['program_type'] ?? 'single_round';
 
-            $programAttributes = Arr::except($validated, ['application_round']);
+            $programAttributes = Arr::except($validated, ['application_round', 'custom_fields']);
             $program = Program::create($programAttributes);
+            foreach ($validated['custom_fields'] ?? [] as $definition) {
+                app(\App\Service\Program\CustomFields\CustomFieldService::class)->create($program, $definition);
+            }
             $roundConfig = $validated['application_round'] ?? [];
             $firstRound = $program->rounds()->create([
                 'round_name' => $roundConfig['round_name'] ?? 'Application Round',
@@ -331,6 +335,21 @@ class ProgramController extends Controller
             $newProgram->application_start_date = null;
             $newProgram->application_deadline = null;
             $newProgram->push();
+
+            // Field definitions are copied (answers never are); info values are copied because they describe the program
+            foreach ($program->customFields()->where('is_archived', false)->get() as $field) {
+                $copy = $field->replicate();
+                $copy->program_id = $newProgram->id;
+                $copy->save();
+                if ($field->audience === 'info') {
+                    foreach ($field->values()->where('entity_type', 'program')->get() as $value) {
+                        $v = $value->replicate();
+                        $v->field_id = $copy->id;
+                        $v->entity_id = $newProgram->id;
+                        $v->save();
+                    }
+                }
+            }
 
             // 5. Duplicate rounds + questions.
             foreach ($program->rounds as $round) {
@@ -469,6 +488,18 @@ class ProgramController extends Controller
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
+        // The start date is only checked when it is being CHANGED. Editing another field of a program whose applications
+        // already opened sends the same (past) start date back; that must not fail with "after or equal to today".
+        $storedStart = $program->application_start_date;
+        $sentStart = $request->input('application_start_date');
+        $startUnchanged = $storedStart && $sentStart && strtotime((string) $sentStart) !== false
+            && \Illuminate\Support\Carbon::parse($sentStart)->isSameDay($storedStart);
+        $startRule = $startUnchanged ? 'sometimes|required|date' : 'sometimes|required|date|after_or_equal:today';
+        // A deadline sent on its own is compared with the saved start date (not with a missing field)
+        $deadlineRule = $request->has('application_start_date') || ! $storedStart
+            ? 'sometimes|required|date|after:application_start_date'
+            : 'sometimes|required|date|after:'.$storedStart->toDateString();
+
         DB::beginTransaction();
         try {
             $validated = $request->validate([
@@ -483,14 +514,24 @@ class ProgramController extends Controller
                 'total_rounds' => 'sometimes|required|integer|min:1|max:10',
                 'max_awardees' => 'sometimes|nullable|integer|min:1',
                 'currency' => 'sometimes|nullable|string|max:3',
-                'application_start_date' => 'sometimes|required|date|after_or_equal:today',
-                'application_deadline' => 'sometimes|required|date|after:application_start_date',
+                'application_start_date' => $startRule,
+                'application_deadline' => $deadlineRule,
                 'require_kyc_verification_to_apply' => 'sometimes|nullable|boolean',
                 'use_match_score' => 'sometimes|required|boolean',
                 'match_score_limit' => 'sometimes|nullable|integer|min:1|max:100',
                 'status' => 'sometimes|required|in:draft,published,open,closed,under_review,awarded,cancelled,completed',
                 'visible' => 'sometimes|nullable|boolean',
             ]);
+
+            // Once applications have opened the start date is history: it cannot be moved, and saying so beats silently ignoring it
+            if (array_key_exists('application_start_date', $validated) && ! $startUnchanged && $storedStart && $storedStart->lte(now()->endOfDay()) && $program->status !== 'draft') {
+                throw ValidationException::withMessages([
+                    'application_start_date' => ['The start date can no longer be changed because applications have already opened.'],
+                ]);
+            }
+            if ($startUnchanged) {
+                unset($validated['application_start_date']);
+            }
 
             if (array_key_exists('use_match_score', $validated)) {
                 $validated['use_match_score'] = $request->boolean('use_match_score');
@@ -658,6 +699,18 @@ class ProgramController extends Controller
                     ->where('user_id', Auth::id())
                     ->exists();
             }
+
+            // The owner also sees how ready each round is (what is missing, published / waiting for its open date / live)
+            if (Auth::check() && \App\Service\Program\ProgramAccess::owns($program)) {
+                $configuration = app(\App\Service\Program\RoundConfiguration::class);
+                $program->rounds->each(fn ($round) => $round->setAttribute('readiness', $configuration->readiness($round)));
+                if ($round1) {
+                    $round1->setAttribute('readiness', $configuration->readiness($round1));
+                }
+            }
+
+            // Custom fields an applicant sees (never the scoring, weights or targets) and the program's public info values
+            app(\App\Service\Program\CustomFields\CustomFieldValueService::class)->attachPublicFields($program);
 
             return ApiContract::itemResponse(
                 'Program fetched successfully.',

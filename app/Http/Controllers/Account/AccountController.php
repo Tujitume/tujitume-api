@@ -146,6 +146,11 @@ class AccountController extends Controller
                 }
             }
 
+            // The Transactions page asks for a page (search, filters, sort, export): answered on the database.
+            if (\App\Service\Account\TransactionList::wanted(request())) {
+                return (new \App\Service\Account\TransactionList((int) $user_id))->respond(request());
+            }
+
             $transactions = Transactions::with([
                 'recipient',
                 'user'

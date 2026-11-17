@@ -71,6 +71,7 @@ class ProgramRoundController extends Controller
                     'awaiting_submission_count' => $awaiting,
                     // Which of the setup steps are done, so the overview can show how ready each round is
                     'configuration_progress' => $this->configurationProgress($round),
+                    'readiness' => $this->config()->readiness($round),
                     'advanced_count' => $outcomes->filter(fn ($outcome) => in_array($outcome, ['advanced', 'awarded'], true))->count(),
                     'not_selected_count' => $outcomes->filter(fn ($outcome) => $outcome === 'not_selected')->count(),
                     'status' => ApiContract::statusMeta('program_round', $round->status),
@@ -99,6 +100,7 @@ class ProgramRoundController extends Controller
                 'status' => ApiContract::statusMeta('program_round', $round->status),
                 'reviewers' => $round->reviewers,
                 'configuration_progress' => $this->configurationProgress($round),
+                'readiness' => $this->config()->readiness($round),
             ]
         ], 200);
     }
@@ -126,75 +128,29 @@ class ProgramRoundController extends Controller
             ->exists();
     }
 
+    private function config(): \App\Service\Program\RoundConfiguration
+    {
+        return app(\App\Service\Program\RoundConfiguration::class);
+    }
+
     // The wizard steps the person has confirmed, stored on the round (program_rounds.confirmed_steps)
     private function confirmedSteps(ProgramRound $round): array
     {
-        return (array) ($round->confirmed_steps ?? []);
+        return $this->config()->confirmedSteps($round);
     }
 
     /** The wizard steps a person confirms themselves; publishing is decided by the round's status. */
-    private const CONFIRMABLE_STEPS = ['setup', 'questions', 'reviewers', 'notifications'];
+    private const CONFIRMABLE_STEPS = \App\Service\Program\RoundConfiguration::CONFIRMABLE_STEPS;
 
-    /**
-     * Where the person is in the round wizard. A step is done when its data is valid AND the person has
-     * confirmed it (saved or moved on). Data alone is not enough: the first round is created with the
-     * program, so its dates and questions exist before anyone has opened the wizard.
-     * A round that is already live counts every step as done.
-     */
     /** Wizard steps (before publish) that are not done yet, as step => label, for the publish check. */
     public function unfinishedSteps(ProgramRound $round): array
     {
-        $labels = [
-            'setup' => 'Round setup (dates and scoring)',
-            'questions' => 'Application questions',
-            'reviewers' => 'Reviewers',
-            'notifications' => 'Notification emails',
-        ];
-
-        $steps = $this->configurationProgress($round)['steps'];
-
-        return collect($labels)->filter(fn ($label, $step) => empty($steps[$step]))->all();
+        return $this->config()->unfinished($round);
     }
 
     private function configurationProgress(ProgramRound $round, bool $requireConfirmation = true): array
     {
-        $isLive = $round->status !== 'draft';
-        $confirmed = $this->confirmedSteps($round);
-        $confirms = fn (string $step) => ! $requireConfirmation || $isLive || in_array($step, $confirmed, true);
-
-        $steps = [
-            'setup' => $this->setupStepComplete($round) && $confirms('setup'),
-            'questions' => RoundCustomQuestion::where('round_id', $round->id)
-                ->where('question_type', '!=', 'knockout')
-                ->exists() && $confirms('questions'),
-            'reviewers' => ($round->assignment_type === 'owner_only'
-                || $round->reviewers()->count() >= max(1, (int) ($round->min_reviewers_required ?? 1)))
-                && $confirms('reviewers'),
-            'notifications' => ProgramEmailTemplate::where('program_id', $round->program_id)
-                ->whereIn('event', ['round.advanced', 'round.not_selected'])
-                ->whereNotNull('body_html')
-                ->where('body_html', '!=', '')
-                ->pluck('event')
-                ->unique()
-                ->count() === 2 && $confirms('notifications'),
-            'publish' => $isLive,
-        ];
-
-        $completed = collect($steps)
-            ->filter()
-            ->keys()
-            ->values()
-            ->all();
-
-        $stepOrder = array_keys($steps);
-        $activeStep = collect($stepOrder)->search(fn ($step) => !$steps[$step]);
-
-        return [
-            'steps' => $steps,
-            'completed_steps' => $completed,
-            'active_step' => $activeStep === false ? count($stepOrder) - 1 : $activeStep,
-            'active_step_id' => $activeStep === false ? end($stepOrder) : $stepOrder[$activeStep],
-        ];
+        return $this->config()->progress($round, $requireConfirmation);
     }
 
     /**
@@ -229,36 +185,6 @@ class ProgramRoundController extends Controller
         ], 200);
     }
 
-    private function setupStepComplete(ProgramRound $round): bool
-    {
-        if (!$round->round_name || !$round->open_date || !$round->close_date) {
-            return false;
-        }
-
-        $criteria = $round->scoring_criteria ?? [];
-        if (!empty($criteria)) {
-            foreach ($criteria as $criterion) {
-                if (empty($criterion['name'])) {
-                    return false;
-                }
-            }
-
-            if (($round->rubric_mode ?? 'weighted') === 'weighted') {
-                $totalWeight = collect($criteria)->sum(fn ($criterion) => (int) ($criterion['weight'] ?? 0));
-                if ($totalWeight !== 100) {
-                    return false;
-                }
-            }
-        }
-
-        foreach ($round->required_documents ?? [] as $document) {
-            if (empty($document['label'])) {
-                return false;
-            }
-        }
-
-        return true;
-    }
 
     # get applications for a round
     public function applications($round_id)

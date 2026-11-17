@@ -80,6 +80,7 @@ class ProgramNotificationService
 
         foreach ($recipients as $recipient) {
             if (!$recipient) continue;
+            if (class_exists(\App\Modules\ProgramImport\Silent\OutboundGuard::class) && \App\Modules\ProgramImport\Silent\OutboundGuard::shouldSuppress($recipient)) continue; // program import: silent mode / unclaimed imported accounts
             // The system AI reviewer account never receives notifications or email
             if (strcasecmp((string) ($recipient->email ?? ''), (string) config('ai_review.system_user_email')) === 0) continue;
 

@@ -20,6 +20,9 @@
     </source>
     <php>
         <env name="APP_ENV" value="testing"/>
+        <!-- The module is off in tests unless PROGRAM_IMPORTS_ENABLED is set in the shell, whatever .env says -->
+        <env name="PROGRAM_IMPORTS_ENABLED" value="false"/>
+        <env name="APP_KEY" value="base64:hXyzuGebnHAVMs+36wutVBOWAaENNuR8sylJu2Y871Q="/>
         <env name="BCRYPT_ROUNDS" value="4"/>
         <env name="CACHE_DRIVER" value="array"/>
         <env name="DB_CONNECTION" value="sqlite" force="true"/>

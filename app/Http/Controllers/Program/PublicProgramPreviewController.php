@@ -47,6 +47,9 @@ class PublicProgramPreviewController extends Controller
                     ->exists();
             }
 
+            // The program's own application fields, so a guest answers them too (never the scoring)
+            app(\App\Service\Program\CustomFields\CustomFieldValueService::class)->attachPublicFields($program);
+
             return ApiContract::itemResponse(
                 'Program fetched successfully.',
                 'program',

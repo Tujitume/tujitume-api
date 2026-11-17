@@ -186,6 +186,8 @@ return [
         App\Providers\NotificationServiceProvider::class,
         App\Providers\MatchServiceProvider::class,
         App\Providers\AiListingServiceProvider::class,
+        // Optional module: remove this line (and app/Modules/ProgramImport) to uninstall it. No-op unless PROGRAM_IMPORTS_ENABLED=true.
+        App\Modules\ProgramImport\ProgramImportServiceProvider::class,
         //ConsoleTVs\Profanity\ProfanityServiceProvider::class,
     ])->toArray(),
 

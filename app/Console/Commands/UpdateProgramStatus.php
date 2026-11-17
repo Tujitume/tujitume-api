@@ -60,6 +60,10 @@ class UpdateProgramStatus extends Command
         // Closing soon (3 days)
         $closingSoonRounds = ProgramRound::where('status', 'published')->whereDate('close_date', '=', now()->addDays(3))->get();
         foreach ($closingSoonRounds as $round) {
+            // Program import: a historic imported round never sends closing reminders
+            if (class_exists(\App\Modules\ProgramImport\Support\ImportedRecords::class) && \App\Modules\ProgramImport\Support\ImportedRecords::isImportedRound($round->id)) {
+                continue;
+            }
             $applicants = $round->applications()->with('user')->get()->pluck('user');
             $notificationService->send('round.closing_soon', $applicants->all(), [
                 'round_name' => $round->round_name, 'program_title' => $round->program->program_title,

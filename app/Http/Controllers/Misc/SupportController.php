@@ -113,7 +113,9 @@ class SupportController extends Controller
             'email' => 'required|email|max:191',
 
             'request_type' => 'required|in:demo,meeting,trial,consultation',
-            'type' => 'required|in:government,corporate,grant,investment,capital,service,platform',
+            // Keep this list aligned with the demo_requests table enum. The
+            // frontend normalizes its more specific marketing categories.
+            'type' => 'required|in:program,investment,capital,service,platform',
 
             'notes' => 'nullable|string|max:5000',
         ]);
@@ -130,7 +132,7 @@ class SupportController extends Controller
                         'email'       => $demoRequest->email,
                         'request_type' => $demoRequest->request_type,
                         'type'        => $demoRequest->type,
-                        'notes'       => $demoRequest->name ?? null,
+                        'notes'       => $demoRequest->notes,
                     ], $demoRequest->email 
                     //'info@tujitume.com' //'stevemonitoring.gathirus@gmail.com'
                     //config('mail.tujitume.contact_email') // ← send to tujitume internal email

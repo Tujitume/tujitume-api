@@ -68,6 +68,10 @@ class Program extends Model
             ->where('type', 'program');
     }
 
+    public function customFields(){
+        return $this->hasMany(ProgramCustomField::class)->orderBy('display_order')->orderBy('id');
+    }
+
     public function owner(){
         return $this->belongsTo(User::class, 'user_id', 'id');
     }

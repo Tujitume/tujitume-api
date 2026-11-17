@@ -259,6 +259,11 @@ class CheckoutMpesaController extends Controller
                 ->with('application')
                 ->firstOrFail();
             $amount = $milestone->application->total_amount_requested ?? $milestone->application->awarded_amount;
+            // Milestones already released (for example imported historic payments) are not paid into escrow again: only the remainder is.
+            $releasedAmount = ProgramMilestone::where('app_id', $milestone->app_id)->where('is_template', false)->where('fund_release_status', 'released')->sum('amount');
+            if ($releasedAmount > 0) {
+                $amount = ProgramMilestone::where('app_id', $milestone->app_id)->where('is_template', false)->where('fund_release_status', '!=', 'released')->sum('amount');
+            }
             $callbackUrl = rtrim(config('app.api_url'), '/') . '/lipr-callback/disbursement-escrow';
 
             if ($milestone->application->program_owner_id !== auth()->id()) {
@@ -266,7 +271,7 @@ class CheckoutMpesaController extends Controller
             }
         } elseif ($request->purpose === 'program_milestone_bulk') {
             $pitchIds = $request->listing_id;
-            $amount = ProgramMilestone::whereIn('app_id', $pitchIds)
+            $amount = ProgramMilestone::whereIn('app_id', $pitchIds)->where('fund_release_status', '!=', 'released')
                 ->orderBy('id')->get()->groupBy('app_id')
                 ->map(fn($group) => $group->first()->amount)
                 ->sum();
@@ -387,7 +392,7 @@ class CheckoutMpesaController extends Controller
     private function processBulkMilestoneForApplication(int $pitchId, $user): void
     {
         $pitch = ProgramApplication::with('program')->find($pitchId);
-        $milestone = ProgramMilestone::where('app_id', $pitchId)
+        $milestone = ProgramMilestone::where('app_id', $pitchId)->where('fund_release_status', '!=', 'released')
             ->orderBy('id', 'asc')
             ->lockForUpdate()
             ->first();

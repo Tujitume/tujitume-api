@@ -20,6 +20,7 @@ use App\Http\Controllers\Program\MilestonePreAgreementController;
 use App\Http\Controllers\Program\MilestoneVerificationController;
 use App\Http\Controllers\Program\ProgramApplicationController;
 use App\Http\Controllers\Program\ProgramApplicationsOverviewController;
+use App\Http\Controllers\Program\ProgramCustomFieldController;
 use App\Http\Controllers\Program\ProgramDashboardStatsController;
 use App\Http\Controllers\Program\ProgramController;
 use App\Http\Controllers\Program\ProgramDealRoomController;
@@ -114,6 +115,10 @@ Route::prefix('/programs')->middleware(['program', 'program.response'])->group(f
     Route::get('accept-invitation', [ProgramController::class, 'update_user']);
 
     // *** Program New Routes
+    // What the owner reads on the program page: applicants, the money ledger and the activity feed (read only, paged)
+    Route::get('{program}/overview/applications', [\App\Http\Controllers\Program\ProgramReportController::class, 'applications'])->whereNumber('program');
+    Route::get('{program}/overview/wallet', [\App\Http\Controllers\Program\ProgramReportController::class, 'wallet'])->whereNumber('program');
+    Route::get('{program}/overview/activity', [\App\Http\Controllers\Program\ProgramReportController::class, 'activity'])->whereNumber('program');
     Route::get('/{program}/wallets', [ProgramWalletController::class, 'show']);
     Route::post('wallets/{wallet}/deposit', [ProgramWalletController::class, 'deposit']);
     Route::post('wallets/{wallet}/deposit-status', [ProgramWalletController::class, 'deposit_status']);
@@ -186,6 +191,13 @@ Route::prefix('/programs')->middleware(['program', 'program.response'])->group(f
     Route::get('applications/{application}/rounds', [ApplicationRoundProgressController::class, 'index']);
 
     // Questions & Answers
+    // Custom fields: the owner's definitions, scoring factors and info values
+    Route::get('{program}/fields', [ProgramCustomFieldController::class, 'index'])->whereNumber('program');
+    Route::post('{program}/fields', [ProgramCustomFieldController::class, 'store'])->whereNumber('program');
+    Route::post('{program}/fields/reorder', [ProgramCustomFieldController::class, 'reorder'])->whereNumber('program');
+    Route::put('{program}/info-values', [ProgramCustomFieldController::class, 'infoValues'])->whereNumber('program');
+    Route::patch('fields/{field}', [ProgramCustomFieldController::class, 'update'])->whereNumber('field');
+    Route::delete('fields/{field}', [ProgramCustomFieldController::class, 'destroy'])->whereNumber('field');
     Route::post('questions/import/google-form', [GoogleFormImportController::class, 'preview'])->middleware('throttle:20,1');
     Route::apiResource('rounds/{round}/questions', RoundQuestionController::class)->shallow();
     Route::patch('questions/{question}', [RoundQuestionController::class, 'update']); // added by owen

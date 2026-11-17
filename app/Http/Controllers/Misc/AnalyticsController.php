@@ -413,6 +413,106 @@ class AnalyticsController extends Controller
                 ];
             })->filter()->values();
 
+            // ── Program delivery operations ────────────────────────────────────────────────────
+            // Selection analytics above explains who moved through review. These aggregates explain what happens
+            // after selection: configured rounds, active milestones, M&E checkpoints, site visits and disbursements.
+            $countRows = fn (Collection $rows, string $key = 'status') => $rows
+                ->mapWithKeys(fn ($row) => [(string) $row->{$key} => (int) $row->total])
+                ->all();
+
+            $roundsInView = $roundId ? $rounds->where('id', $roundId) : $rounds;
+            $roundStatusCounts = $roundsInView->countBy(fn ($item) => (string) ($item->status ?: 'draft'))
+                ->map(fn ($total) => (int) $total)->all();
+
+            $milestoneBase = fn () => DB::table('program_milestones as m')
+                ->whereIn('m.app_id', $appIds())
+                ->where('m.is_template', false);
+            $milestoneStatuses = $milestoneBase()->groupBy('m.status')
+                ->selectRaw('m.status, COUNT(*) as total')->get();
+            $releaseStatuses = $milestoneBase()->groupBy('m.fund_release_status')
+                ->selectRaw('m.fund_release_status, COUNT(*) as total')->get();
+            $milestoneTotals = $milestoneBase()->selectRaw("COUNT(*) as total,
+                    SUM(CASE WHEN m.status = 'completion_approved' THEN 1 ELSE 0 END) as completed,
+                    SUM(CASE WHEN m.estimated_completion_date < ? AND m.status NOT IN ('completion_approved','rejected') THEN 1 ELSE 0 END) as overdue,
+                    SUM(COALESCE(m.amount, 0)) as planned_amount",
+                    [$now->toDateString()])
+                ->first();
+
+            $checkpointBase = fn () => DB::table('m_e_checkpoints as c')->whereIn('c.app_id', $appIds());
+            $checkpointStatuses = $checkpointBase()->groupBy('c.status')
+                ->selectRaw('c.status, COUNT(*) as total')->get();
+            $checkpointTotals = $checkpointBase()->selectRaw("COUNT(*) as total,
+                    SUM(CASE WHEN c.sent_at IS NOT NULL THEN 1 ELSE 0 END) as sent,
+                    SUM(CASE WHEN c.due_date < ? AND c.status NOT IN ('verified') THEN 1 ELSE 0 END) as overdue,
+                    SUM(CASE WHEN c.require_site_visit = 1 THEN 1 ELSE 0 END) as requiring_site_visit",
+                    [$now->toDateString()])
+                ->first();
+
+            $siteVisitRows = DB::table('m_e_site_visits as v')
+                ->join('m_e_checkpoints as c', 'c.id', '=', 'v.checkpoint_id')
+                ->whereIn('c.app_id', $appIds())
+                ->groupBy('v.status')
+                ->selectRaw('v.status, COUNT(*) as total')
+                ->get();
+            $siteVisitTotal = (int) $siteVisitRows->sum('total');
+            $siteVisitCompleted = (int) ($siteVisitRows->firstWhere('status', 'completed')->total ?? 0);
+
+            $disbursementRows = DB::table('disbursements as d')
+                ->join('program_milestones as m', 'm.id', '=', 'd.milestone_id')
+                ->whereIn('m.app_id', $appIds())
+                ->groupBy('d.status', 'd.currency')
+                ->selectRaw('d.status, d.currency, COUNT(*) as total, SUM(d.amount) as amount,
+                    SUM(CASE WHEN d.supplier_confirmed = 1 THEN 1 ELSE 0 END) as supplier_confirmed')
+                ->get();
+            $moneyByStatus = fn (string $status) => $disbursementRows->where('status', $status)
+                ->groupBy('currency')
+                ->map(fn ($rows, $currency) => [
+                    'currency' => $currency,
+                    'amount' => round((float) $rows->sum('amount'), 2),
+                ])->values()->all();
+            $disbursementStatuses = $disbursementRows->groupBy('status')
+                ->map(fn ($rows) => (int) $rows->sum('total'))->all();
+
+            $operations = [
+                'rounds' => [
+                    'total' => $roundsInView->count(),
+                    'by_status' => $roundStatusCounts,
+                ],
+                'milestones' => [
+                    'total' => (int) ($milestoneTotals->total ?? 0),
+                    'completed' => (int) ($milestoneTotals->completed ?? 0),
+                    'overdue' => (int) ($milestoneTotals->overdue ?? 0),
+                    'planned_amount' => round((float) ($milestoneTotals->planned_amount ?? 0), 2),
+                    'by_status' => $countRows($milestoneStatuses),
+                    'release_by_status' => $countRows($releaseStatuses, 'fund_release_status'),
+                ],
+                'monitoring' => [
+                    'checkpoints' => [
+                        'total' => (int) ($checkpointTotals->total ?? 0),
+                        'sent' => (int) ($checkpointTotals->sent ?? 0),
+                        'overdue' => (int) ($checkpointTotals->overdue ?? 0),
+                        'requiring_site_visit' => (int) ($checkpointTotals->requiring_site_visit ?? 0),
+                        'by_status' => $countRows($checkpointStatuses),
+                    ],
+                    'site_visits' => [
+                        'total' => $siteVisitTotal,
+                        'completed' => $siteVisitCompleted,
+                        'completion_rate' => $siteVisitTotal ? round($siteVisitCompleted / $siteVisitTotal * 100, 1) : 0,
+                        'by_status' => $countRows($siteVisitRows),
+                    ],
+                ],
+                'disbursements' => [
+                    'total' => (int) $disbursementRows->sum('total'),
+                    'supplier_confirmed' => (int) $disbursementRows->sum('supplier_confirmed'),
+                    'by_status' => $disbursementStatuses,
+                    'completed_amount_by_currency' => $moneyByStatus('completed'),
+                    'processing_amount_by_currency' => $moneyByStatus('processing'),
+                    'pending_amount_by_currency' => $moneyByStatus('pending'),
+                ],
+                // Drawn as charts: funds out by month, who received them, Business Coach pay, and reported impact
+                'delivery' => app(\App\Service\Program\ProgramDeliveryAnalytics::class)->build($appIds(), $programIds, $roundId),
+            ];
+
             return response()->json([
                 'success' => true,
                 'message' => 'Program analytics fetched successfully.',
@@ -437,6 +537,7 @@ class AnalyticsController extends Controller
                     'criteria' => $criteria,
                     'programs' => $programRows,
                     'top_applications' => $topApplications,
+                    'operations' => $operations,
                 ],
             ]);
         } catch (\Illuminate\Validation\ValidationException $e) {

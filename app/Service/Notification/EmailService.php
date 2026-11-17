@@ -8,6 +8,8 @@ class EmailService
 
     public function send(string $subject, string $view, $data, $email)
     {
+        if (class_exists(\App\Modules\ProgramImport\Silent\OutboundGuard::class) && \App\Modules\ProgramImport\Silent\OutboundGuard::shouldSuppress($email)) return; // program import: silent mode / unclaimed imported accounts
+
         try{
             $data = $this->withDefaults($view, (array) $data, $email);
 

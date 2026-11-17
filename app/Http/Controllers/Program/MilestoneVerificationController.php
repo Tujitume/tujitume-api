@@ -766,7 +766,8 @@ class MilestoneVerificationController extends Controller
                 ->first();
 
             if ($nextMilestone && $nextMilestone->status === 'pending') {
-                $nextMilestone->notes = 'Unlocked: Previous milestone completed';
+                // program_milestones has no `notes` column (this assignment made save() fail); the note goes to an existing one
+                $nextMilestone->verification_notes = $nextMilestone->verification_notes ?: 'Unlocked: Previous milestone completed';
             }
 
             if ($nextMilestone

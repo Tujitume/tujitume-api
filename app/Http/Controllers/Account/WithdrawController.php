@@ -129,8 +129,9 @@ class WithdrawController extends Controller
                 $this->balance->updateBalanceMinus($user->id, $amountUsd, 'lipr-mobile');
                 $payment->update([ 'status' => 'completed' ]);
 
+                // The ledger keeps M-Pesa amounts in KES (as the paybill and till withdrawals do); only the balance moves in USD
                 $this->transaction->create(
-                    $user->id,'withdraw','lipr-mobile', $payment->amount_usd, $request->referenceId
+                    $user->id,'withdraw','lipr-mobile', $payment->amount, $request->referenceId
                 );
             });
 
