@@ -337,7 +337,7 @@ class ProgramController extends Controller
             $newProgram->push();
 
             // Field definitions are copied (answers never are); info values are copied because they describe the program
-            foreach ($program->customFields()->where('is_archived', false)->get() as $field) {
+            foreach (\App\Service\Program\CustomFields\CustomFieldValueService::available() ? $program->customFields()->where('is_archived', false)->get() : [] as $field) {
                 $copy = $field->replicate();
                 $copy->program_id = $newProgram->id;
                 $copy->save();

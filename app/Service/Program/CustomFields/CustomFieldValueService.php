@@ -8,14 +8,35 @@ use App\Models\Programs\ProgramCustomFieldValue;
 use App\Service\File\FileUploadService;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
 
 /** Validates and stores answers (applications) and info values (programs) in typed columns. */
 class CustomFieldValueService
 {
+    private static bool $tablesFound = false;
+
+    /**
+     * Whether the custom-fields tables exist yet. Until the migration has run, every program page, application and match
+     * request must behave as if the program simply had no custom fields, never fail because a table is missing.
+     * (Only "found" is remembered, so the feature switches on as soon as the migration has run.)
+     */
+    public static function available(): bool
+    {
+        return self::$tablesFound = self::$tablesFound
+            || (Schema::hasTable('program_custom_fields') && Schema::hasTable('program_custom_field_values'));
+    }
+
     /** Adds `application_fields` and `info` (public view only: never scoring, weights or targets) to a program about to be shown. */
     public function attachPublicFields(Program $program): void
     {
+        if (! self::available()) {
+            $program->setAttribute('application_fields', []);
+            $program->setAttribute('info', []);
+
+            return;
+        }
+
         $fields = $program->customFields()->where('is_archived', false)->where('is_public', true)->get();
         $info = $this->answersFor('program', $program->id, $fields->where('audience', 'info'));
         $program->setAttribute('application_fields', $fields->where('audience', 'application')->map(fn ($f) => $f->publicView())->values()->all());
@@ -25,6 +46,10 @@ class CustomFieldValueService
     /** @return Collection<int, ProgramCustomField> the fields an applicant answers */
     public function applicationFields(Program $program): Collection
     {
+        if (! self::available()) {
+            return collect();
+        }
+
         return $program->customFields()->where('audience', 'application')->where('is_archived', false)->get();
     }
 
@@ -99,6 +124,10 @@ class CustomFieldValueService
     /** @return array<string,mixed> answers keyed by field key, typed */
     public function answersFor(string $entityType, int $entityId, ?Collection $fields = null): array
     {
+        if (! self::available()) {
+            return [];
+        }
+
         $values = ProgramCustomFieldValue::where('entity_type', $entityType)->where('entity_id', $entityId)->with('field')->get();
         $out = [];
         foreach ($values as $v) {

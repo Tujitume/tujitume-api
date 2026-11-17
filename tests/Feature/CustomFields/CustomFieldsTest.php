@@ -157,3 +157,16 @@ it('shows a guest the same application fields on the public program page, never 
     expect(array_column($fields, 'key'))->toBe(['interested_places', 'business_age_years', 'business_plan_pdf'])
         ->and(json_encode($res->json()))->not->toContain('"scoring"')->not->toContain('normalized_weight');
 });
+
+it('keeps the program page working before the custom-fields migration has run', function () {
+    // The tables do not exist yet (the migration is a hand-over step): programs must still load, be applied to and be duplicated
+    \Illuminate\Support\Facades\Schema::dropIfExists('program_custom_field_values');
+    \Illuminate\Support\Facades\Schema::dropIfExists('program_custom_fields');
+    $flag = new \ReflectionProperty(\App\Service\Program\CustomFields\CustomFieldValueService::class, 'tablesFound');
+    $flag->setValue(null, false);
+
+    $res = $this->actingAsOrgOwner()->getJson("/api/v1/programs/get_program/{$this->program->id}")->assertOk();
+    expect($res->json('program.application_fields') ?? $res->json('data.program.application_fields'))->toBe([]);
+
+    $this->actingAsOrgOwner()->postJson("/api/v1/programs/{$this->program->id}/duplicate")->assertSuccessful();
+});
