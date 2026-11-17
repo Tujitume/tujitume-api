@@ -212,7 +212,8 @@ class ProgramWalletController extends Controller
                 if ($payment->status !== 'processed') {
                     throw new \Exception('Payment not ready for crediting.', 422);
                 }
-                $amountKes = $payment->amount_usd; $amountUsd = $payment->amount;
+                $amountKes = $payment->amount;
+                $amountUsd = $payment->amount_usd;
 
                 //D B Update $
                 $wallet->total_deposited += $amountKes;
@@ -224,7 +225,7 @@ class ProgramWalletController extends Controller
 
                 //Transaction
                 $this->transaction->create(
-                    $user->id,'deposit','lipr', $payment->amount, $request->reference_id
+                    $user->id,'deposit','lipr', $amountKes, $request->reference_id
                 );
             });
 

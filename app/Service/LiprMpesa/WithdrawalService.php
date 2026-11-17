@@ -78,19 +78,19 @@ class WithdrawalService
             throw new \Exception('Payment not ready for crediting.', 422);
         }
 
-        $amountUsd = $payment->amount_usd;
+        $amountKes = $payment->amount;
 
         // Deduct balance
-        $this->balance->updateBalanceMinus($user->id, $amountUsd, "lipr-{$method}");
+        $this->balance->updateBalanceMinus($user->id, $amountKes, "lipr-{$method}");
         $payment->update(['status' => 'completed']);
 
         // Record transaction
         $this->transaction->create(
-            $user->id, 'withdraw', "lipr-{$method}", $payment->amount, $referenceId
+            $user->id, 'withdraw', "lipr-{$method}", $amountKes, $referenceId
         );
 
         // Notify user
-        $this->notifyWithdrawal($user, $amountUsd);
+        $this->notifyWithdrawal($user, $payment->amount_usd);
 
         return ['status' => 'processed', 'updated_at' => now()];
     }
