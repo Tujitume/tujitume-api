@@ -11,17 +11,17 @@ class TransactionRecord
         $user = Auth::user();
         $fee = Setting::where('key', 'tujitume_fee')->first()?->value ?? 0;
 
-        if($type == 'withdraw' && ( $method == 'lipr-mobile' || $method == 'lipr-paybill' || $method == 'lipr-till') ){
+        if($type == 'withdraw' || $type == 'deposit') {
             $fee_amount = 0;
         }
-        else if($type == 'deposit' && $method == 'lipr'){
-            $fee_amount = 0;
-        }
-        else {
-            //$fee_amount_stripe = ($gross * 0.029) + 0.30;
-            $base = $gross / (1+ ($fee / 100) ); // base / 1.05
-            $fee_amount = ((float) $fee / 100) * $base;
-        }
+
+        // set fee for business unlock and program disbursement transactions
+        
+        // else {
+        //     //$fee_amount_stripe = ($gross * 0.029) + 0.30;
+        //     $base = $gross / (1+ ($fee / 100) ); // base / 1.05
+        //     $fee_amount = ((float) $fee / 100) * $base;
+        // }
 
         //direction
         $creditTypes = [

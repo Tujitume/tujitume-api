@@ -37,7 +37,7 @@ class ProgramImportServiceProvider extends ServiceProvider
         // Google redirects the browser here without a login; the signed state identifies the organization.
         \Illuminate\Support\Facades\Route::middleware(['api', 'throttle:20,1'])->get('api/v1/program-imports/integrations/google/callback', [Http\Controllers\GoogleController::class, 'callback']);
 
-        if (! $this->app->routesAreCached() && is_file(base_path('routes/api/program-imports.php'))) {
+        if (is_file(base_path('routes/api/program-imports.php'))) {
             \Illuminate\Support\Facades\Route::middleware(['api', 'auth:sanctum', 'extend-token', 'throttle:api'])
                 ->prefix('api/v1/program-imports')
                 ->group(base_path('routes/api/program-imports.php'));
