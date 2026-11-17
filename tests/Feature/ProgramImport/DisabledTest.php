@@ -11,7 +11,12 @@ it('has no import routes, tables or behavior when the module is disabled', funct
     }
     config(['program_imports.enabled' => false]);
     $u = \App\Models\Auth\User::factory()->create(['user_type_id' => 4]);
-    $this->actingAs($u, 'sanctum')->getJson('/api/v1/program-imports/start-points')->assertNotFound();
+    // the reads the page makes on load answer "not turned on" (no 404); nothing else of the module exists
+    foreach (['', '/types', '/start-points', '/settings'] as $read) {
+        $this->actingAs($u, 'sanctum')->getJson('/api/v1/program-imports'.$read)->assertOk()->assertJsonPath('data.enabled', false);
+    }
+    $this->actingAs($u, 'sanctum')->getJson('/api/v1/program-imports/1')->assertNotFound();
+    $this->actingAs($u, 'sanctum')->postJson('/api/v1/program-imports', [])->assertStatus(405);
     expect(\Illuminate\Support\Facades\Route::has('program-imports.index'))->toBeFalse()
         ->and(\Illuminate\Support\Facades\Schema::hasTable('program_import_batches'))->toBeFalse()
         ->and(\App\Modules\ProgramImport\Silent\OutboundGuard::shouldSuppress($u))->toBeFalse()
