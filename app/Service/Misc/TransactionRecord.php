@@ -10,6 +10,8 @@ class TransactionRecord
     {
         $user = Auth::user();
         $fee = Setting::where('key', 'tujitume_fee')->first()?->value ?? 0;
+        // No fee is currently applied to transaction types outside withdraw/deposit.
+        $fee_amount = 0;
 
         if($type == 'withdraw' || $type == 'deposit') {
             $fee_amount = 0;
