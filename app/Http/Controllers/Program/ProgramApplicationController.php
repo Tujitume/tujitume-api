@@ -70,7 +70,7 @@ class ProgramApplicationController extends Controller
         try {
             $pitch = ProgramApplication::with([
                 'program_milestones',
-                'program:id,program_title,program_type,status,total_rounds,funding_per_business,mid_milestone_required,use_match_score,match_score_limit',
+                'program:id,user_id,organization_id,program_title,program_type,status,currency,total_rounds,funding_per_business,mid_milestone_required,use_match_score,match_score_limit',
                 'currentRound',
             ])->findOrFail($id);
 
@@ -343,7 +343,7 @@ class ProgramApplicationController extends Controller
                 'contact_person_name' => 'required|string|max:100',
                 'contact_person_email' => 'required|email|max:100',
                 'sector' => 'nullable|string|max:100',
-                'headquarters_location' => 'required|string|max:255',
+                'headquarters_location' => 'nullable|string|max:255',
                 'total_amount_requested' => 'required|numeric|min:0|max:' . $program->funding_per_business,
                 'stage' => 'nullable|string|max:100',
                 'revenue_last_12_months' => 'nullable|numeric|min:0',
@@ -454,6 +454,13 @@ class ProgramApplicationController extends Controller
                 $business_plan_file = $request->file('business_plan_file');
                 $validated['business_plan_file'] = $this->fileUpload->saveFile($business_plan_file, $loc);
                 $uploadedFiles[] = $validated['business_plan_file'];
+            }
+
+            // Sector and place are optional. The columns cannot be empty, so "nothing" is stored as an empty string, and older apps
+            // that still send the words "Not specified" are not allowed to store them as if they were an answer.
+            foreach (['sector', 'headquarters_location'] as $optional) {
+                $given = trim((string) ($validated[$optional] ?? ''));
+                $validated[$optional] = strcasecmp($given, 'Not specified') === 0 ? '' : $given;
             }
 
             $application = ProgramApplication::create(

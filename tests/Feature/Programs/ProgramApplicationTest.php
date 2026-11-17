@@ -13,6 +13,23 @@ describe('Application endpoints', function () {
             ->assertStatus(422)->assertJsonStructure(['message', 'errors']);
     });
 
+    it('lets an applicant leave sector and place empty, and never stores the words "Not specified"', function () {
+        foreach ([[null, null], ['Not specified', 'not specified']] as $i => [$sector, $place]) {
+            $applicant = \App\Models\Auth\User::factory()->create(['user_type_id' => 1]);
+            $this->createVerifiedKyc($applicant);
+            $business = \App\Models\Business\Listing::create(['user_id' => $applicant->id, 'name' => "Biz {$i}"]);
+            $payload = ['sector' => $sector, 'headquarters_location' => $place] + applicationPayload($business->id);
+            if ($sector === null) {
+                unset($payload['sector'], $payload['headquarters_location']);
+            }
+
+            $this->actingAs($applicant, 'sanctum')->postJson("/api/v1/programs/{$this->program->id}/applications", $payload)->assertCreated();
+
+            $application = \App\Models\Programs\ProgramApplication::where('user_id', $applicant->id)->firstOrFail();
+            expect($application->sector)->toBe('')->and($application->headquarters_location)->toBe('');
+        }
+    });
+
     it('submits an application for a published program and returns 201 created', function () {
         $applicant = \App\Models\Auth\User::factory()->create(['user_type_id' => 1]);
         $this->createVerifiedKyc($applicant);

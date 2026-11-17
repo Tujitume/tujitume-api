@@ -199,7 +199,8 @@ class ProgramDealRoomController extends Controller
                 'program_milestones.verifications',
                 'program_milestones.dealRoomDocuments',
                 'program_milestones.completionSubmissions',
-                'program:id,program_title,program_type,status,total_rounds,funding_per_business,disbursement_type,total_program_amount,available_amount',
+                // user_id and organization_id are needed for the organization's logo (an appended attribute); currency for the amounts shown
+                'program:id,user_id,organization_id,program_title,program_type,status,currency,total_rounds,funding_per_business,disbursement_type,total_program_amount,available_amount',
             ])->findOrFail($id);
 
             (new \App\Service\Program\ProgramAccess())->authorizeApplication(auth()->user(), $pitch);

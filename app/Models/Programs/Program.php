@@ -33,26 +33,52 @@ class Program extends Model
     // The organization's logo goes out with every program, so cards and pages can show it instead of the owner's photo.
     protected $appends = ['organization_logo'];
 
-    /** Owner accounts' logos already looked up in this request (null when they have none). */
+    /** Accounts' logos already looked up in this request (null when they have none). */
     private static array $organizationLogos = [];
 
+    /** An organization's owner account, already looked up in this request. */
+    private static array $organizationOwners = [];
+
     /**
-     * The organization's logo: the one saved in the owner account's appearance settings. Only a hosted image is sent;
-     * an inline data: image would bloat every list response.
+     * The organization's logo: the one saved in the appearance settings of the account that made the program, or, when that
+     * account has none (a team member made it), of the organization's owner. Only a hosted image is sent; an inline data:
+     * image would bloat every list response.
      */
     public function getOrganizationLogoAttribute(): ?string
     {
-        $ownerId = $this->user_id;
-        if (! $ownerId) {
+        $accounts = array_filter([$this->user_id, $this->organizationOwnerId()]);
+
+        foreach (array_unique($accounts) as $accountId) {
+            if (! array_key_exists($accountId, self::$organizationLogos)) {
+                $logo = UserSetting::where('user_id', $accountId)->value('logo');
+                self::$organizationLogos[$accountId] = is_string($logo) && preg_match('#^https?://#i', $logo) ? $logo : null;
+            }
+            if (self::$organizationLogos[$accountId]) {
+                return self::$organizationLogos[$accountId];
+            }
+        }
+
+        return null;
+    }
+
+    /** Forget the logos remembered for this process (tests, and long-running workers after a logo change). */
+    public static function forgetLogoCache(): void
+    {
+        self::$organizationLogos = [];
+        self::$organizationOwners = [];
+    }
+
+    private function organizationOwnerId(): ?int
+    {
+        $organizationId = $this->organization_id ?? null;
+        if (! $organizationId) {
             return null;
         }
-
-        if (! array_key_exists($ownerId, self::$organizationLogos)) {
-            $logo = UserSetting::where('user_id', $ownerId)->value('logo');
-            self::$organizationLogos[$ownerId] = is_string($logo) && preg_match('#^https?://#i', $logo) ? $logo : null;
+        if (! array_key_exists($organizationId, self::$organizationOwners)) {
+            self::$organizationOwners[$organizationId] = Organization::where('id', $organizationId)->value('owner_user_id');
         }
 
-        return self::$organizationLogos[$ownerId];
+        return self::$organizationOwners[$organizationId];
     }
 
     protected $casts = [

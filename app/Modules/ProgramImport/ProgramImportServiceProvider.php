@@ -19,6 +19,13 @@ class ProgramImportServiceProvider extends ServiceProvider
     public function boot(): void
     {
         if (! config('program_imports.enabled')) {
+            // Importing is off: answer the history call with a plain "not turned on" instead of a 404, so the page can say so
+            // without a failed request. Nothing else of the module is registered.
+            if (! $this->app->routesAreCached()) {
+                \Illuminate\Support\Facades\Route::middleware(['api', 'auth:sanctum', 'throttle:api'])
+                    ->get('api/v1/program-imports', Http\Controllers\DisabledController::class);
+            }
+
             return;
         }
 
