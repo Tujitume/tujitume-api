@@ -63,6 +63,34 @@ class ReadinessService
         $missingAnswers = $this->missingRequiredAnswers($sheets);
         $res = (new ReadinessChecker)->check($sp, $sheets, $opts + ['piecemeal' => ! $batch->start_point || ImportTypeRegistry::has($batch->type)], $existing);
 
+        // Readiness sees only valid normalized rows. Explain when a required sheet
+        // was uploaded but its rows were rejected during mapping/validation, rather
+        // than incorrectly telling the user that the sheet is absent.
+        foreach ($res['blockers'] as &$blocker) {
+            if (($blocker['code'] ?? null) !== 'missing_sheet' || empty($blocker['sheet'])) {
+                continue;
+            }
+
+            $sheet = $blocker['sheet'];
+            $stagedCount = ImportRow::where('batch_id', $batch->id)->where('sheet', $sheet)->count();
+            $invalidRows = ImportRow::where('batch_id', $batch->id)->where('sheet', $sheet)->where('status', 'invalid')->orderBy('row_number')->get(['row_number', 'errors']);
+
+            if ($stagedCount > 0 && $invalidRows->count() === $stagedCount) {
+                $blocker['code'] = 'invalid_required_sheet';
+                $blocker['message'] = "The \"$sheet\" sheet was found, but all {$stagedCount} row(s) failed validation. Correct the column mapping or row values, then validate again.";
+                $blocker['row_errors'] = $invalidRows->take(10)->map(fn (ImportRow $row) => [
+                    'row' => $row->row_number,
+                    'errors' => $row->errors ?? [],
+                ])->values()->all();
+            } elseif ($stagedCount === 0) {
+                $detected = array_values(array_filter(array_keys($batch->stats['sheets'] ?? []), fn ($name) => $name !== '_ignored'));
+                $blocker['message'] = $detected
+                    ? "No valid \"$sheet\" data was found. The workbook has these recognized sheets: ".implode(', ', $detected).'. Check the sheet tabs and choose the matching start point.'
+                    : "No valid \"$sheet\" data was found in the uploaded file. Check that it contains the required sheet and header row.";
+            }
+        }
+        unset($blocker);
+
         if ($missingAnswers > 0) {
             // Q-CUSTOM default: manual applications must answer required questions; imported history may not have them, so this warns.
             $res['warnings'][] = ['code' => 'required_answers_missing', 'message' => "$missingAnswers application(s) have no answer to a required question. They are imported as they are."];
