@@ -51,7 +51,9 @@ class BatchController extends Controller
 
     public function index(Request $r)
     {
-        abort_unless(ImportAccess::canRead($r->user()), 403);
+        if ($denial = ImportAccess::readDenial($r->user())) {
+            return ApiResponseResource::error('Program import access denied.', $denial, 403);
+        }
         $p = ImportBatch::where('organization_id', ImportAccess::organizationId($r->user()))->latest('id')->paginate(min((int) $r->query('per_page', 20), 100));
 
         return ApiResponseResource::success('Imports', ['items' => BatchResource::collection($p->items())->resolve(), 'meta' => ['total' => $p->total(), 'page' => $p->currentPage(), 'last_page' => $p->lastPage()]]);

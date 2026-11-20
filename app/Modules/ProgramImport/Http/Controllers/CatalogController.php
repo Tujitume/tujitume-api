@@ -14,7 +14,9 @@ class CatalogController extends Controller
 {
     public function startPoints(Request $r)
     {
-        abort_unless(ImportAccess::canRead($r->user()), 403);
+        if ($denial = ImportAccess::readDenial($r->user())) {
+            return ApiResponseResource::error('Program import access denied.', $denial, 403);
+        }
         $out = [];
         foreach (StartPointCatalog::all() as $key => $p) {
             $l = StartPointCatalog::landing($key);
@@ -26,7 +28,9 @@ class CatalogController extends Controller
 
     public function types(Request $r)
     {
-        abort_unless(ImportAccess::canRead($r->user()), 403);
+        if ($denial = ImportAccess::readDenial($r->user())) {
+            return ApiResponseResource::error('Program import access denied.', $denial, 403);
+        }
 
         return ApiResponseResource::success('Import types', ['types' => ImportTypeRegistry::describe(), 'form' => ['type' => 'form', 'label' => 'Form (Google Form link or pasted questions)']]);
     }

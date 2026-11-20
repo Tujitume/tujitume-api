@@ -11,6 +11,7 @@ use App\Modules\ProgramImport\Models\ImportLink;
 use App\Modules\ProgramImport\Models\ImportRow;
 use App\Modules\ProgramImport\Normalizers\RowNormalizer;
 use App\Modules\ProgramImport\Registry\ImportTypeRegistry;
+use App\Modules\ProgramImport\Support\Criteria;
 use App\Modules\ProgramImport\Support\Refs;
 
 /** Dry run: normalizes every staged row, checks references, duplicates and DB-backed rules. Writes only staging tables. */
@@ -162,6 +163,12 @@ class BatchValidator
 
     private function semantic(string $sheet, array &$v, array $answers, array &$errors, array &$warnings, ImportBatch $batch): void
     {
+        if ($sheet === 'rounds' && ($v['rubric_mode'] ?? 'simple_total') === 'weighted') {
+            $criteria = Criteria::parse($v['scoring_criteria'] ?? [], 'weighted');
+            if ($criteria['error']) {
+                $errors['scoring_criteria'] = $criteria['error'];
+            }
+        }
         if ($sheet === 'program' && ! isset($errors['program_industry']) && ! empty($v['program_industry'])) {
             $i = is_numeric($v['program_industry'])
                 ? ProgramIndustry::find((int) $v['program_industry'])

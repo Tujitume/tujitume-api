@@ -328,6 +328,9 @@ class ProgramApplicationController extends Controller
     public function store_application(Request $request, Program $program)
     {
         $uploadedFiles = [];
+        // This endpoint accepts guests, so resolve an optional applicant from Sanctum
+        // instead of relying on the default web guard.
+        $applicantId = auth('sanctum')->id();
         DB::beginTransaction();
 
         try{
@@ -374,7 +377,7 @@ class ProgramApplicationController extends Controller
             $customFields = $fieldValues->applicationFields($program);
             $customAnswers = $customFields->isNotEmpty() ? ($request->validate($fieldValues->rules($customFields))['custom_answers'] ?? []) : [];
             $validated['program_id'] = $program->id;  $validated['program_owner_id'] = $program->user_id;
-            $validated['user_id'] = auth('sanctum')->id(); // empty for a guest: no account is needed to apply
+            $validated['user_id'] = $applicantId; // empty for a guest: no account is needed to apply
             $validated['email'] = $validated['contact_person_email'];
             $validated['status'] = 'pending';
             // This endpoint submits immediately; it is not a draft-saving endpoint.
@@ -435,8 +438,11 @@ class ProgramApplicationController extends Controller
                 ], 422);
             }
 
-            $exists = ProgramApplication::where('program_id', $program->id)->where('user_id', Auth::id())->exists();
-            if($exists) {
+            // Lock through the existence check and insert so parallel submissions
+            // for the same program cannot both pass the check.
+            Program::whereKey($program->id)->lockForUpdate()->first();
+            if ($applicantId !== null && ProgramApplication::where('program_id', $program->id)->where('user_id', $applicantId)->exists()) {
+                DB::rollBack();
                 return response()->json(['message' => 'You already have an active application for this program.'], 409);
             }
 

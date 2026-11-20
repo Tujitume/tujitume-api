@@ -16,7 +16,10 @@ class Criteria
             }
             $out[] = ['name' => $p[0], 'description' => null, 'weight' => isset($p[1]) && is_numeric($p[1]) ? (int) $p[1] : null, 'score_range' => isset($p[2]) && is_numeric($p[2]) ? (int) $p[2] : 100];
         }
-        if (($rubric ?? 'simple_total') === 'weighted' && $out) {
+        if (($rubric ?? 'simple_total') === 'weighted') {
+            if (! $out) {
+                return ['criteria' => [], 'error' => 'A weighted rubric needs at least one criterion'];
+            }
             if (array_filter($out, fn ($c) => $c['weight'] === null)) {
                 return ['criteria' => $out, 'error' => 'A weighted rubric needs a weight for every criterion (name:weight:max)'];
             }

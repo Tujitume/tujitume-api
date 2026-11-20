@@ -40,6 +40,9 @@ class RoundImporter extends Importer
 
         $rubric = $v['rubric_mode'] ?? 'simple_total';
         $crit = Criteria::parse($v['scoring_criteria'] ?? [], $rubric);
+        if ($crit['error']) {
+            throw new ImportRowException($crit['error']);
+        }
         $r = ProgramRound::create([
             'program_id' => $p->id, 'round_name' => $v['round_name'], 'round_number' => $n,
             'open_date' => $v['open_date'], 'close_date' => $v['close_date'], 'review_period_end' => $v['review_period_end'], 'announcement_date' => $v['announcement_date'],
