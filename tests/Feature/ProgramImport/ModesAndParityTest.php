@@ -29,7 +29,7 @@ function pi_run($t, array $sheets, array $options = [], string $sp = 'review', ?
 it('on_duplicate=fail rejects already imported rows, update refreshes them', function () {
     pi_run($this, pi_bundle($this));
     $b = pi_run($this, pi_bundle($this), ['on_duplicate' => 'fail']);
-    expect(ImportRow::where('batch_id', $b->id)->where('status', 'invalid')->count())->toBe(5)->and(Program::count())->toBe(1);
+    expect(ImportRow::where('batch_id', $b->id)->where('status', 'invalid')->count())->toBe(7)->and(Program::count())->toBe(1);
 
     $sheets = pi_bundle($this);
     $sheets['program'][0]['program_title'] = 'Youth Fund 2';

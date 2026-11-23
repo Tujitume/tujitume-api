@@ -121,7 +121,7 @@ class ImportTypeRegistry
                 $ref('round_ref', 'Round reference', true),
                 $f('question_ref', 'Question reference', 'string', true, ['synonyms' => ['question id', 'id', 'code']]),
                 $f('question_text', 'Question', 'text', true, ['synonyms' => ['question', 'label', 'text']]),
-                $f('question_type', 'Type', 'enum', true, ['enum' => ['text', 'paragraph', 'choice', 'checkbox', 'scale', 'date'], 'synonyms' => ['type']]),
+                $f('question_type', 'Type', 'enum', true, ['enum' => \App\Modules\ProgramImport\Importers\QuestionImporter::APP_TYPES, 'aliases' => \App\Modules\ProgramImport\Importers\QuestionImporter::ALIASES, 'synonyms' => ['type']]),
                 $f('is_required', 'Required', 'bool', false, ['default' => false, 'synonyms' => ['required']]),
                 $f('options', 'Options', 'list', false, ['synonyms' => ['choices']]),
                 $f('help_text', 'Help text', 'text'),

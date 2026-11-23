@@ -28,6 +28,14 @@ class StoreBatchRequest extends FormRequest
             'text' => ['required_if:source,text', 'nullable', 'string', 'max:200000'],
             'attachments' => ['nullable', 'file', 'max:'.(config('program_imports.limits.max_file_kb') * 5)],
             'program_id' => ['nullable', 'integer'],
+            ...self::optionRules(),
+        ];
+    }
+
+    /** Rules for the import options (also used when the options are changed from the check step). */
+    public static function optionRules(): array
+    {
+        return [
             'options' => ['nullable', 'array'],
             'options.on_duplicate' => ['nullable', Rule::in(['skip', 'update', 'fail'])],
             'options.mode' => ['nullable', Rule::in(['partial', 'all_or_nothing'])],

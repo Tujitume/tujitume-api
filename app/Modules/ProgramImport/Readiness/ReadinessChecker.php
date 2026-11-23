@@ -2,6 +2,7 @@
 
 namespace App\Modules\ProgramImport\Readiness;
 
+use App\Modules\ProgramImport\Registry\ImportTypeRegistry;
 use App\Modules\ProgramImport\Registry\StartPointCatalog;
 
 /**
@@ -28,10 +29,22 @@ class ReadinessChecker
             }
             $catalog['required'] = [];
         }
+        $label = fn (string $s) => ImportTypeRegistry::has($s) ? ImportTypeRegistry::get($s)['label'] : $s;
         foreach ($catalog['required'] as $sheet) {
-            if ($count($sheet) === 0 && ! ($sheet === 'program' && ! empty($existing['program']))) {
-                $block('missing_sheet', "The \"$sheet\" data is required to start at {$catalog['label']}.", ['sheet' => $sheet]);
+            if ($count($sheet) > 0 || ($sheet === 'program' && ! empty($existing['program']))) {
+                continue;
             }
+            $already = (int) ($existing['already_imported'][$sheet] ?? 0);
+            $invalid = (int) ($existing['invalid'][$sheet] ?? 0);
+            if ($already > 0) {
+                // Imported before with the same reference: the earlier records are reused, so the stage is still complete.
+                $warn('already_imported', "Your {$label($sheet)} rows were already imported before (same reference), so they are not imported again. The new rows are added to what is already there. To make a separate program instead, change the reference or title in your file.");
+
+                continue;
+            }
+            $invalid > 0
+                ? $block('sheet_all_invalid', "Every {$label($sheet)} row has a problem. Fix the row(s) in the list below, then check again.", ['sheet' => $sheet])
+                : $block('missing_sheet', "Your file has no {$label($sheet)} data. Add the \"$sheet\" sheet (it is in the template for this stage).", ['sheet' => $sheet]);
         }
         foreach (array_keys($sheets) as $sheet) {
             if (! in_array($sheet, StartPointCatalog::sheets($startPoint), true) && $count($sheet) > 0) {
@@ -104,8 +117,11 @@ class ReadinessChecker
 
         // Scores (finalization)
         if ($startPoint === 'finalization') {
+            // Only the round being decided is scored; earlier rounds are already finished and take no scores
+            $target = $apps ? max(array_map(fn ($a) => (int) ($a['round_number'] ?? 1), $apps)) : 1;
+            $inTarget = array_column(array_filter($apps, fn ($a) => (int) ($a['round_number'] ?? 1) === $target), 'application_ref');
             $scored = array_unique(array_column($sheets['scores'] ?? [], 'application_ref'));
-            $missing = array_values(array_diff($refs, $scored));
+            $missing = array_values(array_diff($inTarget, $scored));
             if ($missing) {
                 $block('missing_scores', count($missing).' application(s) have no score.', ['application_refs' => array_slice($missing, 0, 20)]);
             }
@@ -209,7 +225,20 @@ class ReadinessChecker
         }
         $allDone = $milestones && ! array_filter($milestones, fn ($m) => ! in_array($m['status'] ?? 'pending', ['completion_approved'], true));
 
+        $perRound = [];
+        foreach ($apps as $a) {
+            $n = (int) ($a['round_number'] ?? 1);
+            $perRound[$n] = ($perRound[$n] ?? 0) + 1;
+        }
+        ksort($perRound);
+
         return [
+            'program_title' => $sheets['program'][0]['program_title'] ?? null,
+            'applications_by_round' => $perRound,
+            'questions' => count($sheets['questions'] ?? []),
+            'awardees' => count($winners),
+            'payments' => count($sheets['disbursements'] ?? []),
+            'checkpoints' => count($sheets['checkpoints'] ?? []),
             'program' => $landing->program((bool) $allDone),
             'rounds' => $rounds,
             'applications' => $byStatus,

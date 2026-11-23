@@ -16,10 +16,10 @@ it('stages, validates and commits a review import and lands the documented state
 
     expect($r['blockers'])->toBe([])->and($r['ready'])->toBeTrue()
         ->and($b->refresh()->status)->toBe('ready')
-        ->and(ImportRow::where('batch_id', $b->id)->where('status', 'valid')->count())->toBe(5);
+        ->and(ImportRow::where('batch_id', $b->id)->where('status', 'valid')->count())->toBe(7);
 
     $b = $this->commit($b);
-    expect($b->status)->toBe('completed')->and($b->stats['commit']['imported'])->toBe(5);
+    expect($b->status)->toBe('completed')->and($b->stats['commit']['imported'])->toBe(7);
 
     $p = Program::first();
     expect($p->status)->toBe('under_review')->and($p->visible)->toBeFalse()->and((float) $p->total_program_amount)->toBe(400000.0)
@@ -42,5 +42,5 @@ it('does nothing twice when the same file is imported again', function () {
     $b2 = $this->commit($b2);
 
     expect(Program::count())->toBe(1)->and(ProgramApplication::count())->toBe(2)->and(ProgramRound::count())->toBe(2)
-        ->and($b2->stats['commit']['imported'])->toBe(0)->and($b2->stats['commit']['skipped'])->toBe(5);
+        ->and($b2->stats['commit']['imported'])->toBe(0)->and($b2->stats['commit']['skipped'])->toBe(7);
 });

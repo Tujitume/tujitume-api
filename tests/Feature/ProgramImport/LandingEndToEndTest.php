@@ -175,7 +175,9 @@ it('disbursement: fully paid milestones are recorded without moving money, and a
 it('monitoring: checkpoints can be sent, listed and verified', function () {
     $winners = [['application_ref' => 'W1', 'program_ref' => 'P1', 'startup_name' => 'Agro One', 'email' => 'amina@example.com', 'awarded_amount' => 100000, 'awarded_at' => '2026-05-01', 'sector' => 'Agri', 'headquarters_location' => 'Nairobi']];
     $cps = [['application_ref' => 'W1', 'checkpoint_ref' => 'C1', 'checkpoint_name' => 'Q3 progress', 'type' => 'reporting', 'due_date' => '2026-12-01', 'kpis_to_track' => 'Jobs; Revenue']];
-    $b = $this->newBatch('monitoring', $this->xlsx(['program' => [$this->programRow()], 'winners' => $winners, 'checkpoints' => $cps]));
+    $ms = [['application_ref' => 'W1', 'milestone_ref' => 'M1', 'sequence_order' => 1, 'title' => 'Equipment', 'amount' => 100000, 'status' => 'completion_approved', 'fund_release_status' => 'released']];
+    $pay = [['milestone_ref' => 'M1', 'amount' => 100000, 'disbursed_at' => '2026-06-01', 'recipient_type' => 'business_owner']];
+    $b = $this->newBatch('monitoring', $this->xlsx(['program' => [$this->programRow()], 'winners' => $winners, 'milestones' => $ms, 'disbursements' => $pay, 'checkpoints' => $cps]));
     expect($this->prepare($b)['blockers'])->toBe([]);
     $this->commit($b);
     $this->assertSilent();

@@ -13,7 +13,9 @@ class BatchResource extends JsonResource
         $rows = ImportRow::where('batch_id', $b->id)->selectRaw('status, count(*) n')->groupBy('status')->pluck('n', 'status');
 
         return [
-            'id' => $b->id, 'program_id' => $b->program_id, 'start_point' => $b->start_point, 'type' => $b->type, 'source' => $b->source,
+            'id' => $b->id, 'program_id' => $b->program_id,
+            'program_title' => ($pid = $b->program_id ?? ($b->stats['commit']['program_id'] ?? null)) ? \App\Models\Programs\Program::whereKey($pid)->value('program_title') : null,
+            'started_by' => $b->user_id ? \App\Models\Auth\User::whereKey($b->user_id)->get(['first_name', 'last_name'])->map(fn ($u) => trim($u->first_name.' '.$u->last_name))->first() : null, 'start_point' => $b->start_point, 'type' => $b->type, 'source' => $b->source,
             'status' => $b->status, 'original_filename' => $b->original_filename, 'options' => $b->options, 'mapping' => $b->mapping,
             'form_spec' => $b->form_spec, 'readiness' => $b->readiness, 'landing_preview' => $b->landing_preview, 'stats' => $b->stats,
             'rows' => ['total' => (int) $rows->sum(), 'by_status' => $rows],

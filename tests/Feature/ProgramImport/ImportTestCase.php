@@ -58,6 +58,14 @@ abstract class ImportTestCase extends TestCase
     /** @param array<string, list<array<string,mixed>>> $sheets sheet name => rows (header = keys of the first row) */
     public function xlsx(array $sheets): string
     {
+        // Review and finalization need round questions; fixtures that only give rounds get one optional question per round
+        if (! empty($sheets['rounds']) && ! array_key_exists('questions', $sheets) && ! empty($sheets['applications'])) {
+            $sheets = array_slice($sheets, 0, array_search('rounds', array_keys($sheets), true) + 1, true)
+                + ['questions' => array_map(fn ($r) => ['round_ref' => $r['round_ref'] ?? 'round-'.$r['round_number'], 'question_ref' => 'QX'.$r['round_number'],
+                    'question_text' => 'Anything else for round '.$r['round_number'].'?', 'question_type' => 'long_text', 'is_required' => 'no'], $sheets['rounds'])]
+                + $sheets;
+        }
+        $sheets = array_filter($sheets, fn ($rows) => $rows !== null);   // 'questions' => null opts out of the default question
         $book = new Spreadsheet;
         $i = 0;
         foreach ($sheets as $name => $rows) {

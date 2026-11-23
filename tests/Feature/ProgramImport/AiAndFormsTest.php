@@ -80,7 +80,7 @@ it('reads a public Google Form, rejects other hosts, private IPs and redirect lo
     pi_http(['docs.google.com/*' => Http::response(pi_form_html())]);
     $r = $this->po()->postJson('/api/v1/program-imports', ['source' => 'google_form_url', 'url' => 'https://docs.google.com/forms/d/e/abc/viewform'])->assertCreated();
     $spec = $r->json('data.form_spec');
-    expect($spec['title'])->toBe('Seed Fund Form')->and(array_column($spec['questions'], 'type'))->toBe(['text', 'paragraph', 'choice'])
+    expect($spec['title'])->toBe('Seed Fund Form')->and(array_column($spec['questions'], 'type'))->toBe(['short_answer', 'long_text', 'multiple_choice'])
         ->and($spec['questions'][0]['required'])->toBeTrue()->and($spec['questions'][2]['options'])->toBe(['Agri', 'Health', 'Education'])->and($spec['questions'][0]['suggested'])->toBeTrue();
 
     foreach (['http://docs.google.com/forms/x', 'https://evil.com/forms/x', 'https://docs.google.com.evil.com/forms/x', 'https://user@docs.google.com/forms/x'] as $bad) {
@@ -103,7 +103,7 @@ it('turns pasted questions into a draft program with round 1 questions, all unco
     $r = $this->po()->postJson('/api/v1/program-imports', ['source' => 'text', 'type' => 'form', 'text' => $text])->assertCreated();
     $id = $r->json('data.id');
     $q = $r->json('data.form_spec.questions');
-    expect(array_column($q, 'type'))->toBe(['text', 'paragraph', 'choice', 'date'])->and($q[0]['required'])->toBeTrue();
+    expect(array_column($q, 'type'))->toBe(['short_answer', 'long_text', 'multiple_choice', 'date'])->and($q[0]['required'])->toBeTrue();
 
     $this->po()->patchJson("/api/v1/program-imports/$id/form-spec", [
         'program' => $this->programRow(['program_ref' => null, 'program_type' => 'single_round', 'total_rounds' => 1, 'program_title' => 'Seed Fund']),

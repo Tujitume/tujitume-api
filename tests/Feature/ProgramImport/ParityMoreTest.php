@@ -142,7 +142,7 @@ it('parity: show endpoints return the same VALUES for an imported and a manual p
 
     $rounds = [['program_ref' => 'P9', 'round_number' => 1, 'round_name' => 'Application', 'open_date' => '2026-01-01', 'close_date' => '2026-02-01', 'review_period_end' => '2026-02-10']];
     $apps = [['application_ref' => 'A9', 'program_ref' => 'P9', 'round_number' => 1, 'startup_name' => 'Agro One', 'contact_person_name' => 'Amina Ali', 'email' => 'import@example.com', 'sector' => 'Agri', 'headquarters_location' => 'Nairobi', 'total_amount_requested' => 100000]];
-    pi_import($this, ['program' => [$this->programRow(['program_ref' => 'P9', 'program_title' => 'Parity Fund', 'program_type' => 'single_round', 'total_rounds' => 1, 'max_awardees' => 4] + $dates)], 'rounds' => $rounds, 'applications' => $apps], 'review');
+    pi_import($this, ['program' => [$this->programRow(['program_ref' => 'P9', 'program_title' => 'Parity Fund', 'program_type' => 'single_round', 'total_rounds' => 1, 'max_awardees' => 4] + $dates)], 'rounds' => $rounds, 'questions' => null, 'applications' => $apps], 'review');
     $ip = Program::where('id', '!=', $p->id)->first();
     $ir = ProgramRound::where('program_id', $ip->id)->first();
     $ia = ProgramApplication::where('program_id', $ip->id)->first();

@@ -23,6 +23,13 @@ class ApplicationImporter extends Importer
         $round = ProgramRound::where('program_id', $p->id)->where('round_number', $n)->first()
             ?? throw new ImportRowException("Round $n does not exist in this program.");
         $land = $c->landing->application($n, false);
+        if ($c->landing instanceof \App\Modules\ProgramImport\Landing\FundingSetupLanding && $c->hasLinkedAwardees() && ! $c->isAwardee($row->external_ref)) {
+            // Round history after the award: everyone who is not an awardee stopped in the round they reached.
+            $land = ['status' => 'rejected', 'round_status' => 'not_selected'];
+        } elseif ($c->landing instanceof \App\Modules\ProgramImport\Landing\FundingSetupLanding && $c->isAwardee($row->external_ref)) {
+            // Awardees arrive approved; the awardees sheet then moves them to awarded with the awarded amount.
+            $land = ['status' => 'approved', 'round_status' => 'advanced'];
+        }
 
         $existing = $c->find('application', $row->external_ref, $p->id);
         if (! $existing && $c->opts['link_existing'] && ! empty($v['email'])) {

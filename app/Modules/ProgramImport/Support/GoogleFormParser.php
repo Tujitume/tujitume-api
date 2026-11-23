@@ -8,7 +8,7 @@ namespace App\Modules\ProgramImport\Support;
  */
 class GoogleFormParser
 {
-    private const TYPES = [0 => 'text', 1 => 'paragraph', 2 => 'choice', 3 => 'choice', 4 => 'checkbox', 5 => 'scale', 9 => 'date'];
+    private const TYPES = [0 => 'short_answer', 1 => 'long_text', 2 => 'multiple_choice', 3 => 'dropdown', 4 => 'checkbox', 5 => 'linear_scale', 7 => 'matrix', 9 => 'date', 10 => 'time', 13 => 'file_upload', 18 => 'rating'];
 
     /** @return array{title: ?string, description: ?string, questions: list<array>} */
     public function parse(string $html): array
@@ -22,9 +22,18 @@ class GoogleFormParser
             throw new FormFetchException('form_empty');
         }
         $questions = [];
+        $round = 1;
+        $rounds = [['number' => 1, 'name' => 'Application']];
         foreach ($items as $item) {
             $code = $item[3] ?? null;
             $title = trim((string) ($item[1] ?? ''));
+            // A section titled "Round 2" / "Stage 2: Interview" starts a new round
+            if ($code === 8 && preg_match('/^(?:round|stage|raundi)\s+(\d{1,2})\b\s*[:\-–—]?\s*(.*)$/iu', $title, $rm)) {
+                $round = max(1, min(10, (int) $rm[1]));
+                $rounds[] = ['number' => $round, 'name' => trim($rm[2]) !== '' ? mb_substr(trim($rm[2]), 0, 120) : "Round $round"];
+
+                continue;
+            }
             if (! isset(self::TYPES[$code]) || $title === '' || count($questions) >= 200) {
                 continue;
             }
@@ -35,13 +44,13 @@ class GoogleFormParser
                     $label = trim((string) ($o[0] ?? ''));
                     $label !== '' && $options[] = $label;
                 }
-                if (count($options) < 2) {
+                if (count($options) < 1) {
                     $code = 0;
                     $options = [];
                 }
             }
             $questions[] = [
-                'label' => mb_substr($title, 0, 500), 'help_text' => trim((string) ($item[2] ?? '')) ?: null, 'type' => self::TYPES[$code],
+                'label' => mb_substr($title, 0, 500), 'help_text' => trim((string) ($item[2] ?? '')) ?: null, 'type' => self::TYPES[$code], 'round' => $round,
                 'required' => ! empty($first[2]), 'options' => $options, 'maps_to' => null, 'confidence' => 1.0, 'suggested' => true,
             ];
         }
@@ -49,6 +58,6 @@ class GoogleFormParser
             throw new FormFetchException('form_empty');
         }
 
-        return ['title' => $data[3] ?? ($data[1][8] ?? null), 'description' => $data[1][0] ?? null, 'questions' => $questions];
+        return ['title' => $data[3] ?? ($data[1][8] ?? null), 'description' => $data[1][0] ?? null, 'questions' => $questions, 'rounds' => $rounds];
     }
 }

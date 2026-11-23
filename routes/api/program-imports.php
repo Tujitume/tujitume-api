@@ -35,6 +35,7 @@ Route::prefix('{batch}')->whereNumber('batch')->group(function () {
     Route::post('validate', [BatchController::class, 'validateBatch'])->middleware('throttle:program-imports');
     Route::post('readiness', [BatchController::class, 'readiness']);
     Route::get('rows', [BatchController::class, 'rows']);
+    Route::patch('options', [BatchController::class, 'options']);
     Route::patch('rows/{row}', [BatchController::class, 'updateRow'])->whereNumber('row');
     Route::get('errors', [BatchController::class, 'errors']);
     Route::get('file', [BatchController::class, 'file']);

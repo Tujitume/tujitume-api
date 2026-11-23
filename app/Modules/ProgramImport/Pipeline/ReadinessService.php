@@ -52,9 +52,12 @@ class ReadinessService
                 $sheets[$sheet] = $rows;
             }
         }
-        $existing = [];
+        $existing = ['already_imported' => [], 'invalid' => []];
+        foreach (ImportRow::where('batch_id', $batch->id)->whereIn('status', ['skipped', 'invalid'])->selectRaw('sheet, status, count(*) n')->groupBy('sheet', 'status')->get() as $c) {
+            $existing[$c->status === 'skipped' ? 'already_imported' : 'invalid'][$c->sheet] = (int) $c->n;
+        }
         if ($batch->program_id && $p = Program::find($batch->program_id)) {
-            $existing = ['program' => $p->only(['total_program_amount', 'funding_per_business', 'currency', 'disbursement_type', 'program_type', 'total_rounds', 'max_awardees', 'application_start_date', 'application_deadline']),
+            $existing += ['program' => $p->only(['total_program_amount', 'funding_per_business', 'currency', 'disbursement_type', 'program_type', 'total_rounds', 'max_awardees', 'application_start_date', 'application_deadline']),
                 'round_numbers' => $p->rounds()->pluck('round_number')->all()];
             $existing['program']['application_start_date'] = optional($p->application_start_date)->toDateString();
             $existing['program']['application_deadline'] = optional($p->application_deadline)->toDateString();

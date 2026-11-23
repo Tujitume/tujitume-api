@@ -170,10 +170,13 @@ class BatchValidator
             }
         }
         if ($sheet === 'program' && ! isset($errors['program_industry']) && ! empty($v['program_industry'])) {
-            $i = is_numeric($v['program_industry'])
-                ? ProgramIndustry::find((int) $v['program_industry'])
-                : ProgramIndustry::whereRaw('lower(name) = ?', [mb_strtolower(trim($v['program_industry']))])->first();
-            $i ? $v['program_industry_id'] = $i->id : $errors['program_industry'] = "Unknown industry \"{$v['program_industry']}\" (use an existing industry id or name)";
+            $i = self::industry($v['program_industry']);
+            if ($i) {
+                $v['program_industry_id'] = $i->id;
+            } else {
+                $near = self::closestIndustry($v['program_industry']);
+                $errors['program_industry'] = "\"{$v['program_industry']}\" is not an industry on Tujitume. ".($near ? "Did you mean \"{$near}\"? " : '').'Pick one from the list.';
+            }
         }
         if ($sheet === 'program' && ($v['program_type'] ?? null) === 'single_round') {
             $v['total_rounds'] = 1;
@@ -280,6 +283,40 @@ class BatchValidator
         }
 
         return $batch->program_id;
+    }
+
+    /** "Retail & Trade", "retail and trade" and "Retail-Trade" all find "Retail and Trade". */
+    public static function industryKey(string $name): string
+    {
+        $s = mb_strtolower(trim($name));
+        $s = str_replace('&', ' and ', $s);
+
+        return preg_replace('/[^a-z0-9]+/', '', $s);
+    }
+
+    public static function industry(mixed $value): ?ProgramIndustry
+    {
+        if (is_numeric($value)) {
+            return ProgramIndustry::find((int) $value);
+        }
+        $key = self::industryKey((string) $value);
+
+        return $key === '' ? null : ProgramIndustry::all(['id', 'name'])->first(fn ($i) => self::industryKey($i->name) === $key);
+    }
+
+    public static function closestIndustry(string $value): ?string
+    {
+        $key = self::industryKey($value);
+        $best = null;
+        $bestScore = 0;
+        foreach (ProgramIndustry::pluck('name') as $name) {
+            similar_text($key, self::industryKey($name), $pct);
+            if ($pct > $bestScore) {
+                [$best, $bestScore] = [$name, $pct];
+            }
+        }
+
+        return $bestScore >= 55 ? $best : null;
     }
 
     /** Already-imported references: skip / fail / update per on_duplicate. */

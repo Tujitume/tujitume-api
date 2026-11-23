@@ -10,6 +10,7 @@ use App\Modules\ProgramImport\Landing\LandingDefinition;
 use App\Modules\ProgramImport\Models\ImportBatch;
 use App\Modules\ProgramImport\Models\ImportLink;
 use App\Modules\ProgramImport\Models\ImportRecord;
+use App\Modules\ProgramImport\Models\ImportRow;
 use App\Modules\ProgramImport\Registry\StartPointCatalog;
 use App\Modules\ProgramImport\Support\Refs;
 use Illuminate\Database\Eloquent\Model;
@@ -91,6 +92,25 @@ class CommitContext
     {
         [$this->cache, $this->beforeSaved, $this->createdKeys, $this->touchedPrograms, $this->touchedApplications, $pid] = $s;
         $this->program = $pid ? Program::find($pid) : null;
+    }
+
+    private ?array $awardeeRefs = null;
+
+    /** References of the awardees in this batch that point at an application row (application_ref given). */
+    private function awardeeRefs(): array
+    {
+        return $this->awardeeRefs ??= ImportRow::where('batch_id', $this->batch->id)->where('sheet', 'winners')->whereNotNull('external_ref')
+            ->where('external_ref', 'not like', 'winner:%')->pluck('external_ref')->flip()->all();
+    }
+
+    public function hasLinkedAwardees(): bool
+    {
+        return $this->awardeeRefs() !== [];
+    }
+
+    public function isAwardee(?string $ref): bool
+    {
+        return $ref !== null && isset($this->awardeeRefs()[$ref]);
     }
 
     public function owner(): User

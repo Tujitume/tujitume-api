@@ -37,7 +37,7 @@ class RowNormalizer
                 'url' => Normalizer::url($raw),
                 'link_or_file' => Normalizer::linkOrFile($raw),
                 'list' => Normalizer::list($raw),
-                'enum' => Normalizer::enum($raw, $spec['enum'] ?? [], $valueMaps[$key] ?? []),
+                'enum' => Normalizer::enum($raw, $spec['enum'] ?? [], ($valueMaps[$key] ?? []) + ($spec['aliases'] ?? [])),
                 default => Normalizer::text($raw),
             };
             if ($r['error']) {

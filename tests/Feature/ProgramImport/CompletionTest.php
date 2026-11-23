@@ -218,9 +218,9 @@ it('splits validation and commit into restartable chunk jobs that never write tw
     \Illuminate\Support\Facades\Queue::assertPushed(\App\Modules\ProgramImport\Jobs\ValidateBatchJob::class);
     (new \App\Modules\ProgramImport\Jobs\ValidateBatchJob($id))->handle();
     \Illuminate\Support\Facades\Queue::assertPushedWithChain(\App\Modules\ProgramImport\Jobs\ValidateChunkJob::class, [
-        \App\Modules\ProgramImport\Jobs\ValidateChunkJob::class, \App\Modules\ProgramImport\Jobs\ValidateChunkJob::class, \App\Modules\ProgramImport\Jobs\ValidateFinalizeJob::class,
+        \App\Modules\ProgramImport\Jobs\ValidateChunkJob::class, \App\Modules\ProgramImport\Jobs\ValidateChunkJob::class, \App\Modules\ProgramImport\Jobs\ValidateChunkJob::class, \App\Modules\ProgramImport\Jobs\ValidateFinalizeJob::class,
     ]);
-    foreach (['program', 'rounds', 'applications'] as $s) {
+    foreach (['program', 'rounds', 'questions', 'applications'] as $s) {
         (new \App\Modules\ProgramImport\Jobs\ValidateChunkJob($id, $s))->handle();
     }
     (new \App\Modules\ProgramImport\Jobs\ValidateFinalizeJob($id))->handle();
@@ -229,17 +229,17 @@ it('splits validation and commit into restartable chunk jobs that never write tw
     ImportBatch::find($id)->update(['consent_confirmed_at' => now()]);
     (new \App\Modules\ProgramImport\Jobs\CommitBatchJob($id))->handle();
     \Illuminate\Support\Facades\Queue::assertPushedWithChain(\App\Modules\ProgramImport\Jobs\CommitChunkJob::class, [
-        \App\Modules\ProgramImport\Jobs\CommitChunkJob::class, \App\Modules\ProgramImport\Jobs\CommitChunkJob::class, \App\Modules\ProgramImport\Jobs\FinalizeBatchJob::class,
+        \App\Modules\ProgramImport\Jobs\CommitChunkJob::class, \App\Modules\ProgramImport\Jobs\CommitChunkJob::class, \App\Modules\ProgramImport\Jobs\CommitChunkJob::class, \App\Modules\ProgramImport\Jobs\FinalizeBatchJob::class,
     ]);
     expect(Program::count())->toBe(0)->and(ImportBatch::find($id)->status)->toBe('importing');
     // run the chunks, one of them twice (a retry), then finalize twice
-    foreach (['program', 'rounds', 'applications', 'applications', 'program'] as $s) {
+    foreach (['program', 'rounds', 'questions', 'applications', 'applications', 'program'] as $s) {
         (new \App\Modules\ProgramImport\Jobs\CommitChunkJob($id, $s))->handle();
     }
     (new \App\Modules\ProgramImport\Jobs\FinalizeBatchJob($id))->handle();
     (new \App\Modules\ProgramImport\Jobs\FinalizeBatchJob($id))->handle();
     $b = ImportBatch::find($id);
-    expect($b->status)->toBe('completed')->and($b->stats['commit']['imported'])->toBe(5)->and(Program::count())->toBe(1)->and(ProgramApplication::count())->toBe(2)
+    expect($b->status)->toBe('completed')->and($b->stats['commit']['imported'])->toBe(7)->and(Program::count())->toBe(1)->and(ProgramApplication::count())->toBe(2)
         ->and(Program::first()->status)->toBe('under_review')->and(ProgramRound::where('round_number', 2)->value('status'))->toBe('published');
     $this->po()->postJson("/api/v1/program-imports/$id/rollback")->assertOk();      // the ledger is complete, so undo works after a chunked commit
     expect(Program::count())->toBe(0);

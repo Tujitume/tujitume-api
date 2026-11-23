@@ -36,7 +36,7 @@ it('runs the whole wizard over HTTP: upload, analyze, validate, readiness, commi
     expect($b->status)->toBe('completed')->and($b->consent_confirmed_at)->not->toBeNull()->and(Program::count())->toBe(1)->and(ProgramApplication::count())->toBe(2);
     $this->assertSilent();
     $this->po()->getJson('/api/v1/program-imports')->assertOk()->assertJsonPath('data.items.0.id', $id);
-    $this->po()->getJson("/api/v1/program-imports/$id/rows?status=imported")->assertOk()->assertJsonPath('data.meta.total', 5);
+    $this->po()->getJson("/api/v1/program-imports/$id/rows?status=imported")->assertOk()->assertJsonPath('data.meta.total', 7);
 });
 
 it('refuses a commit while readiness has blockers', function () {

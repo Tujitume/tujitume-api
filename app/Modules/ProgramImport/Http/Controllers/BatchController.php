@@ -191,9 +191,10 @@ class BatchController extends Controller
         }
         $in = $r->validate([
             'program' => ['nullable', 'array'], 'questions' => ['nullable', 'array', 'max:200'],
-            'questions.*.label' => ['required', 'string', 'max:500'], 'questions.*.type' => ['required', Rule::in(['text', 'paragraph', 'choice', 'checkbox', 'scale', 'date'])],
+            'questions.*.label' => ['required', 'string', 'max:500'], 'questions.*.type' => ['required', Rule::in(array_merge(\App\Modules\ProgramImport\Importers\QuestionImporter::APP_TYPES, array_keys(\App\Modules\ProgramImport\Importers\QuestionImporter::ALIASES)))],
+            'questions.*.round' => ['nullable', 'integer', 'min:1', 'max:10'], 'rounds' => ['nullable', 'array', 'max:10'], 'rounds.*.number' => ['required', 'integer', 'min:1', 'max:10'], 'rounds.*.name' => ['nullable', 'string', 'max:120'],
             'questions.*.required' => ['nullable', 'boolean'], 'questions.*.options' => ['nullable', 'array'], 'questions.*.include' => ['nullable', 'boolean'],
-            'questions.*.help_text' => ['nullable', 'string', 'max:500'], 'required_documents' => ['nullable', 'array', 'max:30'], 'required_documents.*' => ['string', 'max:100'],
+            'questions.*.help_text' => ['nullable', 'string', 'max:1000'], 'required_documents' => ['nullable', 'array', 'max:30'], 'required_documents.*' => ['string', 'max:100'],
             'confirmed' => ['nullable', 'boolean'],
         ]);
         $spec = $b->form_spec;
@@ -204,6 +205,8 @@ class BatchController extends Controller
         if (isset($in['questions'])) {
             $spec['questions'] = array_map(fn ($q) => array_merge(['maps_to' => null, 'confidence' => 1.0, 'suggested' => false], $q, ['label' => Normalizer::text($q['label'])['value'], 'options' => array_map(fn ($o) => Normalizer::text($o)['value'], $q['options'] ?? [])]), $in['questions']);
         }
+        isset($in['rounds']) && $spec['rounds'] = array_map(fn ($x) => ['number' => (int) $x['number'], 'name' => Normalizer::text($x['name'] ?? '')['value'] ?? ''], $in['rounds']);
+        $spec = FormSpecStager::tidy($spec, false);
         isset($in['required_documents']) && $spec['required_documents'] = array_map(fn ($d) => Normalizer::text($d)['value'], $in['required_documents']);
         isset($in['confirmed']) && $spec['confirmed'] = (bool) $in['confirmed'];
         $b->update(['form_spec' => $spec, 'status' => 'mapped', 'readiness' => null]);
@@ -264,6 +267,24 @@ class BatchController extends Controller
         $res = (new ReadinessService)->run($b->refresh());
 
         return ApiResponseResource::success('Row updated.', ['row' => $rowModel->refresh(), 'readiness' => $res]);
+    }
+
+    /** Changes the import options before importing (for example "skip rows with problems") and checks again. */
+    public function options(Request $r, int $batch)
+    {
+        $b = $this->batch($r, $batch, true);
+        if (! in_array($b->status, ['ready', 'has_errors'], true)) {
+            return $this->fail('Options can be changed after checking and before importing.', 'invalid_state');
+        }
+        $in = $r->validate(\App\Modules\ProgramImport\Http\Requests\StoreBatchRequest::optionRules());
+        $changes = array_intersect_key($in['options'] ?? [], array_flip(['on_duplicate', 'mode', 'link_existing', 'update_existing', 'date_format', 'default_currency',
+            'default_country_code', 'compute_match_score', 'queue_ai_review_after_import', 'raise_max_awardees', 'adjust_program_balance', 'mark_checkpoints_sent']));
+        $b->update(['options' => array_merge($b->options ?? [], $changes)]);
+        Audit::log($b, $r->user()->id, 'options_changed', ['keys' => array_keys($changes)]);
+        (new BatchValidator)->run($b);
+        $res = (new ReadinessService)->run($b->refresh());
+
+        return ApiResponseResource::success('Options updated.', (new BatchResource($b->refresh()))->resolve() + ['readiness' => $res]);
     }
 
     public function errors(Request $r, int $batch)

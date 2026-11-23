@@ -86,6 +86,6 @@ it('reads a form that needs a sign-in through the connected account', function (
     $b = ImportBatch::create(['organization_id' => $this->org->id, 'user_id' => $this->orgUser->id, 'type' => 'form', 'start_point' => 'setup', 'source' => 'google_form_url', 'status' => 'uploaded']);
     (new FormSpecStager)->extract($b, 'https://docs.google.com/forms/d/e/1FAIpQLSabcdefghijk/viewform');
     $spec = $b->refresh()->form_spec;
-    expect($spec['title'])->toBe('Private Fund')->and(array_column($spec['questions'], 'type'))->toBe(['text', 'choice'])->and($spec['questions'][1]['options'])->toBe(['Agri', 'Health']);
+    expect($spec['title'])->toBe('Private Fund')->and(array_column($spec['questions'], 'type'))->toBe(['short_answer', 'multiple_choice'])->and($spec['questions'][1]['options'])->toBe(['Agri', 'Health']);
     Http::assertSent(fn ($r) => str_contains($r->url(), 'forms.googleapis.com') && $r->hasHeader('Authorization', 'Bearer ACCESS-TOKEN'));
 });
