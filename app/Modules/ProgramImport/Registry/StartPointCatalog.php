@@ -27,19 +27,19 @@ class StartPointCatalog
         return [
             'setup' => [
                 'label' => 'Set up a program',
-                'required' => ['program', 'rounds'], 'optional' => ['questions'],
+                'required' => ['program', 'rounds'], 'optional' => ['questions', 'fields'],
                 'summary' => 'A draft, hidden program with its rounds and questions. Nothing is published.',
                 'next_steps' => ['Configure the rounds', 'Assign Business Coaches', 'Fund the program wallet', 'Publish'],
             ],
             'review' => [
                 'label' => 'Start at review',
-                'required' => ['program', 'rounds', 'questions', 'applications'], 'optional' => [],
+                'required' => ['program', 'rounds', 'applications'], 'optional' => ['questions', 'fields', 'reviewers'],
                 'summary' => 'Applications arrive already submitted; earlier rounds are marked finalized. Start scoring or deciding.',
                 'next_steps' => ['Assign Business Coaches or score applications', 'Accept or reject (round 1)', 'Finalize the round'],
             ],
             'finalization' => [
                 'label' => 'Start at finalization',
-                'required' => ['program', 'rounds', 'questions', 'applications', 'scores'], 'optional' => [],
+                'required' => ['program', 'rounds', 'applications', 'scores'], 'optional' => ['questions', 'fields', 'reviewers'],
                 'summary' => 'Applications arrive scored, with averages and eligibility computed the same way as manual scoring.',
                 'next_steps' => ['Finalize the round', 'Confirm awardees'],
             ],
@@ -57,8 +57,8 @@ class StartPointCatalog
             ],
             'monitoring' => [
                 'label' => 'Start at monitoring & evaluation',
-                'required' => ['program', 'winners', 'milestones', 'disbursements', 'checkpoints'], 'optional' => ['rounds', 'applications', 'submissions', 'site_visits'],
-                'summary' => 'Awardees with their milestones, the payments already made and M&E checkpoints, ready for verification and analytics.',
+                'required' => ['program', 'winners', 'checkpoints'], 'optional' => ['rounds', 'applications', 'milestones', 'disbursements', 'submissions', 'site_visits'],
+                'summary' => 'Awardees with M&E checkpoints, ready for verification and analytics.',
                 'next_steps' => ['Send or verify checkpoints', 'Review analytics'],
             ],
         ];

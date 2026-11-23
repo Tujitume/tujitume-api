@@ -203,7 +203,9 @@ class TemplateGenerator
             ['round_ref' => 'R2', 'question_ref' => 'Q6', 'question_text' => 'Signature of the founder', 'question_type' => 'signature', 'is_required' => 'yes'],
         ];
         $ex['fields'] = [['program_ref' => 'PRG-1', 'field_ref' => 'F1', 'label' => 'Number of employees', 'type' => 'number', 'is_required' => 'no']];
-        $ex['reviewers'] = [['round_ref' => 'R1', 'email' => 'coach@example.com', 'reviewer_type' => 'external', 'max_apps_assigned' => 20]];
+        // A Business Coach must already have an eligible Tujitume account. A made-up example email would make an
+        // otherwise untouched template fail at commit, so keep this optional roster tab ready but intentionally empty.
+        $ex['reviewers'] = [];
 
         // Applications: everyone applied in round 1, some reached later rounds; the awardees are the ones still in the last round
         $people = [['Green Farms', 'Amina Otieno', 'Agriculture', 'Kisumu'], ['Mavuno Foods', 'Brian Mwangi', 'Food processing', 'Nakuru'],
