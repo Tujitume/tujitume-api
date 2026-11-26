@@ -269,6 +269,14 @@ class AiReviewAnalyzer
             $client = $pick['client'];
             try {
                 $response = $client->complete($request);
+                $program->loadMissing('organization');
+                $workspaceId = $program->organization_id ? \App\Models\Organizations\Workspace::where('organization_id', $program->organization_id)->value('id') : null;
+                app(AiUsageTrackingService::class)->recordUsage([
+                    'user_id' => $review->initiated_by_user_id, 'workspace_id' => $workspaceId,
+                    'program_id' => $program->id, 'round_id' => $review->round_id, 'application_id' => $review->application_id,
+                    'evaluation_run_id' => $review->id, 'operation' => 'review', 'provider' => $client->provider(),
+                ], ['provider' => $response->provider, 'model' => $response->model, 'request_id' => $response->requestId,
+                    'usage' => $response->rawUsage, 'duration_ms' => $response->durationMs]);
                 $this->governor->reconcile($client->provider(), $est, $response->tokensIn + $response->tokensOut, $response->model, $review->id, $organizationId, $response->tokensIn, $response->tokensOut);
                 $usage['tokens_in'] += $response->tokensIn;
                 $usage['tokens_out'] += $response->tokensOut;
@@ -276,6 +284,10 @@ class AiReviewAnalyzer
 
                 return $response;
             } catch (LlmException $e) {
+                app(AiUsageTrackingService::class)->recordUsage([
+                    'user_id' => $review->initiated_by_user_id, 'program_id' => $program->id, 'round_id' => $review->round_id,
+                    'application_id' => $review->application_id, 'evaluation_run_id' => $review->id, 'operation' => 'review',
+                ], ['provider' => $client->provider(), 'model' => $client->model(), 'status' => 'failed', 'error_message' => $e->getMessage()]);
                 $this->governor->refund($client->provider(), $est);
                 $skip[] = $client->provider();
                 $kinds[] = $e->kind;

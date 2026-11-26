@@ -22,6 +22,14 @@ $amariChatUrl = rtrim((string) env('AMARI_AI_URL', 'https://api.groq.com/openai/
 $amariBaseUrl = preg_replace('~/chat/completions$~', '', $amariChatUrl) ?: $amariChatUrl;
 
 return [
+    'pricing' => [
+        'groq' => [
+            'openai/gpt-oss-120b' => ['input_per_million' => '0.15', 'cached_per_million' => '0.075', 'output_per_million' => '0.60', 'currency' => 'USD', 'effective_from' => '2026-11-26', 'expires_at' => null, 'active' => true],
+        ],
+        'amari' => [
+            'openai/gpt-oss-120b' => ['input_per_million' => '0.15', 'cached_per_million' => '0.075', 'output_per_million' => '0.60', 'currency' => 'USD', 'effective_from' => '2026-11-26', 'expires_at' => null, 'active' => true],
+        ],
+    ],
     'enabled' => true,
     'default_provider' => env('AI_REVIEW_PROVIDER') ?: $provider,
     'fallbacks' => $list('AI_REVIEW_FALLBACKS', ''),

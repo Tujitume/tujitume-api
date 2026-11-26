@@ -1,0 +1,68 @@
+{
+  "info": {
+    "_postman_id": "788eccee-01a2-41f9-a3ec-4fd1ab003be1",
+    "name": "Tujitume API v1 - AI Usage & Cost",
+    "description": "All requests use the existing auth:sanctum bearer-token authentication. Set base_url to the server origin (for example http://localhost:8000), bearer_token to a signed-in user's token, and application_id to an application the user can access. The backend routes are versioned under /api/v1 (for example /api/v1/register). These are GET requests and have no JSON body; filters are query parameters.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:8000", "type": "string" },
+    { "key": "api_prefix", "value": "api/v1", "type": "string" },
+    { "key": "bearer_token", "value": "", "type": "string" },
+    { "key": "application_id", "value": "482", "type": "string" },
+    { "key": "from", "value": "2026-01-01", "type": "string" },
+    { "key": "to", "value": "2026-12-31", "type": "string" },
+    { "key": "provider", "value": "groq", "type": "string" },
+    { "key": "model", "value": "openai/gpt-oss-120b", "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "AI usage (Sanctum user)",
+      "item": [
+        {
+          "name": "My current lifetime, month, and day totals",
+          "request": {
+            "description": "Returns latest saved usage totals for the signed-in user. No request body.",
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{bearer_token}}", "type": "string" }] },
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": "{{base_url}}/{{api_prefix}}/programs/ai/usage/me"
+          }
+        },
+        {
+          "name": "My request history (with filters)",
+          "request": {
+            "description": "All query filters are optional. Remove/edit them in Params to widen/narrow the history. per_page supports 1–100. No request body.",
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{bearer_token}}", "type": "string" }] },
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": {
+              "raw": "{{base_url}}/{{api_prefix}}/programs/ai/usage/history?from={{from}}&to={{to}}&provider={{provider}}&model={{model}}&operation=review&per_page=25",
+              "host": ["{{base_url}}"],
+              "path": ["{{api_prefix}}", "programs", "ai", "usage", "history"],
+              "query": [
+                { "key": "from", "value": "{{from}}", "description": "Start date/time, inclusive." },
+                { "key": "to", "value": "{{to}}", "description": "End date/time, inclusive." },
+                { "key": "provider", "value": "{{provider}}" },
+                { "key": "model", "value": "{{model}}" },
+                { "key": "application_id", "value": "{{application_id}}", "disabled": true },
+                { "key": "operation", "value": "review" },
+                { "key": "per_page", "value": "25", "description": "1 to 100." }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Application usage and request records",
+          "request": {
+            "description": "Requires program owner/team access or reviewer assignment for this application. Applicants and unrelated users receive 403. Set application_id to an accessible application. No request body.",
+            "auth": { "type": "bearer", "bearer": [{ "key": "token", "value": "{{bearer_token}}", "type": "string" }] },
+            "method": "GET",
+            "header": [{ "key": "Accept", "value": "application/json" }],
+            "url": "{{base_url}}/{{api_prefix}}/programs/applications/{{application_id}}/ai-usage"
+          }
+        }
+      ]
+    }
+  ]
+}

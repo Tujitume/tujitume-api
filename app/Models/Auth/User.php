@@ -77,6 +77,11 @@ class User extends Authenticatable
         return $this->hasOne(UserBalance::class, 'user_id', 'id');
     }
 
+    public function aiUsageLogs()
+    {
+        return $this->hasMany(\App\Models\AiUsageLog::class, 'user_id');
+    }
+
     public function investor_profile()
     {
         return $this->hasOne(InvestorProfile::class, 'user_id', 'id');

@@ -31,8 +31,10 @@ class AiReviewPing extends Command
             try {
                 $resp = (new OpenAiCompatibleClient($name, $cfg))->complete(new LlmRequest([['role' => 'user', 'content' => 'Reply with the JSON {"ok":true}']], ['type' => 'object'], 400));
                 $ms = (int) ((microtime(true) - $start) * 1000);
+                app(\App\Service\AiReview\AiUsageTrackingService::class)->recordUsage(['operation' => 'provider_probe', 'provider' => $name], ['provider' => $name, 'model' => $resp->model, 'request_id' => $resp->requestId, 'usage' => $resp->rawUsage, 'duration_ms' => $ms]);
                 $rows[] = [$name.(in_array($name, $active) ? ' *' : ''), 'OK', $ms.' ms', $resp->model, $limits];
             } catch (LlmException $e) {
+                app(\App\Service\AiReview\AiUsageTrackingService::class)->recordUsage(['operation' => 'provider_probe', 'provider' => $name], ['provider' => $name, 'model' => $cfg['model'], 'status' => 'failed', 'error_message' => $e->getMessage()]);
                 $rows[] = [$name.(in_array($name, $active) ? ' *' : ''), 'FAILED: '.$e->kind.($e->status ? " ({$e->status})" : ''), '-', $cfg['model'], $limits];
             }
         }

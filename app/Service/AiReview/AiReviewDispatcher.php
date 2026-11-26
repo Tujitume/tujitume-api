@@ -45,7 +45,7 @@ class AiReviewDispatcher
 
         $review = ApplicationAiReview::firstOrCreate(
             ['application_id' => $application->id, 'round_id' => $round->id, 'input_hash' => $hash],
-            ['program_id' => $round->program_id, 'mode' => $round->review_method, 'status' => ApplicationAiReview::STATUS_QUEUED, 'prompt_version' => config('ai_review.prompt_version')]
+            ['program_id' => $round->program_id, 'mode' => $round->review_method, 'status' => ApplicationAiReview::STATUS_QUEUED, 'prompt_version' => config('ai_review.prompt_version'), 'initiated_by_user_id' => auth()->id()]
         );
 
         $busy = in_array($review->status, [ApplicationAiReview::STATUS_QUEUED, ApplicationAiReview::STATUS_EXTRACTING, ApplicationAiReview::STATUS_ANALYZING], true);
@@ -54,6 +54,9 @@ class AiReviewDispatcher
         }
         if (! $review->wasRecentlyCreated && $force && ! $busy) {
             $review->update(['status' => ApplicationAiReview::STATUS_QUEUED, 'attempts' => 0, 'error' => null, 'completed_at' => null]);
+        }
+        if (! $review->initiated_by_user_id && auth()->id()) {
+            $review->update(['initiated_by_user_id' => auth()->id()]);
         }
 
         // Stopped by the program owner: the review waits (queued) and is started when they continue

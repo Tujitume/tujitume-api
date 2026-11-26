@@ -50,6 +50,7 @@ class OpenAiCompatibleClient implements LlmClient
             $payload['messages'][] = ['role' => 'user', 'content' => 'Reply with a single JSON object only. No prose, no code fences.'];
         }
 
+        $startedAt = microtime(true);
         try {
             $response = Http::withToken((string) ($this->cfg['api_key'] ?? ''))
                 ->acceptJson()
@@ -75,6 +76,9 @@ class OpenAiCompatibleClient implements LlmClient
             $data['choices'][0]['finish_reason'] ?? null,
             $this->name,
             (string) ($data['model'] ?? $model),
+            (array) ($data['usage'] ?? []),
+            isset($data['id']) ? (string) $data['id'] : null,
+            (int) round((microtime(true) - $startedAt) * 1000),
         );
     }
 

@@ -47,6 +47,9 @@ Route::get('programs/{program_id}/sme/applications', [ProgramApplicationControll
 
 
 Route::prefix('/programs')->middleware(['program', 'program.response'])->group(function () {
+    Route::get('ai/usage/me', [\App\Http\Controllers\AiUsageController::class, 'me']);
+    Route::get('ai/usage/history', [\App\Http\Controllers\AiUsageController::class, 'history']);
+    Route::get('applications/{application}/ai-usage', [\App\Http\Controllers\AiUsageController::class, 'application'])->whereNumber('application');
     // AI-assisted / AI-only review (static paths first)
     Route::post('ai-privacy-ack', [AiReviewController::class, 'privacyAck']);
     Route::get('rounds/{round}/ai-reviews', [AiReviewController::class, 'roundOverview'])->whereNumber('round');
