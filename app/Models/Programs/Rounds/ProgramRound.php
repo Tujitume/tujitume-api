@@ -3,6 +3,7 @@
 namespace App\Models\Programs\Rounds;
 
 use App\Models\Auth\User;
+use App\Models\Programs\Concerns\HasOpeningWindow;
 use App\Models\Programs\Program;
 use App\Models\Programs\ProgramApplication;
 use App\Models\Programs\Rounds\ReviewerApplicationAssignment;
@@ -11,7 +12,23 @@ use Illuminate\Database\Eloquent\Model;
 
 class ProgramRound extends Model
 {
-    use HasFactory;
+    use HasFactory, HasOpeningWindow;
+
+    /** A round opens at opens_at and closes after closes_at (UTC); open_date / close_date follow them. */
+    protected const OPENING_WINDOW = [
+        'opens' => ['open_date', 'opens_at'],
+        'closes' => ['close_date', 'closes_at'],
+    ];
+
+    /** The program's zone (rounds are set in the same zone as their program). */
+    public function scheduleTimezone(): string
+    {
+        $timezone = $this->relationLoaded('program')
+            ? $this->program?->getAttribute('timezone')
+            : ($this->program_id ? Program::query()->whereKey($this->program_id)->value('timezone') : null);
+
+        return \App\Support\ProgramSchedule::timezone($timezone);
+    }
 
     protected static function newFactory()
     {
@@ -42,6 +59,7 @@ class ProgramRound extends Model
 
     protected $casts = [
         'scoring_criteria' => 'array',
+        'match_expertise' => 'boolean',
         'knockout_questions' => 'array',
         'required_documents' => 'array',
         'confirmed_steps' => 'array',
@@ -62,15 +80,32 @@ class ProgramRound extends Model
      */
     public function notOpenReason(): ?string
     {
-        $notOpen = $this->status === 'draft'
-            || ($this->open_date && $this->open_date->copy()->startOfDay()->isFuture());
+        $notOpen = $this->status === 'draft' || ! $this->hasOpened();
 
         if (! $notOpen) {
             return null;
         }
 
-        return 'This round has not opened yet' . ($this->open_date ? ' (it opens on ' . $this->open_date->format('j M Y') . ')' : '')
+        $opens = \App\Support\ProgramSchedule::describe($this->opensAt(), $this->scheduleTimezone());
+
+        return 'This round has not opened yet' . ($opens ? ' (it opens on ' . $opens . ')' : '')
             . '. You can read what it asks for now, and answer and submit once it opens.';
+    }
+
+    /**
+     * Why answers and submissions are refused now that the round has closed (its exact closing moment has passed, or the
+     * owner closed it), or null while it is still open. Every round works this way, round 2 and later like round 1.
+     */
+    public function closedReason(): ?string
+    {
+        $closedByStatus = in_array($this->status, ['closed', 'in_review', 'finalized'], true);
+        if (! $closedByStatus && ! $this->hasClosed()) {
+            return null;
+        }
+        $closes = \App\Support\ProgramSchedule::describe($this->closesAt(), $this->scheduleTimezone());
+
+        return ($this->round_name ?: 'This round') . ' has closed' . ($closes && $this->hasClosed() ? ' (it closed on ' . $closes . ')' : '')
+            . '. Answers and submissions are no longer accepted.';
     }
 
     public function program()

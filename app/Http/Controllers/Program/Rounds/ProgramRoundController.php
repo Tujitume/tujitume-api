@@ -16,8 +16,10 @@ use App\Service\Program\KnockoutEvaluator;
 use App\Service\Program\RoundFinalizationService;
 use App\Service\Program\ProgramAccess;
 use App\Support\ApiContract;
+use App\Support\ProgramSchedule;
 use App\Service\Program\RoundHelperService;
 use App\Service\Program\RoundParticipation;
+use App\Service\Program\RoundApplicantList;
 use App\Service\Program\RoundHistoryService;
 use App\Service\Program\RoundMatchScore;
 use App\Service\Misc\ErrorLogService;
@@ -44,6 +46,10 @@ class ProgramRoundController extends Controller
         parent::__construct();
     }
     public function index(Program $program){
+        // Rounds carry their review set-up and every applicant in them: only the program's own team and the Business
+        // Coaches of its rounds may list them (a draft program's rounds were open to any signed-in user)
+        (new ProgramAccess())->authorizeProgramStaff(auth()->user(), $program);
+
         $rounds = ProgramRound::with('applications')
             ->withCount('applications')
             ->where('program_id', $program->id)
@@ -187,142 +193,212 @@ class ProgramRoundController extends Controller
 
 
     # get applications for a round
-    public function applications($round_id)
+    // No list parameters: every applicant of the round (the round page, its cards, panels and modals read the whole field).
+    // page / per_page / search / filters / sort / export: the round's table on the server (see RoundApplicantList).
+    public function applications(Request $request, $round_id)
     {
         $round = ProgramRound::findOrFail($round_id);
         (new ProgramAccess())->authorizeRound(auth()->user(), $round);
 
-        // Everyone who took part in this round: those still in it, and those already moved on or out. Accepting an
-        // applicant in a manual round moves them to the next round straight away, so the round's own record is needed.
-        $appIds = ApplicationRoundHistory::where('round_id', $round_id)->pluck('application_id')
-            ->merge(ProgramApplication::where('current_round_id', $round_id)->pluck('id'))
-            ->unique()
-            ->values();
+        [$mapped, $stats] = RoundApplicantList::build($round);
 
-        $applications = ProgramApplication::with(['reviewer', 'user:id,first_name,last_name,image'])->whereIn('id', $appIds)->get();
-
-        // Stats always from history (accurate regardless of round state)
-        $history = ApplicationRoundHistory::where('round_id', $round_id)->get();
-
-        // A row still "in progress" for an applicant who has moved on is an advance that was never closed in the history
-        $leftRound = fn ($row) => $row->outcome === 'in_progress'
-            && $applications->firstWhere('id', $row->application_id)?->current_round_id !== (int) $round_id;
-        $history->each(fn ($row) => $leftRound($row) ? $row->outcome = 'advanced' : null);
-
-        $stats = [
-            'total'              => $applications->count(),
-            'advanced_count'     => $history->where('outcome', 'advanced')->count(),
-            'not_selected_count' => $history->where('outcome', 'not_selected')->count(),
-            'awarded_count'      => $history->where('outcome', 'awarded')->count(),
-            'in_progress_count'  => $history->where('outcome', 'in_progress')->count(),
-            //'reviewed_by'         => $round->reviewers,
-            // Reviewer fees of a finalized round that have not been started yet (drives the fallback "Start reviewer payments" button)
-            'reviewer_payments_to_start' => $round->status === 'finalized'
-                ? ReviewerOrder::where('round_id', $round->id)
-                    ->where('order_type', 'round_review')
-                    ->where('work_status', 'approved')
-                    ->whereIn('payment_status', ['unpaid', 'pending', 'failed'])
-                    ->where('fee_amount', '>', 0)
-                    ->count()
-                : 0,
-        ];
-
-        $scoresByApplication = \App\Models\Programs\Rounds\ApplicationScore::where('round_id', $round_id)
-            ->whereIn('application_id', $applications->pluck('id'))
-            ->get()
-            ->groupBy('application_id');
-
-        // Who is reviewing each application in this round (shown in the "Reviewed By" column)
-        $assignmentsByApplication = \App\Models\Programs\Rounds\ReviewerApplicationAssignment::with('reviewer:id,first_name,last_name,image')
-            ->where('round_id', $round_id)
-            ->whereIn('application_id', $applications->pluck('id'))
-            ->get()
-            ->groupBy('application_id');
-
-        $historyByApplication = $history->keyBy('application_id');
-
-        // Where the AI is with each application (its newest review), so the table can say "AI suggestion 57" or "AI needs attention" and not just "Not scored"
-        $aiByApplication = collect();
-        if ($round->usesAi()) {
-            $latestAi = \App\Models\Programs\Ai\ApplicationAiReview::where('round_id', $round_id)->where('status', '!=', 'stale')
-                ->whereIn('application_id', $applications->pluck('id'))->selectRaw('MAX(id) as id')->groupBy('application_id');
-            $aiByApplication = \App\Models\Programs\Ai\ApplicationAiReview::whereIn('id', $latestAi)->get(['id', 'application_id', 'status', 'suggested_total'])->keyBy('application_id');
+        // summary=1: only the counts (the page's cards), not every applicant
+        if ($request->boolean('summary')) {
+            return response()->json(['success' => true, 'message' => 'Round summary retrieved', 'stats' => $stats, 'data' => ['stats' => $stats]], 200);
         }
 
-        $mapped = $applications->map(function ($app) use ($round_id, $round, $scoresByApplication, $assignmentsByApplication, $historyByApplication, $aiByApplication) {
-            // Get this app's outcome in this specific round from history
-            $roundHistory = $historyByApplication->get($app->id);
+        if (! RoundApplicantList::wanted($request)) {
+            return response()->json([
+                'applications' => $mapped,
+                'stats'        => $stats,
+            ], 200);
+        }
 
-            // "Scored" has to be backed by this round's own scores. An application row that still says scored, with a
-            // score left over from an earlier round and nothing scored here, is not scored in this round (read-only fix
-            // for the response: nothing is saved).
-            if ((int) $app->current_round_id === (int) $round_id
-                && $app->round_status === 'scored'
-                && $scoresByApplication->get($app->id, collect())->isEmpty()) {
-                $app->round_status = ($roundHistory?->submitted_at || (int) $round->round_number === 1) ? 'submitted' : 'draft';
-                $app->average_score = null;
-                $app->is_eligible_to_advance = false;
-            }
-
-            // Advanced into this round but nothing handed in yet: no scores or answers to show, and why
-            $participation = RoundParticipation::for($app, $round, $roundHistory);
-
-            $roundScores = $participation['submitted'] ? $scoresByApplication->get($app->id, collect()) : collect();
-            $criteriaCount = is_array($round->scoring_criteria) ? count($round->scoring_criteria) : 0;
-            // Human scores take precedence; AI scores only count while nobody has scored
-            $humanScores = $roundScores->filter(fn ($score) => ($score->source ?? 'human') === 'human');
-            $average = $roundScores->isNotEmpty() ? round((float) ($humanScores->isNotEmpty() ? $humanScores : $roundScores)->avg('total_score'), 1) : null;
-
-            $assignments = $assignmentsByApplication->get($app->id, collect());
-
-            return [
-                ...$app->toArray(),
-                ...$app->applicantProfile(),
-                'reviewers' => $assignments->map(fn ($assignment) => [
-                    'user_id' => $assignment->reviewer_id,
-                    'name' => trim(($assignment->reviewer?->first_name ?? '') . ' ' . ($assignment->reviewer?->last_name ?? '')),
-                    'image' => $assignment->reviewer?->image,
-                    'status' => $assignment->status,
-                ])->values(),
-                'assigned_reviewers_count' => $assignments->count(),
-                'completed_reviews_count' => $roundScores->pluck('reviewer_id')->unique()->count(),
-                // What the reviewers said, ready to show in the table (sortable, and good for deciding a manual round)
-                'review_summary' => [
-                    'reviewers_scored' => $roundScores->count(),
-                    'average_score' => $average,
-                    'rubric_mode' => $round->rubric_mode,
-                    'criteria_count' => $criteriaCount,
-                    'passed' => ($round->rubric_mode === 'pass_fail' && $average !== null && $criteriaCount > 0)
-                        ? (int) round(($average / 100) * $criteriaCount)
-                        : null,
-                ],
-                'participation' => $participation,
-                'ai_review' => ($ai = $aiByApplication->get($app->id)) ? ['status' => $ai->status, 'suggested_total' => $ai->suggested_total !== null ? (float) $ai->suggested_total : null] : null,
-                'round_outcome' => $roundHistory?->outcome,      // ← what happened in THIS round
-                'round_score'   => $roundHistory?->average_score, // ← score in THIS round
-                'status' => [
-                    'value' => $app->status,
-                    'color' => config('status.program_application.' . $app->status, 'gray'),
-                ],
-                'round_status' => [
-                    'value' => $app->round_status,
-                    'color' => config('status.program_application_round.' . $app->round_status, 'gray'),
-                ],
-                'knockout_status' => [
-                    'value' => $app->knockout_status,
-                    'color' => config('status.knockout.' . $app->knockout_status, 'gray'),
-                ],
-                'funding_setup_status' => [
-                    'value' => $app->funding_setup_status,
-                    'color' => config('status.funding_setup.' . $app->funding_setup_status, 'gray'),
-                ],
-            ];
-        });
+        $list = RoundApplicantList::list($mapped, $request, $round);
+        [$items, $page] = $list->fetch();
+        $data = [
+            'items' => $items->values(),
+            'facets' => $list->facets(RoundApplicantList::FACETS),
+            'filter_schema' => $list->filterSchema(),
+            'stats' => $stats,
+            'export_truncated' => $list->exportTruncated(),
+        ];
+        if ($page) {
+            $data['pagination'] = ApiContract::pagination($page);
+        }
 
         return response()->json([
-            'applications' => $mapped,
-            'stats'        => $stats,
+            'success' => true,
+            'message' => 'Round applications retrieved',
+            'applications' => $items->values(),
+            'stats' => $stats,
+            'data' => $data,
         ], 200);
+    }
+
+    /**
+     * GET programs/rounds/{round}/applications/score-line?mode=accept|reject&score=N
+     * What a "decide by score" line would do in a manual round, without doing it: the applicants still to be decided who
+     * have submitted and sit at or above the line (accept) or at or below it (reject), and how many have no score yet.
+     * A pass / fail round counts criteria passed (0 to the number of criteria); the others points (0 to 100).
+     */
+    public function scoreLine(Request $request, $round_id)
+    {
+        $round = ProgramRound::findOrFail($round_id);
+        (new ProgramAccess())->authorizeRound(auth()->user(), $round);
+        $data = $request->validate(['mode' => 'required|in:accept,reject', 'score' => 'nullable|numeric']);
+
+        $passFail = $round->rubric_mode === 'pass_fail';
+        $criteria = is_array($round->scoring_criteria) ? count($round->scoring_criteria) : 0;
+        $top = $passFail ? max($criteria, 1) : 100;
+        $score = isset($data['score']) ? min($top, max(0, (float) $data['score'])) : null;
+
+        [$mapped] = RoundApplicantList::build($round);
+        $line = RoundApplicantList::scoreLine($mapped, $round, $data['mode'], $score);
+
+        return response()->json(['success' => true, 'message' => 'Score line preview', 'data' => [
+            'mode' => $data['mode'],
+            'score' => $score,
+            'pass_fail' => $passFail,
+            'criteria_count' => $criteria,
+            'top' => $top,
+            'waiting' => $line['waiting'],
+            'scored' => $line['scored'],
+            'unscored' => $line['unscored'],
+            'count' => $line['rows']->count(),
+            'items' => $line['rows']->map(fn ($a) => [
+                'id' => $a['id'],
+                'name' => $a['startup_name'] ?? RoundApplicantList::name($a),
+                'score' => RoundApplicantList::lineScore($a, $passFail),
+            ])->values(),
+        ]], 200);
+    }
+
+    /**
+     * POST programs/rounds/{round}/applications/decide
+     * Accept (advance) or reject many applicants of a manual round at once, checked here rather than in the browser:
+     *   action  advance | reject
+     *   ids     the applicants picked, or
+     *   score   a score line instead of ids (advance: at or above it; reject: at or below it), see scoreLine
+     *   reason  the note kept with a rejection (required to reject)
+     * Each applicant goes through the same single advance / reject as one by one. Skipped (and why): not in this round
+     * now, already decided, or (to advance) not submitted yet. Answers {done: [ids], skipped: [{id, reason}], failed: [{id, message}]}.
+     */
+    public function decideMany(Request $request, $round_id)
+    {
+        $round = ProgramRound::findOrFail($round_id);
+        (new ProgramAccess())->authorizeRound(auth()->user(), $round);
+        if (! \App\Service\Program\ProgramAccess::owns($round->program)) {
+            return response()->json(['message' => 'Only the program team can decide applications.', 'error' => 'Unauthorized'], 403);
+        }
+        $data = $request->validate([
+            'action' => 'required|in:advance,reject',
+            'ids' => 'required_without:score|array|max:1000',
+            'ids.*' => 'integer',
+            'score' => 'required_without:ids|nullable|numeric',
+            'reason' => 'required_if:action,reject|nullable|string|max:2000',
+        ]);
+        if ($round->advancement_mode !== 'manual') {
+            return response()->json(['message' => 'This round decides by its own rule when it is finalized.', 'error' => 'Round does not allow manual decisions'], 422);
+        }
+
+        [$mapped] = RoundApplicantList::build($round);
+        $rows = $mapped->keyBy('id');
+        $ids = array_key_exists('ids', $data) && $data['ids'] !== null
+            ? array_values(array_unique(array_map('intval', $data['ids'])))
+            : RoundApplicantList::scoreLine($mapped, $round, $data['action'] === 'advance' ? 'accept' : 'reject', (float) $data['score'])['rows']->pluck('id')->all();
+
+        $done = [];
+        $skipped = [];
+        $failed = [];
+        foreach ($ids as $id) {
+            $row = $rows->get($id);
+            $reason = match (true) {
+                ! $row || (int) ($row['current_round_id'] ?? 0) !== (int) $round->id => 'not_in_round',
+                RoundApplicantList::decision($row) !== 'pending' => 'decided',
+                $data['action'] === 'advance' && RoundApplicantList::awaiting($row) => 'awaiting',
+                default => null,
+            };
+            if ($reason) {
+                $skipped[] = ['id' => $id, 'reason' => $reason];
+                continue;
+            }
+
+            $application = ProgramApplication::find($id);
+            $single = new Request(['notes' => $data['action'] === 'reject' ? $data['reason'] : null]);
+            $response = $data['action'] === 'advance' ? $this->advanceManual($single, $application) : $this->rejectManual($single, $application);
+            if ($response->getStatusCode() < 300) {
+                $done[] = $id;
+            } else {
+                $body = $response->getData(true);
+                $failed[] = ['id' => $id, 'message' => $body['message'] ?? $body['error'] ?? 'Could not be decided.'];
+            }
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => count($done).' decided, '.count($skipped).' skipped, '.count($failed).' failed.',
+            'data' => ['done' => $done, 'skipped' => $skipped, 'failed' => $failed],
+        ], 200);
+    }
+
+    /**
+     * GET programs/{program}/round-applications
+     * Everyone in the program once, in the round they are in now (each round's own list also holds people who moved on
+     * from it), with the round attached as `in_round`. The program's team sees every round; a Business Coach sees the
+     * rounds they review (as before, when the page read each round's list on its own).
+     * Takes the shared list request: search, filters[round|status|ai|sector][], sort (applied|name), page, export.
+     */
+    public function programApplications(Request $request, Program $program)
+    {
+        $access = new ProgramAccess();
+        $access->authorizeProgramStaff(auth()->user(), $program);
+
+        $rounds = ProgramRound::where('program_id', $program->id)->orderBy('round_number')->get();
+        if (! $access->ownsProgram(auth()->user(), $program)) {
+            $mine = \App\Models\Programs\Rounds\RoundReviewer::where('user_id', auth()->id())->whereIn('round_id', $rounds->pluck('id'))->pluck('round_id')->all();
+            $rounds = $rounds->filter(fn ($r) => in_array($r->id, $mine))->values();
+        }
+
+        $rows = collect();
+        foreach ($rounds as $round) {
+            [$mapped] = RoundApplicantList::build($round);
+            $mapped->filter(fn ($a) => ($a['participation']['is_current'] ?? null) !== false)
+                ->each(fn ($a) => $rows->push($a + ['in_round' => ['id' => $round->id, 'round_name' => $round->round_name, 'round_number' => (int) $round->round_number]]));
+        }
+
+        $statusKey = fn ($a) => RoundApplicantList::awaiting($a) ? 'awaiting'
+            : (($d = RoundApplicantList::decision($a)) === 'pending' ? 'in_review' : $d);
+        $aiGroup = fn ($a) => match ($a['ai_review']['status'] ?? null) {
+            'queued', 'extracting', 'analyzing' => 'working',
+            'ready' => 'ready',
+            'needs_attention', 'failed' => 'attention',
+            default => null,
+        };
+        $name = fn ($a) => ($a['startup_name'] ?? null) ?: (($a['business_name'] ?? null) ?: (($a['contact_person_name'] ?? null) ?: (($a['applicant_name'] ?? null) ?: '#'.$a['id'])));
+        $applied = fn ($a) => ($v = $a['created_at'] ?? null) ? \Illuminate\Support\Carbon::parse($v)->format('Y-m-d H:i:s') : '';
+
+        $list = \App\Support\CollectionList::for($rows, $request)
+            ->search(fn ($a) => implode(' ', [$name($a), $a['contact_person_name'] ?? '', $a['applicant_name'] ?? '', $a['contact_person_email'] ?? '', $a['email'] ?? '', $a['in_round']['round_name']]))
+            ->filter('id', fn ($a) => $a['id'])
+            ->filter('round', fn ($a) => $a['in_round']['id'])
+            ->filter('status', $statusKey)
+            ->filter('ai', $aiGroup)
+            ->filter('sector', fn ($a) => RoundApplicantList::clean($a['sector'] ?? null))
+            ->sortable(['applied' => $applied, 'name' => fn ($a) => mb_strtolower($name($a))], default: '-applied');
+
+        [$items, $page] = $list->fetch();
+        $data = [
+            'items' => $items->values(),
+            'facets' => $list->facets(['round', 'status', 'ai', 'sector']),
+            'stats' => ['total' => $rows->count(), 'rounds' => $rounds->count()],
+            'export_truncated' => $list->exportTruncated(),
+        ];
+        if ($page) {
+            $data['pagination'] = ApiContract::pagination($page);
+        }
+
+        return response()->json(['success' => true, 'message' => 'Program applications retrieved', 'data' => $data], 200);
     }
 
     public function application_show($application_id)
@@ -443,22 +519,10 @@ class ProgramRoundController extends Controller
             'participation' => $participation,
             'average_score' => $averageScore,
             'my_review_assignment' => $myReviewAssignment,
-            'status' => [
-                'value' => $application->status,
-                'color' => config('status.program_application.' . $application->status, 'gray'),
-            ],
-            'round_status' => [
-                'value' => $roundStatus,
-                'color' => config('status.program_application_round.' . $roundStatus, 'gray'),
-            ],
-            'knockout_status' => [
-                'value' => $knockoutStatus,
-                'color' => config('status.knockout.' . $knockoutStatus, 'gray'),
-            ],
-            'funding_setup_status' => [
-                'value' => $application->funding_setup_status,
-                'color' => config('status.funding_setup.' . $application->funding_setup_status, 'gray'),
-            ],
+            'status' => \App\Support\ApiContract::statusMeta('program_application', $application->status),
+            'round_status' => \App\Support\ApiContract::statusMeta('program_application_round', $roundStatus),
+            'knockout_status' => \App\Support\ApiContract::statusMeta('knockout', $knockoutStatus),
+            'funding_setup_status' => \App\Support\ApiContract::statusMeta('funding_setup', $application->funding_setup_status),
         ];
     }
 
@@ -466,14 +530,15 @@ class ProgramRoundController extends Controller
      * A later round opens after the round before it closes. Rounds can be created at any time;
      * this only constrains the dates they are given.
      */
-    private function assertOpensAfterPreviousRound(int $programId, int $roundNumber, $openDate): void
+    private function assertOpensAfterPreviousRound(int $programId, int $roundNumber, ?\Carbon\CarbonInterface $opensAt): void
     {
-        if ($roundNumber < 2 || ! $openDate) {
+        if ($roundNumber < 2 || ! $opensAt) {
             return;
         }
 
         $previous = ProgramRound::where('program_id', $programId)->where('round_number', $roundNumber - 1)->first();
-        if (! $previous || ! $previous->close_date) {
+        $previousCloses = $previous?->closesAt();
+        if (! $previous || ! $previousCloses) {
             return;
         }
 
@@ -482,12 +547,36 @@ class ProgramRoundController extends Controller
             return;
         }
 
-        $previousClose = $previous->close_date->copy()->startOfDay();
-        if (\Carbon\Carbon::parse($openDate)->startOfDay()->lessThanOrEqualTo($previousClose)) {
+        if ($opensAt->lessThanOrEqualTo($previousCloses)) {
             throw ValidationException::withMessages([
-                'open_date' => ['Round ' . $roundNumber . ' must open after Round ' . ($roundNumber - 1) . ' closes on ' . $previousClose->format('j M Y') . ', unless Round ' . ($roundNumber - 1) . ' is finalized early.'],
+                'open_date' => ['Round ' . $roundNumber . ' must open after Round ' . ($roundNumber - 1) . ' closes on ' . ProgramSchedule::describe($previousCloses, $previous->scheduleTimezone()) . ', unless Round ' . ($roundNumber - 1) . ' is finalized early.'],
             ]);
         }
+    }
+
+    /** Round moment fields => the date field each one fills. */
+    private const ROUND_MOMENTS = ['opens_at' => 'open_date', 'closes_at' => 'close_date'];
+
+    /**
+     * Puts the parsed moments (UTC) in place of the raw ones and refuses a closing moment that is not after the
+     * opening one. $round is the saved round on an update (its other moment counts), null on a create.
+     */
+    private function withRoundMoments(array $validated, array $moments, ?ProgramRound $round): array
+    {
+        unset($validated['opens_at'], $validated['closes_at'], $validated['timezone']);
+        $opens = $moments['opens_at'] ?? $round?->opensAt();
+        $closes = $moments['closes_at'] ?? $round?->closesAt();
+        if ($moments !== [] && $opens && $closes && $closes->lte($opens)) {
+            throw ValidationException::withMessages(['closes_at' => ['The round must close after it opens.']]);
+        }
+
+        return array_merge($validated, $moments);
+    }
+
+    /** When the round being saved opens: the moment sent, else the start of the open date in the program's zone. */
+    private function sentOpening(array $validated, string $timezone): ?\Carbon\CarbonInterface
+    {
+        return $validated['opens_at'] ?? (isset($validated['open_date']) ? ProgramSchedule::dayBound($validated['open_date'], $timezone, false) : null);
     }
 
     public function store(Request $request, Program $program)
@@ -499,12 +588,17 @@ class ProgramRoundController extends Controller
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
+        // Moments sent with their time (opens_at / closes_at) fill open_date / close_date, so the date rules still apply
+        $moments = ProgramSchedule::readMoments($request, self::ROUND_MOMENTS, ProgramSchedule::forRequest($request));
+
         DB::beginTransaction();
         try {
             $validated = $request->validate([
                 'round_name' => 'required|string|max:100',
                 'open_date' => 'required|date',
-                'close_date' => 'required|date|after:open_date',
+                'close_date' => 'required|date|' . (isset($moments['closes_at']) ? 'after_or_equal' : 'after') . ':open_date',
+                'opens_at' => 'nullable|date',
+                'closes_at' => 'nullable|date',
                 'review_period_end' => 'nullable|date|after:close_date',
                 'announcement_date' => 'nullable|date|after:close_date',
 
@@ -518,6 +612,7 @@ class ProgramRoundController extends Controller
                 'round_questions.*.question_text' => 'nullable|string|max:255',
                 'round_questions.*.question_type' => 'required|in:knockout,short_answer,long_text,long_answer,paragraph,multiple_choice,checkbox,checkboxes,dropdown,yes_no,true_false,rating,rating_scale,linear_scale,number,email,phone,phone_number,url,url_website,video_link,date,time,datetime,date_time,file_upload,address,currency,currency_money,percentage,matrix,matrix_grid,ranking,signature,budget_breakdown,knockout_yes_no,location',
                 'round_questions.*.options' => 'nullable|array',
+                'round_questions.*.file_category' => 'nullable',
                 'round_questions.*.is_required' => 'nullable|boolean',
                 'round_questions.*.display_order' => 'nullable|integer|min:1',
                 'round_questions.*.knockout_fail_value' => 'nullable|string|max:45',
@@ -534,6 +629,8 @@ class ProgramRoundController extends Controller
                 // Reviewer settings
                 'assignment_type' => 'nullable|in:owner_only,internal,external',
                 'assignment_method' => 'nullable|in:manual,round_robin,load_balanced',
+                // Share applications out by the coaches' expertise (round robin / load balanced only)
+                'match_expertise' => 'sometimes|boolean',
                 'min_reviewers_required' => 'nullable|integer|min:1',
 
                 // Advancement settings
@@ -555,14 +652,16 @@ class ProgramRoundController extends Controller
 
             $validated['program_id'] = $program->id;
             $validated['round_number'] = $rounds ? $rounds + 1 : 1;
-            $this->assertOpensAfterPreviousRound($program->id, $validated['round_number'], $validated['open_date']);
+            $validated = $this->withRoundMoments($validated, $moments, null);
+            $this->assertOpensAfterPreviousRound($program->id, $validated['round_number'], $this->sentOpening($validated, $program->scheduleTimezone()));
             $validated['rubric_mode'] = $validated['rubric_mode'] ?? 'weighted';
             $validated['assignment_type'] = $validated['assignment_type'] ?? 'owner_only';
             $validated['assignment_method'] = $validated['assignment_method'] ?? 'manual';
             $validated['advancement_mode'] = $validated['advancement_mode'] ?? 'manual';
             $validated['status'] = 'draft';
 
-            $round = ProgramRound::create($validated);
+            // round_questions are saved as the round's questions below, not as a column of the round
+            $round = ProgramRound::create(\Illuminate\Support\Arr::except($validated, ['round_questions']));
             app(\App\Service\AiReview\AiRoundSettings::class)->record($aiChanges, $round);
 
             if ($request->has('round_questions') || $request->has('knockout_questions')) {
@@ -581,7 +680,7 @@ class ProgramRoundController extends Controller
                     'knockout_fail_value' => $q['knockout_fail_value'] ?? null,
                 ];
                 $questionData = $matchScore->prepareQuestionForSave($round, $questionData + array_intersect_key($q, array_flip([
-                    'use_in_match_score', 'match_points', 'match_answers',
+                    'use_in_match_score', 'match_points', 'match_answers', 'file_category',
                 ])));
                 RoundCustomQuestion::create($questionData);
             }
@@ -637,12 +736,16 @@ class ProgramRoundController extends Controller
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
+        $moments = ProgramSchedule::readMoments($request, self::ROUND_MOMENTS, ProgramSchedule::forRequest($request));
+
         DB::beginTransaction();
         try {
             $validated = $request->validate([
                 'round_name' => 'sometimes|required|string|max:100',
                 'open_date' => 'sometimes|required|date',
                 'close_date' => 'sometimes|required|date',
+                'opens_at' => 'sometimes|nullable|date',
+                'closes_at' => 'sometimes|nullable|date',
                 'review_period_end' => 'nullable|date',
                 'announcement_date' => 'nullable|date',
                 'rubric_mode' => 'sometimes|in:weighted,simple_total,pass_fail',
@@ -655,6 +758,7 @@ class ProgramRoundController extends Controller
                 'round_questions.*.question_text' => 'nullable|string|max:255',
                 'round_questions.*.question_type' => 'required|in:knockout,short_answer,long_text,long_answer,paragraph,multiple_choice,checkbox,checkboxes,dropdown,yes_no,true_false,rating,rating_scale,linear_scale,number,email,phone,phone_number,url,url_website,video_link,date,time,datetime,date_time,file_upload,address,currency,currency_money,percentage,matrix,matrix_grid,ranking,signature,budget_breakdown,knockout_yes_no,location',
                 'round_questions.*.options' => 'nullable|array',
+                'round_questions.*.file_category' => 'nullable',
                 'round_questions.*.is_required' => 'nullable|boolean',
                 'round_questions.*.display_order' => 'nullable|integer|min:1',
                 'round_questions.*.knockout_fail_value' => 'nullable|string|max:45',
@@ -669,6 +773,7 @@ class ProgramRoundController extends Controller
                 'required_documents' => 'nullable|array',
                 'assignment_type' => 'sometimes|in:owner_only,internal,external,both',
                 'assignment_method' => 'sometimes|in:manual,round_robin,load_balanced',
+                'match_expertise' => 'sometimes|boolean',
                 'min_reviewers_required' => 'nullable|integer|min:1',
                 'advancement_mode' => 'sometimes|in:manual,score_threshold,fixed_quota',
                 'score_threshold' => 'nullable|numeric|min:0|max:100',
@@ -678,11 +783,13 @@ class ProgramRoundController extends Controller
             $aiChanges = app(\App\Service\AiReview\AiRoundSettings::class)->apply($validated, $round, $request);
 
             // The status is never set from here: publishing and finalizing have their own endpoints with their own checks
+            $validated = $this->withRoundMoments($validated, $moments, $round);
             if (array_key_exists('open_date', $validated)) {
-                $this->assertOpensAfterPreviousRound($round->program_id, (int) $round->round_number, $validated['open_date']);
+                $this->assertOpensAfterPreviousRound($round->program_id, (int) $round->round_number, $this->sentOpening($validated, $round->scheduleTimezone()));
             }
 
-            $round->update($validated);
+            // round_questions are saved as the round's questions below, not as a column of the round (as in store)
+            $round->update(\Illuminate\Support\Arr::except($validated, ['round_questions']));
             app(\App\Service\AiReview\AiRoundSettings::class)->record($aiChanges, $round);
 
             $matchScore = app(RoundMatchScore::class);
@@ -707,7 +814,7 @@ class ProgramRoundController extends Controller
                 ];
                 $questionData = $matchScore->prepareQuestionForSave($round, array_merge(
                     $questionData,
-                    array_intersect_key($q, array_flip(['use_in_match_score', 'match_points', 'match_answers']))
+                    array_intersect_key($q, array_flip(['use_in_match_score', 'match_points', 'match_answers', 'file_category']))
                 ), $question);
                 $question ? $question->update($questionData) : RoundCustomQuestion::create($questionData);
             }
@@ -858,8 +965,8 @@ class ProgramRoundController extends Controller
                 $program->status = 'awarded';
                 $program->save();
 
-                $awarded = ProgramApplication::where('program_id', $round->program_id)->where('status', 'awarded')->count();
-                $this->programNotification->send('program.awarded', [$program->owner], [
+                $awarded = ProgramApplication::where('program_id', $round->program_id)->whereIn('status', ['awarded', 'in_monitoring', 'completed'])->count();
+                $this->programNotification->send('program.awarded', \App\Service\Program\ProgramTeam::members($program)->all(), [
                     'program_title' => $program->program_title,
                     'awarded_count' => $awarded,
                     'total_amount'  => $awarded * $program->funding_per_business,
@@ -879,6 +986,25 @@ class ProgramRoundController extends Controller
         return $this->finalizeScoredRound($round);
     }
 
+    /**
+     * DECISION-1 (warn only): a score-based round with applications that have no score yet would turn them all down for
+     * not being reviewed, so the preview says so. In an AI-only round the reason is usually that the AI review is off or
+     * has not run, so it says that.
+     */
+    private function unscoredBlocker(ProgramRound $round, int $unscored): ?string
+    {
+        if ($unscored < 1) return null;
+
+        $apps = $unscored === 1 ? '1 application has' : "{$unscored} applications have";
+        if ($round->isAiOnly()) {
+            return config('ai_review.enabled')
+                ? "{$apps} no score yet: the AI review has not run for them. Finalizing now turns them down without a review; wait for it to finish (or re-run it) first."
+                : "{$apps} no score yet: AI review is switched off, so this AI-only round cannot score them. Finalizing now turns them down without a review; turn AI review on, or change the round to manual review.";
+        }
+
+        return "{$apps} no score yet. Finalizing now turns them down without a review.";
+    }
+
     /** Apply scoring outcomes and finish a scored round after its preconditions pass. */
     private function finalizeScoredRound(ProgramRound $round)
     {
@@ -893,6 +1019,7 @@ class ProgramRoundController extends Controller
                 })->get();
             $unreviewedApplications->each(function ($app) {
                     $app->round_status = 'not_selected';
+                    $app->status = 'rejected'; // ISSUE-29: not "approved" from an earlier round
                     $app->save();
                     $this->roundHistory->update($app, 'not_selected', 'Review period ended without a completed score');
                 });
@@ -912,6 +1039,7 @@ class ProgramRoundController extends Controller
             // 3. Immediately handle failed apps
             foreach ($failedKoApps as $app) {
                 $app->round_status = 'not_selected';
+                $app->status = 'rejected'; // ISSUE-29
                 $this->roundHistory->update($app, 'not_selected', 'failed knockout');
                 $app->save();
 
@@ -969,6 +1097,7 @@ class ProgramRoundController extends Controller
 
                     if ($awardedCount >= $maxAwardees) {
                         $app->round_status = 'not_selected';
+                        $app->status = 'rejected'; // ISSUE-29
 
                         // not_selected on a round
                         $this->roundHistory->update($app, 'not_selected', 'max limit');
@@ -1026,6 +1155,7 @@ class ProgramRoundController extends Controller
                 }
 
                 $app->round_status = 'not_selected';
+                $app->status = 'rejected'; // ISSUE-29
 
                 // not_selected on a round
                 $this->roundHistory->update($app, 'not_selected', 'low avg score');
@@ -1038,7 +1168,7 @@ class ProgramRoundController extends Controller
                 $program->save();
 
                 // Notify program owner
-                $this->programNotification->send('program.awarded', [$round->program->owner], [
+                $this->programNotification->send('program.awarded', \App\Service\Program\ProgramTeam::members($round->program)->all(), [
                     'program_title'   => $round->program->program_title,
                     'awarded_count' => $awardedCount,
                     'total_amount'  => $awardedCount * $round->program->funding_per_business,
@@ -1138,7 +1268,7 @@ class ProgramRoundController extends Controller
         }
 
         if ($round->status !== 'finalized') {
-            return response()->json(['message' => 'Finalize the round first. Reviewer payments start when it is finalized.'], 422);
+            return response()->json(['message' => 'Finalize the round first. Business Coach payments start when it is finalized.'], 422);
         }
 
         $result = $this->startReviewerPayments($round);
@@ -1241,7 +1371,14 @@ class ProgramRoundController extends Controller
         }
 
         if ($rule === 'secondary_metric') {
-            $tie['resolved'] = 'Tied applicants are ranked by their AI match score.';
+            // ISSUE-24: the match score only settles it when it differs at the cut-off; when the last one in and the first
+            // one out have the same match score too, it is still a tie for the owner to decide, never an arbitrary pick
+            $byMatch = $tied->sortByDesc(fn ($a) => (float) $a->match_score)->values();
+            $lastIn = $byMatch[$slots - 1] ?? null;
+            $firstOut = $byMatch[$slots] ?? null;
+            $stillTied = $lastIn && $firstOut && (float) $lastIn->match_score === (float) $firstOut->match_score;
+            $tie['resolved'] = $stillTied ? null : 'Tied applicants are ranked by their match score.';
+            if ($stillTied) $tie['still_tied_on_match_score'] = true;
         }
 
         return ['advanced' => $ranked->take($cap)->all(), 'not_selected' => $ranked->slice($cap)->values()->all(), 'tie' => $tie];
@@ -1249,6 +1386,11 @@ class ProgramRoundController extends Controller
 
     private function tieMessage(array $tie): string
     {
+        if (! empty($tie['still_tied_on_match_score'])) {
+            return "{$tie['tied']} applicants tie at {$tie['score']} and have the same match score too, and only {$tie['slots']} place(s) are left. "
+                . 'Decide them yourself, or change the tie-breaker to let all tied applicants through.';
+        }
+
         return "{$tie['tied']} applicants tie at {$tie['score']} and only {$tie['slots']} place(s) are left, so the round cannot choose between them. "
             . 'Open the round setup and pick a tie-breaker (let all tied applicants through, or rank them by match score), or decide them yourself.';
     }
@@ -1296,6 +1438,8 @@ class ProgramRoundController extends Controller
         $isFinal = $this->isFinalRound($round);
         $manual = ($round->advancement_mode ?? 'manual') === 'manual';
         $blockers = [];
+        // Things the owner should know before finalizing, that do not stop it
+        $warnings = [];
 
         if ($round->status === 'finalized') {
             $blockers[] = 'This round is already finalized.';
@@ -1342,8 +1486,10 @@ class ProgramRoundController extends Controller
                     : "{$count} applications still need a decision. Accept or reject each one first.";
             }
         } else {
-            $unscored = $apps->filter(fn ($a) => in_array($a->round_status, ['draft', 'submitted', 'assigned', 'under_review'], true) || $a->round_status === null)->values();
             $failedKnockout = $apps->where('knockout_status', 'failed')->values();
+            // An applicant who failed a knockout is listed once, as a failed knockout, not again as unscored
+            $unscored = $apps->filter(fn ($a) => $a->knockout_status !== 'failed'
+                && (in_array($a->round_status, ['draft', 'submitted', 'assigned', 'under_review'], true) || $a->round_status === null))->values();
 
             $scored = $apps->where('round_status', 'scored')->where('knockout_status', '!=', 'failed')->values();
             $selection = $this->selectByRule($round, $scored);
@@ -1353,6 +1499,11 @@ class ProgramRoundController extends Controller
 
             if ($tie && empty($tie['resolved'])) {
                 $blockers[] = $this->tieMessage($tie);
+            }
+
+            // DECISION-1 (owner, 27 Nov: warn only): say who would be turned down without a score, but do not block
+            if ($message = $this->unscoredBlocker($round, $unscored->count())) {
+                $warnings[] = $message;
             }
         }
 
@@ -1395,6 +1546,8 @@ class ProgramRoundController extends Controller
                 'payment_status' => $order->payment_status,
                 'name' => trim(($order->reviewer?->first_name ?? '') . ' ' . ($order->reviewer?->last_name ?? '')),
                 'fee_type' => $feeType,
+                // internal = one of the organisation's own team; external = an invited Business Coach or service provider
+                'reviewer_type' => $assignment?->reviewer_type,
                 'rate' => (float) ($assignment?->reviewer_fee ?? 0),
                 'assigned' => $assigned,
                 'scored' => $scored,
@@ -1424,6 +1577,7 @@ class ProgramRoundController extends Controller
                 'is_final_round' => $isFinal,
                 'destination' => $isFinal ? 'awarded' : 'round ' . ($round->round_number + 1),
                 'blockers' => $blockers,
+                'warnings' => $warnings,
                 'can_finalize' => empty($blockers),
                 'advanced' => array_map($person, $advanced),
                 'not_selected' => array_map($person, $notSelected),
@@ -1491,7 +1645,7 @@ class ProgramRoundController extends Controller
 
             if ($isFinalRound) {
                 $awardedCount = ProgramApplication::where('program_id', $program->id)
-                    ->where('status', 'awarded')->count();
+                    ->whereIn('status', ['awarded', 'in_monitoring', 'completed'])->count();
 
                 $maxAwardees = $program->max_awardees ?? floor($program->total_program_amount / $program->funding_per_business);
 
@@ -1556,7 +1710,7 @@ class ProgramRoundController extends Controller
                 ]);
 
                 // to program owner
-                $this->programNotification->send('program.awarded', [$application->program->owner], [
+                $this->programNotification->send('program.awarded', \App\Service\Program\ProgramTeam::members($application->program)->all(), [
                     'program_title' => $application->program->program_title,
                     'awarded_count' => $awardedCount,
                     'total_amount'  => $awardedCount * $application->program->funding_per_business,
@@ -1620,6 +1774,8 @@ class ProgramRoundController extends Controller
             ]);
 
             $application->round_status = 'not_selected';
+            // ISSUE-29: someone turned down in a later round is no longer "approved" (from advancing earlier)
+            $application->status = 'rejected';
             $this->roundHistory->update(
                 $application, 'not_selected', $validated['notes'] ?? 'Manually rejected'
             );
@@ -1687,6 +1843,10 @@ class ProgramRoundController extends Controller
             // A round that has not opened can only be read
             if ($application->currentRound && ($reason = $application->currentRound->notOpenReason())) {
                 return response()->json(['message' => $reason, 'error' => $reason], 422);
+            }
+            // ...and one past its closing time (date and time) takes nothing more
+            if ($application->currentRound && ($reason = $application->currentRound->closedReason())) {
+                return response()->json(['message' => $reason, 'error' => $reason, 'code' => 'round_closed'], 422);
             }
 
             if (!$application->currentRound || $application->currentRound->status !== 'published') {

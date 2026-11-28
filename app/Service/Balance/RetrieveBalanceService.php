@@ -83,7 +83,8 @@ class RetrieveBalanceService
             //echo "<pre>"; print_r($response); echo "</pre>"; // Debugging line
             //exit;
 
-        if ( ($response['status'] !== 200) && !$response['success'] ) {
+        // ISSUE-50: read LIPR's reply safely (a missing wallet answers without `success`)
+        if (! is_array($response) || (($response['status'] ?? null) !== 200 && ! ($response['success'] ?? false))) {
             return [
                 'success' => false,
                 'message' => $response['message'] ?? 'Lipr API error',
@@ -93,8 +94,8 @@ class RetrieveBalanceService
 
         return [
             'success' => true,
-            'message' => $response['message'],
-            'data' => $response['data'],
+            'message' => $response['message'] ?? null,
+            'data' => $response['data'] ?? null,
         ];
 
     }
@@ -104,5 +105,19 @@ class RetrieveBalanceService
         return $this->Client->accounts->retrieve($seller->connect_id);
     }
 
-}
 
+    /** The spendable balance in a LIPR wallet reply (field names differ by endpoint), or null when it has none. */
+    public static function availableOf($data): ?float
+    {
+        if (! is_array($data)) {
+            return null;
+        }
+        foreach (['availableBalance', 'available_balance', 'balance', 'currentBalance'] as $key) {
+            if (isset($data[$key]) && is_numeric($data[$key])) {
+                return (float) $data[$key];
+            }
+        }
+
+        return isset($data['wallet']) && is_array($data['wallet']) ? self::availableOf($data['wallet']) : null;
+    }
+}

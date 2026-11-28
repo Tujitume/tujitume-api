@@ -20,7 +20,7 @@ use App\Http\Controllers\Program\MilestonePreAgreementController;
 use App\Http\Controllers\Program\MilestoneVerificationController;
 use App\Http\Controllers\Program\ProgramApplicationController;
 use App\Http\Controllers\Program\ProgramApplicationsOverviewController;
-use App\Http\Controllers\Program\ProgramCustomFieldController;
+use App\Http\Controllers\Program\ProgramImportController;
 use App\Http\Controllers\Program\ProgramDashboardStatsController;
 use App\Http\Controllers\Program\ProgramController;
 use App\Http\Controllers\Program\ProgramDealRoomController;
@@ -28,6 +28,7 @@ use App\Http\Controllers\Program\ProgramDisbursementController;
 use App\Http\Controllers\Program\ProgramEmailTemplateController;
 use App\Http\Controllers\Program\ProgramMilestoneController;
 use App\Http\Controllers\Program\ProgramMetadataController;
+use App\Http\Controllers\Program\ProgramMediaController;
 use App\Http\Controllers\Program\ProgramServiceController;
 use App\Http\Controllers\Program\ProgramSupplierController;
 use App\Http\Controllers\Program\ProgramWalletController;
@@ -62,6 +63,7 @@ Route::prefix('/programs')->middleware(['program', 'program.response'])->group(f
     Route::post('applications/{application}/ai-review/rerun', [AiReviewController::class, 'rerun'])->whereNumber('application')->middleware('throttle:'.config('ai_review.rerun_throttle_per_minute', 6).',1');
     Route::post('applications/{application}/ai-review/findings', [AiReviewController::class, 'storeFinding'])->whereNumber('application');
     Route::get('applications/{application}/answers/{answer}/file', [\App\Http\Controllers\Program\ApplicationFileController::class, 'answerFile'])->whereNumber(['application', 'answer']);
+    Route::get('applications/{application}/documents/{document}/file', [\App\Http\Controllers\Program\ApplicationFileController::class, 'documentFile'])->whereNumber(['application', 'document']);
     Route::patch('ai-findings/{finding}', [AiReviewController::class, 'updateFinding'])->whereNumber('finding');
 
     Route::get('program-metadata', [ProgramMetadataController::class, 'index']);
@@ -77,6 +79,8 @@ Route::prefix('/programs')->middleware(['program', 'program.response'])->group(f
 
     Route::get('{program_id}/applications', [ProgramApplicationController::class, 'index']);
     Route::get('{program_id}/applications/awarded', [ProgramApplicationController::class, 'awarded']);
+    // Owner Program Deal Room: every awarded application across the owner's programs, as a server list
+    Route::get('owner/awarded-applications', [ProgramApplicationController::class, 'ownerAwarded']);
     Route::get('applications/{id}', [ProgramApplicationController::class, 'show']);
     Route::get('my-applications', [ProgramApplicationController::class, 'myPitches']);
     // Owner Applications page: one summary row per program (counts done by the database)
@@ -92,8 +96,13 @@ Route::prefix('/programs')->middleware(['program', 'program.response'])->group(f
     Route::get('store-watchlist/{pitch_id}', [ProgramController::class, 'store_watchlist']);
     Route::get('get-watchlist', [ProgramController::class, 'get_watchlist']);
 
-    Route::post('create-program', [ProgramController::class, 'store']);
+    Route::post('create-program', [ProgramController::class, 'store'])->middleware('subscribed');
     Route::post('programs/{program}', [ProgramController::class, 'update']);
+    // Cover image and intro video shown to applicants (removing is a POST so Editors may do it)
+    Route::post('programs/{program}/cover', [ProgramMediaController::class, 'uploadCover'])->whereNumber('program');
+    Route::post('programs/{program}/cover/remove', [ProgramMediaController::class, 'removeCover'])->whereNumber('program');
+    Route::post('programs/{program}/intro-video', [ProgramMediaController::class, 'setVideo'])->whereNumber('program');
+    Route::post('programs/{program}/intro-video/remove', [ProgramMediaController::class, 'removeVideo'])->whereNumber('program');
     // The app calls POST /programs/{id}/duplicate. The older doubled path stays so nothing that used it breaks.
     Route::post('{program}/duplicate', [ProgramController::class, 'duplicate'])->whereNumber('program');
     Route::post('/programs/{program}/duplicate', [ProgramController::class, 'duplicate']);
@@ -115,7 +124,8 @@ Route::prefix('/programs')->middleware(['program', 'program.response'])->group(f
     Route::post('delete-user', [ProgramController::class, 'delete_user']);
     Route::post('delete/role-user', [ProgramController::class, 'delete_roleUser']);
 
-    Route::get('accept-invitation', [ProgramController::class, 'update_user']);
+    // (GET accept-invitation used to run update_user, letting anyone change roles with a link: removed. Invitations are
+    // accepted at POST organization-invitations/accept.)
 
     // *** Program New Routes
     // What the owner reads on the program page: applicants, the money ledger and the activity feed (read only, paged)
@@ -127,6 +137,14 @@ Route::prefix('/programs')->middleware(['program', 'program.response'])->group(f
     Route::post('wallets/{wallet}/deposit-status', [ProgramWalletController::class, 'deposit_status']);
 
     Route::post('wallets/{wallet}/transfer', [ProgramWalletController::class, 'transferFromMainWallet']);
+    Route::post('wallets/{wallet}/move-back', [\App\Http\Controllers\Program\OrganizationWalletController::class, 'moveBack']);
+    // The organization wallet (DECISION-6): its own LIPR account and KES balance; Super Admins manage it
+    Route::get('organization-wallet', [\App\Http\Controllers\Program\OrganizationWalletController::class, 'show']);
+    Route::post('organization-wallet/setup', [\App\Http\Controllers\Program\OrganizationWalletController::class, 'setup']);
+    Route::post('organization-wallet/deposit', [\App\Http\Controllers\Program\OrganizationWalletController::class, 'deposit']);
+    Route::post('organization-wallet/deposit-status', [\App\Http\Controllers\Program\OrganizationWalletController::class, 'depositStatus']);
+    Route::post('organization-wallet/withdraw/code', [\App\Http\Controllers\Program\OrganizationWalletController::class, 'withdrawCode'])->middleware('throttle:6,10');
+    Route::post('organization-wallet/withdraw', [\App\Http\Controllers\Program\OrganizationWalletController::class, 'withdraw']);
 
     // Route::apiResource('applications/{application}/milestones', ProgramMilestoneController::class)->shallow();
 
@@ -145,6 +163,10 @@ Route::prefix('/programs')->middleware(['program', 'program.response'])->group(f
     Route::patch('verifications/{verification}/reject', [MilestoneVerificationController::class, 'reject']);
     Route::patch('verifications/{verification}/request-modification', [MilestoneVerificationController::class, 'requestModification']);
     Route::patch('verifications/{verification}/request-audit', [MilestoneVerificationController::class, 'requestAudit']);
+    // DECISION-9 / DECISION-8 change: pay the quoted audit fee, skip a suggested audit, cancel an open one
+    Route::patch('verifications/{verification}/pay-audit', [\App\Http\Controllers\Audits\ProjectManagerAuditController::class, 'programPay']);
+    Route::patch('verifications/{verification}/skip-audit', [\App\Http\Controllers\Audits\ProjectManagerAuditController::class, 'programSkip']);
+    Route::patch('verifications/{verification}/cancel-audit', [\App\Http\Controllers\Audits\ProjectManagerAuditController::class, 'programCancel']);
 
     Route::get('milestones/{milestone}/disbursement-data', [ProgramDisbursementController::class, 'disbursementData']);
     Route::apiResource('milestones/{milestone}/disbursements', ProgramDisbursementController::class)->shallow();
@@ -167,15 +189,21 @@ Route::prefix('/programs')->middleware(['program', 'program.response'])->group(f
 
     // G R A N T   R O U N D S
     // Route::get('rounds/{round}', [ProgramRoundController::class, 'show']); //added by owen
-    Route::apiResource('/{program}/rounds', ProgramRoundController::class)->shallow();
+    // `show` is showRound below (the resource's own GET rounds/{round} had no method and answered 500)
+    Route::apiResource('/{program}/rounds', ProgramRoundController::class)->shallow()->except(['show']);
     Route::get('rounds/{round}', [ProgramRoundController::class, 'showRound']);
     Route::patch('rounds/{round}', [ProgramRoundController::class, 'update']);
     Route::post('rounds/{round}/configuration-steps', [ProgramRoundController::class, 'confirmStep']);
     Route::delete('rounds/{round}', [ProgramRoundController::class, 'destroy']);
 
-    Route::post('rounds/{round}/publish', [ApplicationRoundProgressController::class, 'publish']);
+    Route::post('rounds/{round}/publish', [ApplicationRoundProgressController::class, 'publish'])->middleware('subscribed');
 
     Route::get('/rounds/{round}/applications', [ProgramRoundController::class, 'applications']);
+    // Decide by score: what a score line would do (preview), and deciding many applicants at once (checked on the server)
+    Route::get('/rounds/{round}/applications/score-line', [ProgramRoundController::class, 'scoreLine'])->whereNumber('round');
+    Route::post('/rounds/{round}/applications/decide', [ProgramRoundController::class, 'decideMany'])->whereNumber('round');
+    // Everyone in the program once, in the round they are in now (the all-rounds applications table; shared list request)
+    Route::get('{program}/round-applications', [ProgramRoundController::class, 'programApplications'])->whereNumber('program');
     Route::get('/rounds/{round}/finalize-preview', [ProgramRoundController::class, 'finalizePreview']);
     Route::post('/rounds/{round}/reviewer-payments', [ProgramRoundController::class, 'startPayments']);
     Route::get('/rounds/{round}/applications/active', [ApplicationRoundProgressController::class, 'activeApplications']);
@@ -193,14 +221,28 @@ Route::prefix('/programs')->middleware(['program', 'program.response'])->group(f
     Route::get('rounds/{round}/rounds-history', [ProgramApplicationController::class, 'roundsHistoryByRound']);
     Route::get('applications/{application}/rounds', [ApplicationRoundProgressController::class, 'index']);
 
+    // Program imports (Programs → Imports): the import's choices, the step reached and its file, so it can be continued
+    Route::get('imports', [ProgramImportController::class, 'index']);
+    Route::post('imports', [ProgramImportController::class, 'store'])->middleware('subscribed');
+    Route::get('imports/program-state/{program}', [ProgramImportController::class, 'programState'])->whereNumber('program');
+    Route::get('imports/{import}', [ProgramImportController::class, 'show'])->whereNumber('import');
+    Route::patch('imports/{import}', [ProgramImportController::class, 'update'])->whereNumber('import');
+    Route::post('imports/{import}/file', [ProgramImportController::class, 'uploadFile'])->whereNumber('import');
+    Route::get('imports/{import}/file', [ProgramImportController::class, 'downloadFile'])->whereNumber('import');
+    Route::post('imports/{import}/clear-file', [ProgramImportController::class, 'removeFile'])->whereNumber('import');
+    Route::get('imports/{import}/check', [ProgramImportController::class, 'check'])->whereNumber('import');
+    Route::post('imports/{import}/start', [ProgramImportController::class, 'start'])->whereNumber('import')->middleware('subscribed');
+    Route::post('imports/{import}/people', [ProgramImportController::class, 'people'])->whereNumber('import')->middleware('throttle:30,1');
+    Route::post('imports/{import}/suppliers', [ProgramImportController::class, 'suppliers'])->whereNumber('import')->middleware('throttle:30,1');
+    Route::post('imports/{import}/invite-coaches', [ProgramImportController::class, 'inviteCoaches'])->whereNumber('import')->middleware('throttle:5,1');
+    Route::post('imports/{import}/notify-inspectors', [ProgramImportController::class, 'notifyInspectors'])->whereNumber('import')->middleware('throttle:5,1');
+    Route::post('imports/{import}/notify-applicants', [ProgramImportController::class, 'notifyApplicants'])->whereNumber('import')->middleware('throttle:5,1');
+    Route::post('imports/{import}/notify-suppliers', [ProgramImportController::class, 'notifySuppliers'])->whereNumber('import')->middleware('throttle:5,1');
+    Route::post('imports/{import}/ai-review', [ProgramImportController::class, 'aiReview'])->whereNumber('import')->middleware('throttle:5,1');
+    Route::post('imports/{import}/ai-fix', [ProgramImportController::class, 'aiFix'])->whereNumber('import')->middleware('throttle:10,1');
+    Route::delete('imports/{import}', [ProgramImportController::class, 'destroy'])->whereNumber('import');
+
     // Questions & Answers
-    // Custom fields: the owner's definitions, scoring factors and info values
-    Route::get('{program}/fields', [ProgramCustomFieldController::class, 'index'])->whereNumber('program');
-    Route::post('{program}/fields', [ProgramCustomFieldController::class, 'store'])->whereNumber('program');
-    Route::post('{program}/fields/reorder', [ProgramCustomFieldController::class, 'reorder'])->whereNumber('program');
-    Route::put('{program}/info-values', [ProgramCustomFieldController::class, 'infoValues'])->whereNumber('program');
-    Route::patch('fields/{field}', [ProgramCustomFieldController::class, 'update'])->whereNumber('field');
-    Route::delete('fields/{field}', [ProgramCustomFieldController::class, 'destroy'])->whereNumber('field');
     Route::post('questions/import/google-form', [GoogleFormImportController::class, 'preview'])->middleware('throttle:20,1');
     Route::apiResource('rounds/{round}/questions', RoundQuestionController::class)->shallow();
     Route::patch('questions/{question}', [RoundQuestionController::class, 'update']); // added by owen
@@ -236,6 +278,7 @@ Route::prefix('/programs')->middleware(['program', 'program.response'])->group(f
     Route::get('third-party-providers', [\App\Http\Controllers\Program\ProviderWorkController::class, 'providers']);
 
     Route::get('rounds/{round}/reviewer-orders', [ReviewerOrderController::class, 'roundOrders']);
+    Route::get('owner/reviewer-orders', [ReviewerOrderController::class, 'ownerOrders']);
     Route::post('reviewer-orders/{order}/deliver', [ReviewerOrderController::class, 'deliver']);
     Route::post('reviewer-orders/{order}/request-modification', [ReviewerOrderController::class, 'requestModification']);
     Route::post('reviewer-orders/{order}/approve', [ReviewerOrderController::class, 'approve']);
@@ -257,6 +300,8 @@ Route::prefix('/programs')->middleware(['program', 'program.response'])->group(f
     Route::post('rounds/{round}/finalize', [ProgramRoundController::class, 'finalize']); // Process advancement
     Route::post('applications/{application}/advance', [ProgramRoundController::class, 'advanceManual']); // Manual advance
     Route::post('applications/{application}/reject', [ProgramRoundController::class, 'rejectManual']);
+    // Finish a funded application's monitoring without (more) checkpoints: it is then completed (owner decision 27 Nov)
+    Route::post('applications/{application}/close-monitoring', [\App\Http\Controllers\Program\MonitoringCloseController::class, 'close']);
 
     // Funding Setup & Supplier Directory
     Route::get('supplier-directory/{supplierId}/assigned-milestones', [SupplierDirectoryController::class, 'assignedMilestones']);
@@ -291,6 +336,9 @@ Route::prefix('/programs')->middleware(['program', 'program.response'])->group(f
 
     Route::prefix('/{program}/email-templates')->group(function () {
         Route::get('/', [ProgramEmailTemplateController::class, 'index']);
+        // Before {event}: these two are not events
+        Route::get('defaults', [ProgramEmailTemplateController::class, 'defaults']);
+        Route::patch('language', [ProgramEmailTemplateController::class, 'language']);
         Route::get('{event}', [ProgramEmailTemplateController::class, 'show']);
         Route::patch('{event}', [ProgramEmailTemplateController::class, 'upsert']);
         Route::delete('{event}', [ProgramEmailTemplateController::class, 'destroy']);
@@ -302,6 +350,7 @@ Route::prefix('/programs')->middleware(['program', 'program.response'])->group(f
     Route::post('milestones/{milestone}/agreements/{type}/comment', [MilestonePreAgreementController::class, 'comment']);
     Route::post('milestones/{milestone}/agreements/{type}/approve', [MilestonePreAgreementController::class, 'approve']);
     Route::post('milestones/{milestone}/agreements/{type}/reject', [MilestonePreAgreementController::class, 'reject']);
+    Route::post('milestones/{milestone}/agreements/{type}/reopen', [MilestonePreAgreementController::class, 'reopen']);
 
     // programs disbursement
     Route::post('milestones/{milestone}/release-funds', [ProgramDisbursementController::class, 'releaseFunds']);

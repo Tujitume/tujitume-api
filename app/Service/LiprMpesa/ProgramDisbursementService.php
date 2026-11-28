@@ -143,10 +143,10 @@ class ProgramDisbursementService
         DB::transaction(function () use ($disbursement, $wallet) {
             $disbursement->update(['status' => 'failed']);
 
-            // Return reserved funds back to balance
+            // Return reserved funds back to balance, with the fee the program paid on top
             $wallet->update([
                 'total_reserved' => $wallet->total_reserved - $disbursement->amount,
-                'balance'        => $wallet->balance + $disbursement->amount,
+                'balance'        => $wallet->balance + $disbursement->amount + (float) $disbursement->fee_amount,
             ]);
         });
 
@@ -213,13 +213,17 @@ class ProgramDisbursementService
     }
 
     // Initiate Disbursement
-    public function disburse(ProgramMilestone $milestone, $amountKes, $type = 'checkout')
+    public function disburse(ProgramMilestone $milestone, $amountKes, $type = 'checkout', $feeKes = 0)
     {
         if($type == 'checkout' || $type == 'pay_from_escrow'){
             $sourceWallet = Setting::where('key', 'platform_lipr_wallet')->value('value');
         }
         elseif ($type == 'pay_from_wallet'){
-            $sourceWallet = $milestone->application->program->owner->lipr_wallet ?? null;
+            // DECISION-5: the organization's main LIPR account sends it; the program wallet balance is what is charged
+            $sourceWallet = \App\Service\Program\OrganizationMainWallet::account($milestone->application->program);
+            if (! $sourceWallet) {
+                throw new \Exception(\App\Service\Program\OrganizationMainWallet::MISSING, 422);
+            }
         }
         else{
             throw new \Exception('Invalid disbursement type', 422);
@@ -240,16 +244,23 @@ class ProgramDisbursementService
         }
 
 
-        // Get wallet
+        // The program's own wallet: the disbursement is recorded against it (not a fixed wallet), and pay-from-wallet
+        // takes the amount from it
         $disburseAmount = $milestone->amount;
-
+        $programWallet = $milestone->application->program->wallet;
+        if (! $programWallet) {
+            throw new \Exception('This program has no wallet yet, so funds cannot be released.', 422);
+        }
 
         // Set defaults
         $validated = [];
         $validated['amount'] = $disburseAmount;
+        $validated['fee_amount'] = $type === 'pay_from_wallet' ? (float) $feeKes : 0;
         $validated['milestone_id'] = $milestone->id;
-        $validated['wallet_id'] = 1;
+        $validated['wallet_id'] = $programWallet->id;
         $validated['recipient_type'] = 'supplier';
+        $validated['supplier_id'] = $milestone->suppliers()->value('id');
+        $validated['supplier_id'] = $milestone->suppliers()->value('id');
         $validated['payment_method'] = 'mpesa_mobile';
         $validated['currency'] = 'KES';
         $validated['status'] = 'pending';
@@ -263,10 +274,10 @@ class ProgramDisbursementService
             $response = $this->disburseToSupplier($disbursement, $milestone, $sourceWallet, $amountKes);
 
             // Update wallet (move from reserved to disbursed)
-            $programWallet = $milestone->application->program->wallet;
 
+            // The program pays the amount plus the fee (ISSUE-22 b); the balance was checked before the transfer (c)
             if($type == 'pay_from_wallet'){
-                $programWallet->balance -= $disburseAmount;
+                $programWallet->balance -= $disburseAmount + (float) $feeKes;
                 $programWallet->total_disbursed += $disburseAmount;
                 $programWallet->save();
             }

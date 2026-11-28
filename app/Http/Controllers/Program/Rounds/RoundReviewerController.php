@@ -2,7 +2,9 @@
 
 namespace App\Http\Controllers\Program\Rounds;
 
+use App\Service\Program\ExpertiseMatcher;
 use App\Service\Program\RoundParticipation;
+use App\Service\Program\ReviewerLists;
 use App\Http\Controllers\Controller;
 use App\Models\Auth\User;
 use App\Models\Programs\Rounds\ProgramRound;
@@ -113,7 +115,7 @@ class RoundReviewerController extends Controller
         }
 
         if ($round->assignment_type === 'owner_only') {
-            return response()->json(['error' => 'Round is owner_only — no external reviewers can be assigned.'], 422);
+            return response()->json(['error' => 'Only the owner reviews this round, so no Business Coaches can be assigned.'], 422);
         }
 
         DB::beginTransaction();
@@ -139,8 +141,16 @@ class RoundReviewerController extends Controller
             }
 
             return response()->json([
-                'message' => 'Reviewer assigned successfully',
-                'data' => $user,
+                'message' => 'Business Coach assigned successfully',
+                // Only what the round's Business Coaches list shows, not the person's whole account
+                'data' => [
+                    'user_id' => $user->id,
+                    'name' => trim($user->first_name.' '.$user->last_name),
+                    'image' => $user->image,
+                    'reviewer_type' => (int) $user->user_type_id === 3 ? 'third_party' : $roundReviewer->reviewer_type,
+                    'max_apps_assigned' => $roundReviewer->max_apps_assigned,
+                    'acceptance_status' => $roundReviewer->acceptance_status,
+                ],
             ], 201);
         } catch (ValidationException $e) {
             DB::rollBack();
@@ -167,16 +177,20 @@ class RoundReviewerController extends Controller
 
         $round->reviewers()->detach($user->id);
 
-        return response()->json(['message' => 'Reviewer removed successfully']);
+        return response()->json(['message' => 'Business Coach removed successfully']);
     }
 
     // ____________________________________________Complex Methods___________________________________________________
 
 
     // Reviewer fetch assignments requests for a round (to accept or decline)
-    public function myAssignedRequests()
+    public function myAssignedRequests(Request $request)
     {
         $userId = auth()->id();
+        // page / per_page / search / filters / sort / export: the paged list (the old full list stays for the drawer and badges)
+        if (ReviewerLists::wanted($request)) {
+            return (new ReviewerLists((int) $userId))->requests($request);
+        }
 
         $assignments = RoundReviewer::where('user_id', $userId)
             ->with([
@@ -201,10 +215,14 @@ class RoundReviewerController extends Controller
             ->where('acceptance_status', 'pending')
             ->count();
 
+        // Their applications by assignment status, in one query: reviewed = completed, awaiting = not started or in review
+        $byStatus = ReviewerApplicationAssignment::where('reviewer_id', $userId)
+            ->selectRaw('status, COUNT(*) as total')->groupBy('status')->toBase()->pluck('total', 'status');
+        $notStarted = (int) ($byStatus['assigned'] ?? 0);
+        $inReview = (int) ($byStatus['in_review'] ?? 0);
+        $reviewed = (int) ($byStatus['completed'] ?? 0);
         // Applications handed to them that they have not finished scoring
-        $toReview = ReviewerApplicationAssignment::where('reviewer_id', $userId)
-            ->whereIn('status', ['assigned', 'in_review'])
-            ->count();
+        $toReview = $notStarted + $inReview;
 
         // Monitoring checkpoints the organization sent to them that still need their work
         $assignedCheckpoints = \App\Models\Programs\Monitoring\MECheckpoint::where('respondent', 'organization')
@@ -216,6 +234,12 @@ class RoundReviewerController extends Controller
         return response()->json([
             'pending_requests'     => $pendingRequests,
             'to_review'            => $toReview,
+            // the dashboard card: not started yet, being reviewed, done
+            'not_started'          => $notStarted,
+            'in_review'            => $inReview,
+            'completed'            => $reviewed,
+            'reviewed'             => $reviewed,
+            'awaiting'             => $toReview,
             'assigned_checkpoints' => $assignedCheckpoints,
             'total'                => $pendingRequests + $toReview + $assignedCheckpoints,
         ], 200);
@@ -285,6 +309,7 @@ class RoundReviewerController extends Controller
 
 
             DB::commit();
+            $this->sendCoachAssignmentNotices();
 
             if(!$sufficient) {
                 $this->programNotification->send('reviewer.accepted_insufficient_funds', [
@@ -385,9 +410,9 @@ class RoundReviewerController extends Controller
         if ($round->status !== 'published') {
             // Say what it means for the person, not just the status word
             $message = match ($round->status) {
-                'finalized' => 'This round is finalized, so applications can no longer be assigned to reviewers. Assigning is only possible while the round is open.',
-                'draft' => 'This round is not published yet. Publish it first, then you can assign applications to reviewers.',
-                default => 'Applications can only be assigned to reviewers while the round is open. This round is ' . $round->status . '.',
+                'finalized' => 'This round is finalized, so applications can no longer be assigned to Business Coaches. Assigning is only possible while the round is open.',
+                'draft' => 'This round is not published yet. Publish it first, then you can assign applications to Business Coaches.',
+                default => 'Applications can only be assigned to Business Coaches while the round is open. This round is ' . $round->status . '.',
             };
 
             return response()->json(['message' => $message, 'error' => $message], 422);
@@ -403,11 +428,11 @@ class RoundReviewerController extends Controller
                 ->where('user_id', $reviewer->id)->first();
 
             if (! $roundReviewer) {
-                return response()->json(['error' => 'The selected user is not assigned as a reviewer for this round.'], 422);
+                return response()->json(['error' => 'The selected user is not a Business Coach for this round.'], 422);
             }
 
             if ($roundReviewer->acceptance_status !== 'accepted') {
-                return response()->json(['error' => 'Reviewer must accept the assignment before applications can be assigned.'], 422);
+                return response()->json(['error' => 'The Business Coach must accept the request before applications can be assigned.'], 422);
             }
 
             $applicationIds = collect($validated['application_ids'])->unique()->values();
@@ -500,7 +525,7 @@ class RoundReviewerController extends Controller
             ]);
 
             return response()->json([
-                'message'  => "{$assigned} application(s) assigned to reviewer.",
+                'message'  => "{$assigned} application(s) assigned to the Business Coach.",
                 'assigned' => $assigned,
             ], 200);
         } catch (ValidationException $e) {
@@ -532,7 +557,7 @@ class RoundReviewerController extends Controller
             ->get();
 
         if ($assignments->isEmpty()) {
-            return response()->json(['message' => 'This application is not assigned to a reviewer.'], 404);
+            return response()->json(['message' => 'This application is not assigned to a Business Coach.'], 404);
         }
 
         // Once a reviewer has scored it, their work is kept
@@ -541,7 +566,7 @@ class RoundReviewerController extends Controller
             ->exists();
 
         if ($alreadyScored || $assignments->contains(fn ($a) => in_array($a->status, ['completed', 'scored'], true))) {
-            return response()->json(['message' => 'A reviewer has already scored this application, so it can no longer be taken back.'], 422);
+            return response()->json(['message' => 'A Business Coach has already scored this application, so it can no longer be taken back.'], 422);
         }
 
         try {
@@ -577,7 +602,7 @@ class RoundReviewerController extends Controller
                 }
             }
 
-            return response()->json(['message' => 'The application is no longer assigned to a reviewer.'], 200);
+            return response()->json(['message' => 'The application is no longer assigned to a Business Coach.'], 200);
         } catch (\Exception $e) {
             ErrorLogService::report($e, ['round_id' => $round->id, 'application_id' => $application->id]);
             return response()->json(['message' => 'Something went wrong, please try again later.'], 500);
@@ -594,12 +619,11 @@ class RoundReviewerController extends Controller
 
         // AI-only rounds have no reviewers, reviewer orders or reviewer fees
         if ($round->isAiOnly()) {
-            return response()->json(['message' => 'This round is reviewed by AI only. There is nothing for a reviewer to start.'], 422);
+            return response()->json(['message' => 'This round is reviewed by AI only. There is nothing for a Business Coach to start.'], 422);
         }
 
-        if (!$user->lipr_wallet) {
-            throw new \RuntimeException('You must onboard to Mpesa Lipr before starting a review.', 422);
-        }
+        // No payout check here: a check on lipr_wallet refused every coach with an uncaught exception (500), and payouts
+        // are only needed to be paid (see below)
 
         $assignment = ReviewerApplicationAssignment::where('round_id', $round->id)
             ->where('application_id', $application->id)
@@ -621,9 +645,8 @@ class RoundReviewerController extends Controller
 
         $isInternalReviewer = $roundReviewer->reviewer_type === 'internal';
 
-        if (!$isInternalReviewer && !$user->stripe_connect_id && !$user->lipr_wallet) {
-            return response()->json(['error' => 'You must onboard to Stripe or Mpesa before starting a review.'], 422);
-        }
+        // DECISION-2 (owner, 27 Nov): a paid coach may review before setting up payouts; they are asked for them at the
+        // pay step (reviewer.payout_setup_needed), so no applicant waits on a coach's payout set-up
 
         if ($assignment->status === 'completed') {
             return response()->json(['error' => 'Already reviewed'], 422);
@@ -676,9 +699,12 @@ class RoundReviewerController extends Controller
 
     // ─── Get reviewer's round list ────────────────────────────────
     // GET /programs/reviewer/assigned-rounds
-    public function rounds()
+    public function rounds(Request $request)
     {
         $userId     = auth()->id();
+        if (ReviewerLists::wanted($request)) {
+            return (new ReviewerLists((int) $userId))->rounds($request);
+        }
         $roundIds   = DB::table('round_reviewers')
             ->where('user_id', $userId)
             ->where('acceptance_status', 'accepted')
@@ -703,9 +729,12 @@ class RoundReviewerController extends Controller
 
     // ─── Get applications assigned to reviewer for a round ────────
     // GET /programs/rounds/{round}/my-applications
-    public function myAssignedApplications(ProgramRound $round)
+    public function myAssignedApplications(Request $request, ProgramRound $round)
     {
         $userId = auth()->id();
+        if (ReviewerLists::wanted($request)) {
+            return (new ReviewerLists((int) $userId))->roundApplications($request, $round);
+        }
 
         $assignments = ReviewerApplicationAssignment::where('reviewer_id', $userId)
             ->where('round_id', $round->id)
@@ -754,11 +783,46 @@ class RoundReviewerController extends Controller
             ->orderBy('queue_position')
             ->get();
 
+        // Who had which application before, so each Business Coach whose list changed is told how many they have NOW
+        // (load balancing re-deals the unstarted ones as coaches accept, so a coach can gain or lose applications)
+        $setsBefore = ReviewerApplicationAssignment::where('round_id', $round->id)->get(['reviewer_id', 'application_id'])
+            ->groupBy('reviewer_id')->map(fn ($rows) => $rows->pluck('application_id')->sort()->values()->all());
+
         if ($method === 'round_robin') {
             $this->assignRoundRobin($round, $reviewerId, $apps, $acceptedReviewers);
         } elseif ($method === 'load_balanced') {
             $this->assignLoadBalanced($round, $apps, $acceptedReviewers);
         }
+
+        $setsAfter = ReviewerApplicationAssignment::where('round_id', $round->id)->get(['reviewer_id', 'application_id'])
+            ->groupBy('reviewer_id')->map(fn ($rows) => $rows->pluck('application_id')->sort()->values()->all());
+
+        // Sent by sendCoachAssignmentNotices() once the caller's transaction has committed
+        foreach ($setsBefore->keys()->merge($setsAfter->keys())->unique() as $coachId) {
+            $now = $setsAfter[$coachId] ?? [];
+            if (($setsBefore[$coachId] ?? []) !== $now) {
+                $this->coachAssignmentNotices[] = [$round, (int) $coachId, count($now)];
+            }
+        }
+    }
+
+    /** @var array<int, array{0: ProgramRound, 1: int, 2: int}> coaches to tell about applications newly assigned to them */
+    private array $coachAssignmentNotices = [];
+
+    private function sendCoachAssignmentNotices(): void
+    {
+        foreach ($this->coachAssignmentNotices as [$round, $coachId, $count]) {
+            try {
+                $this->programNotification->send('round.scoring_assigned', [User::find($coachId)], [
+                    'program_id' => $round->program_id, 'program_title' => $round->program?->program_title,
+                    'round_name' => $round->round_name, 'round_id' => $round->id,
+                    'max_apps' => $count, 'assignment' => 'total',
+                ]);
+            } catch (\Throwable $e) {
+                ErrorLogService::report($e, ['round_id' => $round->id, 'reviewer_id' => $coachId]);
+            }
+        }
+        $this->coachAssignmentNotices = [];
     }
 
     private function assignRoundRobin(ProgramRound $round, int $newReviewerId, $apps, $reviewers): void
@@ -769,6 +833,16 @@ class RoundReviewerController extends Controller
             ->toArray();
 
         $unassignedApps = $apps->whereNotIn('id', $assignedAppIds);
+
+        // "Match Business Coaches by expertise": the new reviewer only takes the waiting applications their expertise
+        // fits (or that fit nobody's), so the others wait for a coach who knows their sector
+        if ($round->match_expertise) {
+            $matcher = app(ExpertiseMatcher::class);
+            $pool = $reviewers->contains(fn ($r) => (int) $r->user_id === $newReviewerId)
+                ? $reviewers
+                : $reviewers->concat(DB::table('round_reviewers')->where('round_id', $round->id)->where('user_id', $newReviewerId)->get());
+            $unassignedApps = $unassignedApps->filter(fn ($app) => $matcher->candidates($pool, $app)->contains(fn ($r) => (int) $r->user_id === $newReviewerId));
+        }
 
         // New reviewer gets all currently unassigned apps
         // (they joined the queue — from now on new apps route to them first)
@@ -804,6 +878,28 @@ class RoundReviewerController extends Controller
         ReviewerApplicationAssignment::where('round_id', $round->id)
             ->where('status', 'assigned') // only unstarted
             ->delete();
+
+        // "Match Business Coaches by expertise": each application goes to the least busy coach whose expertise fits
+        // its sector (everyone when nobody fits), counting the reviews they have already started
+        if ($round->match_expertise) {
+            $matcher = app(ExpertiseMatcher::class);
+            $loads = $reviewers->mapWithKeys(fn ($r) => [(int) $r->user_id => ReviewerApplicationAssignment::where('round_id', $round->id)->where('reviewer_id', $r->user_id)->whereIn('status', ['in_review', 'completed'])->count()])->all();
+            foreach ($redistributableApps->values() as $app) {
+                $reviewer = $matcher->candidates($reviewers, $app)->sortBy(fn ($r) => $loads[(int) $r->user_id] ?? 0)->first();
+                if (! $reviewer) continue;
+                ReviewerApplicationAssignment::create([
+                    'round_id'       => $round->id,
+                    'reviewer_id'    => $reviewer->user_id,
+                    'application_id' => $app->id,
+                    'status'         => 'assigned',
+                    'assigned_at'    => now(),
+                ]);
+                $app->assigned_reviewer_id = $reviewer->user_id;
+                $app->save();
+                $loads[(int) $reviewer->user_id] = ($loads[(int) $reviewer->user_id] ?? 0) + 1;
+            }
+            return;
+        }
 
         $appChunks = $redistributableApps->values()->chunk(
             (int) ceil($redistributableApps->count() / $reviewerCount)

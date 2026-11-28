@@ -29,20 +29,39 @@ class ResolutionController extends Controller
     {
         parent::__construct();
         $this->ncVotingService = new VotingService();
-        $this->ncService = new NoncompliantService();
+        $this->ncService = new NonCompliantService();
     }
 
-    // Non Compliance for a milestone
+    /** Investors whose money is in this milestone (the ones who vote on its non-compliance case). */
+    private function isMilestoneInvestor(Milestones $milestone, int $userId): bool
+    {
+        return $milestone->accepted_bids()->where('investor_id', $userId)
+            ->whereIn('status', ['confirmed', 'Confirmed', 'verified', 'equipment_released'])->exists();
+    }
+
+    // Non Compliance for a milestone: its owner and its investors only
     public function non_compliances($milestone_id){
         try{
-            $user_id = Auth::id();
+            $user = Auth::user();
+            $milestone = Milestones::with('listing')->find($milestone_id);
+            if (!$milestone) {
+                return response()->json(['message' => 'Milestone not found.'], 404);
+            }
+            $isOwner = (int) $milestone->listing?->user_id === (int) $user->id;
+            if (!$isOwner && !$this->isMilestoneInvestor($milestone, (int) $user->id)) {
+                return response()->json(['message' => 'Only the business owner and this milestone\'s investors can see its non-compliance case.'], 403);
+            }
+
             $nc = MilestoneNonCompliance::with(['votes.investor', 'documents'])->where('milestone_id', $milestone_id)
                 ->latest()->first();
 
             if(!$nc){
                 return response()->json(['message' => 'Milestone Non Compliance record not found.'], 404);
             }
-            $nc->voted = $nc->votes->contains('investor_id', $user_id);
+            $nc->voted = $nc->votes->contains('investor_id', $user->id);
+            $nc->can_respond = $isOwner && $nc->stage === 'response_window';
+            $nc->vote_ends_at = $nc->stage === 'ipm' && $nc->ipm_started_at
+                ? $nc->ipm_started_at->copy()->addDays(NonCompliantService::VOTE_DAYS) : null;
             return response()->json(['data' => $nc ], 200);
         }
         catch (\Exception $e) {
@@ -51,135 +70,100 @@ class ResolutionController extends Controller
         }
     }
 
-    // INVESTOR VOTE (weighted)
+    // INVESTOR VOTE (weighted): continue, freeze or dispute, while the case is with the investors (stage ipm)
     public function nc_vote_store(Request $req)
     {
+        $req->validate([
+            'non_compliance_id' => 'required|integer',
+            'vote' => 'required|in:continue,freeze,dispute',
+            'reason' => 'nullable|string|max:2000|required_if:vote,freeze,dispute',
+        ]);
         try{
-            $req->validate([
-                'non_compliance_id' => 'required',
-                'vote' => 'required|in:continue,freeze,dispute',
-                'reason' => 'nullable|string|max:2000',
-            ]);
-
             $user = Auth::user();
             $nc = MilestoneNonCompliance::with(['milestone', 'votes'])->find($req->non_compliance_id);
 
             if(!$nc){
                 return response()->json(['message' => 'Non Compliance record not found.'], 404);
             }
+            if (!$this->isMilestoneInvestor($nc->milestone, (int) $user->id)) {
+                return response()->json(['message' => 'Only this milestone\'s investors can vote.'], 403);
+            }
             if($nc->milestone->fund_released){
-                return response()->json(['message' => 'Fund already released for this milestone.'], 400);
+                return response()->json(['message' => 'Fund already released for this milestone.'], 422);
             }
-
             if( $nc->stage != 'ipm' ){
-                return response()->json(['message' => 'Voting period has not began yet.'], 400);
+                return response()->json(['message' => $nc->stage === 'response_window'
+                    ? 'Voting opens when the owner answers or their 72 hours are up.'
+                    : 'Voting on this case has ended.'], 422);
             }
-
             if( !$nc->activeVote ){
-                return response()->json(['message' => 'Voting period has ended for this Non-Compliance.'], 400);
+                return response()->json(['message' => 'Voting period has ended for this Non-Compliance.'], 422);
             }
 
-            // verify investor
-            $isInvestor = $nc->milestone->accepted_bids()->where('investor_id', $user->id)->exists();
-            if (!$isInvestor) {
-                return response()->json(['message' => 'Only investors can vote'], 403);
-            }
-
-            // upsert vote
             $weights = $nc->milestone->investor_weights()->pluck('total', 'investor_id');
             $weight = $weights[$user->id] ?? 0;
 
             MilestoneNoncomplianceVotes::updateOrCreate(
                 ['non_compliance_id' => $nc->id, 'investor_id' => $user->id],
-                ['vote' => $req->vote, 'weight' => $weight]
+                ['vote' => $req->vote, 'weight' => $weight, 'reason' => $req->reason ?: null]
             );
+            $nc->refresh();
 
-            $nc->save(); $nc->refresh();
-
-            $totalInvestment = $nc->milestone->funding_collected; // or $weights->sum();
-            $participatedWeight = $nc->votes->sum('weight');
-            $quorumReached = $participatedWeight >= ($totalInvestment * 0.51); //51%
-
-            // evaluate votes after each vote if 60% quorum reached or all investors voted
-            if($quorumReached && !$nc->milestone->fund_released){
+            // Decided as soon as investors holding 51% of the money have voted (else when the 7 days are up)
+            $totalInvestment = (float) $nc->milestone->funding_collected;
+            $participatedWeight = (float) $nc->votes()->sum('weight');
+            if ($totalInvestment > 0 && $participatedWeight >= $totalInvestment * 0.51) {
                 $this->ncService->getAndSetIPMResult($nc);
-                //$req->vote->update([ 'status' => 'closed', 'ends_at' => now() ]);
             }
 
-            return response()->json(['message' => 'Vote recorded'], 200);
+            return response()->json(['message' => 'Vote recorded', 'stage' => $nc->fresh()->stage], 200);
         }
         catch (\Exception $e) {
-            DB::rollback();
             ErrorLogService::report($e, ['input' => request()->except(['password', 'token']),]);
-            return response()->json([
-                'message' => 'Something went wrong, please try again later.'
-                //'message' => $e->getMessage(),
-                //'line' => $e->getLine(),
-            ], 500);
+            return response()->json(['message' => 'Something went wrong, please try again later.'], 500);
         }
     }
 
-    // NC Response - RMEP / Document Submission
+    // The owner's answer in the 72-hour window (completion proof, a revised plan or other documents): the investors
+    // take over straight away
     public function nc_response_store(Request $request)
     {
+        $request->validate([
+            'non_compliance_id' => ['required', 'integer'],
+            'documents'         => ['required', 'array', 'min:1', 'max:5'],
+            'documents.*'       => ['file', 'mimes:pdf,docx,xlsx', 'max:10240'],
+            'response_type'     => ['required', 'in:rmep,completion_proof,other'],
+            'note'              => ['nullable', 'string', 'max:2000'],
+        ]);
+        $saved = [];
         try{
-            $fileUpload = new FileUploadService();
-            $validated = $request->validate([
-                'non_compliance_id' => ['required', 'exists:milestone_non_compliances,id'],
-                'documents.*'       => ['required', 'file', 'mimes:pdf,docx,xlsx'], // adjust allowed types
-                'response_type'     => ['required', 'in:rmep,completion_proof,other'],
-            ]);
-
-            $nc = MilestoneNonCompliance::with('milestone')->findOrFail($request->non_compliance_id);
-
+            $nc = MilestoneNonCompliance::with('milestone.listing')->find($request->non_compliance_id);
             if(!$nc){
                 return response()->json(['message' => 'Non Compliance record not found.'], 404);
             }
-
-            // Check if Stage 2 window is active
+            if ((int) $nc->milestone?->listing?->user_id !== (int) Auth::id()) {
+                return response()->json(['message' => 'Only the business owner can answer this case.'], 403);
+            }
             if ( $nc->stage != 'response_window' ) {
-                return response()->json(['message' => 'Stage 2 response window is closed.'], 400);
+                return response()->json(['message' => 'The 72-hour response window is closed.'], 422);
             }
 
-
-            $milestone = $nc->milestone;
-
-            if ($milestone->listing->owner->id !== Auth::id()) {
-                return response()->json(['message' => 'Unauthorized.'], 403);
-            }
-
+            $fileUpload = new FileUploadService();
             $path = 'files/milestoneNC/' . $nc->id;
-
-            $uploadedFiles = [];
-            $files = $request->file('documents', []);
-            foreach ($files as $file) {
+            foreach ($request->file('documents', []) as $file) {
                 $filePath = $fileUpload->saveFile($file, $path);
-
-                // save to NC documents table
-                $doc = $nc->documents()->create([
-                    'nc_id'     => $nc->id,
-                    'file_path' => $filePath,
-                    'file_type'      => $request->response_type, // can be RMEP or other type if needed
-                    'uploaded_by'=> Auth::id(),
+                $saved[] = $filePath;
+                $nc->documents()->create([
+                    'nc_id' => $nc->id, 'file_path' => $filePath, 'file_type' => $request->response_type, 'uploaded_by' => Auth::id(),
                 ]);
-                $uploadedFiles[] = $doc;
             }
 
-            $nc->update([
-                'owner_response_type' => $request->response_type,
-                'stage' => 'ipm',
-                'ipm_started_at' => now()
-            ]);
+            $nc->update(['owner_response_type' => $request->response_type, 'owner_response_note' => $request->note ?: null]);
+            if (! $this->ncService->triggerIPM($nc)) {
+                return response()->json(['message' => 'The 72-hour response window is closed.'], 422);
+            }
 
-            return response()->json([
-                'message' => 'Document submitted successfully.',
-            ], 200);
-
-            // Notify investors about the response submission ...
-        }
-        catch (ValidationException $e) {
-            // return actual validation errors
-            return response()->json(['message' => 'Validation failed.', 'errors'  => $e->errors()], 422);
+            return response()->json(['message' => 'Your response was sent to your investors.'], 200);
         }
         catch (\Exception $e) {
             ErrorLogService::report($e, ['input' => request()->except(['password', 'token']),]);

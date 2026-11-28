@@ -10,6 +10,8 @@ class ServiceBookingMilestone extends Model
     use HasFactory;
     protected $guarded = [];
 
+    protected $casts = ['delivery_files' => 'array', 'delivered_at' => 'datetime'];
+
     public function service()
     {
         return $this->belongsTo(Services::class,'service_id','id');

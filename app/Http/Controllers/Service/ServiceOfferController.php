@@ -2,9 +2,17 @@
 
 namespace App\Http\Controllers\Service;
 
+
 use App\Http\Controllers\Controller;
+use App\Models\Services\ServiceBooking;
+use App\Models\Services\ServiceOffer;
+use App\Models\Services\Services;
+use App\Service\Misc\ErrorLogService;
 use App\Service\Notification\EmailLink;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class ServiceOfferController extends Controller
 {
@@ -53,8 +61,8 @@ class ServiceOfferController extends Controller
             $this->notification->create(
                 $service->user_id,
                 $booker->id,
-                "{$booker->first_name} made an offer of \${$validated['offered_price']} on {$service->name} (original \${$service->price})",
-                'dashboard.serviceProvider.myBookings',
+                "{$booker->first_name} made an offer of KES ".number_format((float) $validated['offered_price'], 2)." on {$service->name} (your price KES ".number_format((float) $service->price, 2).")",
+                'dashboard.serviceProvider.serviceBookings',
                 'service'
             );
 
@@ -84,11 +92,11 @@ class ServiceOfferController extends Controller
         }
     }
 
-    // â”€â”€â”€ Owner accepts offer â†’ creates flat booking (no milestones) â”€â”€
+    // Owner accepts offer → a booking at the agreed price, with the service's milestones scaled to it
     // POST /services/offers/{offer}/accept
     public function accept(ServiceOffer $offer)
     {
-        if ($offer->service->user_id !== Auth::id()) {
+        if ((int) $offer->service->user_id !== (int) Auth::id()) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -102,7 +110,7 @@ class ServiceOfferController extends Controller
             $booker      = $offer->booker;
             $agreedPrice = $offer->counter_price ?? $offer->offered_price;
 
-            // Create flat booking â€” no milestones
+            // The booking at the agreed price
             $booking = ServiceBooking::create([
                 'service_id'       => $service->id,
                 'booker_id'        => $offer->booker_id,
@@ -115,6 +123,10 @@ class ServiceOfferController extends Controller
                 'delivery_status'  => 'pending',
             ]);
 
+            // ISSUE-44: the booking gets the service's milestones at the agreed price, so it is paid up front and released
+            // milestone by milestone like any booking (ServiceBookingFlow); it used to have none and could never be paid
+            self::milestonesAtPrice($booking, $service, (float) $agreedPrice);
+
             $offer->update([
                 'status'     => 'accepted',
                 'booking_id' => $booking->id,
@@ -126,7 +138,7 @@ class ServiceOfferController extends Controller
             $this->notification->create(
                 $offer->booker_id,
                 Auth::id(),
-                "Your offer of \${$agreedPrice} on {$service->name} was accepted! Please proceed to payment.",
+                "Your offer of KES ".number_format((float) $agreedPrice, 2)." on {$service->name} was accepted. Pay for it to start the work.",
                 EmailLink::bookingsFor($offer->booker_id),
                 'service'
             );
@@ -160,7 +172,7 @@ class ServiceOfferController extends Controller
     // POST /services/offers/{offer}/reject
     public function reject(Request $request, ServiceOffer $offer)
     {
-        if ($offer->service->user_id !== Auth::id()) {
+        if ((int) $offer->service->user_id !== (int) Auth::id()) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -194,7 +206,7 @@ class ServiceOfferController extends Controller
     // POST /services/offers/{offer}/counter
     public function counter(Request $request, ServiceOffer $offer)
     {
-        if ($offer->service->user_id !== Auth::id()) {
+        if ((int) $offer->service->user_id !== (int) Auth::id()) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -223,7 +235,7 @@ class ServiceOfferController extends Controller
             $this->notification->create(
                 $offer->booker_id,
                 Auth::id(),
-                "Counter offer of \${$validated['counter_price']} received for {$offer->service->name}",
+                "Counter offer of KES ".number_format((float) $validated['counter_price'], 2)." received for {$offer->service->name}",
                 EmailLink::bookingsFor($offer->booker_id),
                 'service'
             );
@@ -277,7 +289,12 @@ class ServiceOfferController extends Controller
     // POST /services/bookings/{booking}/deliver
     public function deliver(Request $request, ServiceBooking $booking)
     {
-        if ($booking->service_owner_id !== Auth::id()) {
+        // ISSUE-44: offer bookings now have milestones: the provider marks each Done and the customer approves it, which
+        // releases its money. This flat delivery never moved any money, so it no longer completes anything.
+        if ($booking->milestoneInstances()->exists()) {
+            return response()->json(['message' => 'This booking is paid and released milestone by milestone. Use its milestones.'], 409);
+        }
+        if ((int) $booking->service_owner_id !== (int) Auth::id()) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -318,7 +335,12 @@ class ServiceOfferController extends Controller
     // POST /services/bookings/{booking}/accept-delivery
     public function acceptDelivery(ServiceBooking $booking)
     {
-        if ($booking->booker_id !== Auth::id()) {
+        // ISSUE-44: offer bookings now have milestones: the provider marks each Done and the customer approves it, which
+        // releases its money. This flat delivery never moved any money, so it no longer completes anything.
+        if ($booking->milestoneInstances()->exists()) {
+            return response()->json(['message' => 'This booking is paid and released milestone by milestone. Use its milestones.'], 409);
+        }
+        if ((int) $booking->booker_id !== (int) Auth::id()) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -342,7 +364,7 @@ class ServiceOfferController extends Controller
                 $booking->service_owner_id,
                 Auth::id(),
                 "Delivery accepted for {$booking->service->name}. Payment released.",
-                'dashboard.serviceProvider.myBookings::' . $booking->id,
+                'dashboard.serviceProvider.serviceBookings::' . $booking->id,
                 'service'
             );
 
@@ -358,7 +380,12 @@ class ServiceOfferController extends Controller
     // POST /services/bookings/{booking}/reject-delivery
     public function rejectDelivery(Request $request, ServiceBooking $booking)
     {
-        if ($booking->booker_id !== Auth::id()) {
+        // ISSUE-44: offer bookings now have milestones: the provider marks each Done and the customer approves it, which
+        // releases its money. This flat delivery never moved any money, so it no longer completes anything.
+        if ($booking->milestoneInstances()->exists()) {
+            return response()->json(['message' => 'This booking is paid and released milestone by milestone. Use its milestones.'], 409);
+        }
+        if ((int) $booking->booker_id !== (int) Auth::id()) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -380,7 +407,7 @@ class ServiceOfferController extends Controller
                 $booking->service_owner_id,
                 Auth::id(),
                 "Delivery rejected for {$booking->service->name}. Reason: {$validated['rejection_note']}",
-                'dashboard.serviceProvider.myBookings::' . $booking->id,
+                'dashboard.serviceProvider.serviceBookings::' . $booking->id,
                 'service'
             );
 
@@ -393,6 +420,33 @@ class ServiceOfferController extends Controller
 
     // â”€â”€â”€ Get offers for a service (owner view) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     // GET /services/{service}/offers
+    /**
+     * Copy the service's milestones to the booking with their amounts scaled to the agreed price (the last one takes the
+     * rounding), or one "Delivery" milestone when the service has none. Each is due its days after the previous one.
+     */
+    public static function milestonesAtPrice(ServiceBooking $booking, Services $service, float $agreedPrice): void
+    {
+        $miles = \App\Models\Services\Smilestones::where('listing_id', $service->id)->orderBy('id')->get();
+        $total = (float) $miles->sum('amount');
+        $rows = $miles->isNotEmpty() && $total > 0
+            ? $miles->map(fn ($m) => ['mile_id' => $m->id, 'title' => $m->title, 'share' => (float) $m->amount / $total, 'days' => (int) $m->n_o_days, 'document' => $m->document])->all()
+            : [['mile_id' => null, 'title' => 'Delivery', 'share' => 1.0, 'days' => 7, 'document' => null]];
+
+        $due = \Illuminate\Support\Carbon::parse($booking->date)->startOfDay();
+        $left = round($agreedPrice, 2);
+        foreach (array_values($rows) as $i => $row) {
+            $last = $i === count($rows) - 1;
+            $amount = $last ? $left : round($agreedPrice * $row['share'], 2);
+            $left = round($left - $amount, 2);
+            $due = $due->copy()->addDays(max(1, $row['days']));
+            \App\Models\Services\ServiceBookingMilestone::create([
+                'mile_id' => $row['mile_id'], 'service_id' => $service->id, 'booker_id' => $booking->booker_id, 'booking_id' => $booking->id,
+                'title' => $row['title'], 'amount' => $amount, 'document' => $row['document'], 'active' => $i === 0 ? 1 : 0,
+                'status' => 'To Do', 'n_o_days' => max(1, $row['days']), 'deadline' => $due,
+            ]);
+        }
+    }
+
     public function index(Services $service)
     {
         if ($service->user_id !== Auth::id()) {

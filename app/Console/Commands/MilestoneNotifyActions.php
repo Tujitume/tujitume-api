@@ -97,8 +97,8 @@ class MilestoneNotifyActions extends Command
                 $isExecOverdue = $diffTimeForExec->invert === 1;
 
                 //Mid-Milestone Request, after 30% timeline passed of exec
-                $daysToExec = $milestone->no_o_days;
-                $totalHours = max(1, $daysToExec * 24);//$milestone->no_o_days * 24;
+                $daysToExec = $milestone->n_o_days;
+                $totalHours = max(1, $daysToExec * 24);//$milestone->n_o_days * 24;
                 $hoursRemaining = $now->diffInHours($exec_deadline, false);
                 $hoursPassed = max(0,$totalHours - $hoursRemaining);
                 $has30PercentPassed = !$isExecOverdue && ($hoursPassed / $totalHours) >= 0.3;
@@ -122,7 +122,7 @@ class MilestoneNotifyActions extends Command
                     $data = [
                         'boName' => $owner->first_name,
                         'milestoneName' => $milestone->title,
-                        'reviewUrl' => 'https://beta.tujitume.com/dashboard/milestones',
+                        'reviewUrl' => \App\Service\Notification\RecipientUrl::url('dashboard/milestones', $mail_to),
                     ];
                     $emailService->send('Mid Milestone Required', 'milestone.mid_milestone.system_request', $data, $mail_to);
 
@@ -144,7 +144,7 @@ class MilestoneNotifyActions extends Command
                         $data=[
                             'milestone_name'=>$milestone->title,
                             'funding_bar_html'=> $milestone->progress_percentage,
-                            'funding_link'=> 'https://beta.tujitume.com/business-milestones/'. $listing_id,
+                            'funding_link'=> \App\Service\Notification\RecipientUrl::url('business-milestones/' . $listing_id, $mail_to),
                             //'status'=>$milestone->status
                         ];
                         $emailService->send($subject, 'milestone.reminders.1_day', $data, $mail_to);
@@ -155,7 +155,7 @@ class MilestoneNotifyActions extends Command
                         $subject = 'Milestone At Risk';
                         $data=[
                             'milestone_name'=>$milestone->title,
-                            'invest_link'=>'https://beta.tujitume.com/business-milestones/'. $listing_id,
+                            'invest_link'=>\App\Service\Notification\RecipientUrl::url('business-milestones/' . $listing_id, $mail_to),
                             'current_funding'=>$milestone->pending_collected,
                             'funding_goal'=>$milestone->amount,
                             'days_left'=>$days
@@ -168,7 +168,7 @@ class MilestoneNotifyActions extends Command
                         $subject = 'Milestone Due In A Week';
                         $data=[
                             'milestone_name'=>$milestone->title,
-                            'invest_link'=>'https://beta.tujitume.com/business-milestones/'. $listing_id,
+                            'invest_link'=>\App\Service\Notification\RecipientUrl::url('business-milestones/' . $listing_id, $mail_to),
                             'current_funding'=>$milestone->pending_collected,
                             'funding_goal'=>$milestone->amount,
                             'days_left'=>$days
@@ -184,8 +184,8 @@ class MilestoneNotifyActions extends Command
                         $subject = 'Milestone Continuation Triggered';
                         $data=[
                             'milestone_name'=>$milestone->title,
-                            'stay_link'=>'https://beta.tujitume.com/dashboard/dealroom',
-                            'refund_link'=>'https://beta.tujitume.com/dashboard/dealroom',
+                            'stay_link'=>\App\Service\Notification\RecipientUrl::url('dashboard/dealroom', $mail_to),
+                            'refund_link'=>\App\Service\Notification\RecipientUrl::url('dashboard/dealroom', $mail_to),
                             'amount_raised'=>$milestone->pending_collected,
                             'funding_goal'=>$milestone->amount,
                             'days_left'=>$days
@@ -198,7 +198,7 @@ class MilestoneNotifyActions extends Command
                         $subject = 'Milestone Is Funded';
                         $data=[
                             'milestone_name'=>$milestone->title,
-                            'execution_link'=>'https://beta.tujitume.com/business-milestones/'. $listing_id,
+                            'execution_link'=>\App\Service\Notification\RecipientUrl::url('business-milestones/' . $listing_id, $mail_to),
                             'total_raised'=>$milestone->pending_collected,
                         ];
                         $emailService->send($subject, 'milestone.reminders.milestone_funded', $data, $mail_to);
@@ -281,7 +281,7 @@ class MilestoneNotifyActions extends Command
                             ErrorLogService::report(throw New Exception($result->message, 422), [$result->message]);
                         }
 
-                        $daysToExec = $req->milestone->no_o_days;
+                        $daysToExec = $req->milestone->n_o_days;
                         $req->milestone->fund_released_75 = true;
                         $req->milestone->status = 'in_progress';
 
@@ -383,72 +383,33 @@ class MilestoneNotifyActions extends Command
 
     }
 
-    // Non Compliant / Overdue
+    // Non Compliant / Overdue: moves each open case on when its time is up (NonCompliantService claims every move)
     public function resolveNonCompliances()
     {
         $ncService = new NonCompliantService();
 
-        // Stage -2 | Response Window
-        $ncs = MilestoneNonCompliance::where('stage', 'response_window')->get();
-        foreach ($ncs as $nc) {
-            $deadline = $nc->created_at->copy()->addHours(72);
+        // Stage 2 → 3: the owner's 72 hours are over without an answer (an answer moves it straight away)
+        MilestoneNonCompliance::where('stage', 'response_window')->get()->each(function ($nc) use ($ncService) {
+            $deadline = $nc->response_deadline ?? $nc->created_at->copy()->addHours(NonCompliantService::RESPONSE_HOURS);
+            if (Carbon::now()->greaterThanOrEqualTo($deadline)) $ncService->triggerIPM($nc);
+        });
 
-            if(in_array($nc->owner_response_type, ['completion_proof', 'rmep'])){
-                $ncService->triggerIPM($nc);
+        // Stage 3 → 4 / resolved: the investors' 7 days are over; the result stands as voted (no vote: a platform dispute)
+        MilestoneNonCompliance::where('stage', 'ipm')->whereNotNull('ipm_started_at')
+            ->where('ipm_started_at', '<=', Carbon::now()->subDays(NonCompliantService::VOTE_DAYS))->get()
+            ->each(fn ($nc) => $ncService->getAndSetIPMResult($nc, true));
+
+        // Stage 4: the milestone stays locked while Tujitume reviews the dispute (cases opened before this was set on entry)
+        MilestoneNonCompliance::with('milestone')->where('stage', 'pid')->get()->each(function ($nc) {
+            if ($nc->milestone && $nc->milestone->status !== 'locked') {
+                $nc->milestone->update(['status' => 'locked', 'active' => false]);
             }
-            elseif (Carbon::now()->greaterThanOrEqualTo($deadline)) {
-                // 72 hours passed → trigger IPM voting
-                $ncService->triggerIPM($nc);
-            }
-            //$ncService->notify('', $nc);
-        }
+        });
 
-        // Stage -3 |NC with ongoing votes
-        $ncs_ipm = MilestoneNonCompliance::where('stage', 'ipm')->get();
-        foreach ($ncs_ipm as $nc) {
-            if(is_null($nc->ipm_started_at )){
-                continue;
-            }
-            $ipm_started_at = $nc->ipm_started_at;
-            $deadline = $ipm_started_at->copy()->addDays(7);
-
-            if (Carbon::now()->greaterThanOrEqualTo($deadline)) {
-                // 7 days passed → evaluate IPM votes as it is
-                $ncService->getAndSetIPMResult($nc);
-            }
-        }
-
-        // Stage -4 | NC in PID stage
-        $ncs_pid = MilestoneNonCompliance::where('stage', 'pid')->get();
-        foreach ($ncs_pid as $nc) {
-            // Freeze & lock
-            $milestone = $nc->milestone;
-            $milestone->status = 'locked';
-            $milestone->save();
-            //$this->notify();
-            #to resolve::
-            //Resolution team & Project manager handles it
-            //Owner provides documents
-        }
-
-        // Stage -5 | Auto Sanctions
-        $cases = MilestoneNonCompliance::where('stage', 'pid')
-            ->whereNull('resolved_at')
-            ->where('sanctioned', false)->get();
-
-        foreach ($cases as $nc) {
-            if(is_null($nc->pid_started_at )){
-                continue;
-            }
-
-            // PID timeout (example: 14 days)
-            if (now()->diffInDays($nc->pid_started_at) >= 14) {
-                $ncService->applySanctions($nc);
-            }
-        }
-
-
+        // Stage 5: a dispute still open after 14 days sanctions the business
+        MilestoneNonCompliance::where('stage', 'pid')->whereNull('resolved_at')->where('sanctioned', false)
+            ->whereNotNull('pid_started_at')->where('pid_started_at', '<=', Carbon::now()->subDays(NonCompliantService::PID_DAYS))->get()
+            ->each(fn ($nc) => $ncService->applySanctions($nc));
     }
-
 
 }

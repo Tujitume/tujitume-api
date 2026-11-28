@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers\Business;
 
+
+use Exception;
 use App\Events\NewNotification;
 use App\Http\Controllers\Controller;
 use App\Models\Auth\User;
@@ -18,6 +20,7 @@ use App\Models\Services\Services;
 use App\Models\Services\Smilestones;
 use App\Service\Balance\BalanceService;
 use App\Service\Balance\CurrencyConverter;
+use App\Service\Business\BidList;
 use App\Service\Business\Bid\AgreeToProgressVotingService;
 use App\Service\Business\Bid\BusinessBidService;
 use App\Service\Business\Bid\PendingAndAssetBidService;
@@ -25,6 +28,7 @@ use App\Service\File\ImageCompressor;
 use App\Service\File\ImageUploadService;
 use App\Service\LiprMpesa\LiprW2W;
 use App\Service\Misc\ErrorLogService;
+use App\Support\ListShapes;
 use Carbon\Carbon;
 use Hash;
 use Illuminate\Http\Request;
@@ -60,8 +64,12 @@ class BidsController extends Controller
     {
         try{
             $bid = AcceptedBids::where('id', $id)->first();
+            // Only the investor and the business owner may read an investment
+            if (!$bid || !in_array((int) Auth::id(), [(int) $bid->investor_id, (int) $bid->owner_id], true)) {
+                return response()->json(['message' => 'Investment not found.'], 404);
+            }
             $investor = User::select('first_name')->where('id', $bid->investor_id)
-                ->first()->first_name;
+                ->first()?->first_name;
             return response()->json([
                 'data' => $bid,
                 'investor'=> $investor
@@ -78,8 +86,13 @@ class BidsController extends Controller
         }
     }
 
-    public function businessBids()
+    public function businessBids(Request $request)
     {
+        // The Pending tab as a server list (page, search, filters, sort, export); no params = the full list as before
+        if (ListShapes::wanted($request)) {
+            return (new BidList((int) Auth::id(), 'pending'))->respond($request);
+        }
+
         try {
             $bids = BusinessBids::with(['investor', 'listing'])
                 ->where('owner_id', Auth::id())
@@ -113,8 +126,13 @@ class BidsController extends Controller
         }
     }
 
-    public function confirmedBids()
+    public function confirmedBids(Request $request)
     {
+        // The Active / Under verification tabs as server lists (?stage=active|under-verification)
+        if (ListShapes::wanted($request)) {
+            return (new BidList((int) Auth::id(), $request->query('stage') === 'under-verification' ? 'under-verification' : 'active'))->respond($request);
+        }
+
         try {
             $confirmed = AcceptedBids::with(['investor', 'listing'])
                 ->where('owner_id', Auth::id())
@@ -177,6 +195,10 @@ class BidsController extends Controller
         }
         catch (\Exception $e) {
             ErrorLogService::report($e, [ 'input' => request()->except(['password','token']) ]);
+            // A refund that could not be sent says so (the bid is left as it was)
+            if (in_array($e->getCode(), [422, 502], true)) {
+                return response()->json(['message' => $e->getMessage()], $e->getCode());
+            }
 
             return response()->json([
                 'message' => 'Something went wrong, please try again later.'
@@ -186,26 +208,12 @@ class BidsController extends Controller
 
     public function agreeToProgressWithMilestone($bidId)
     {
-        $user = Auth::user();
-        $bidId = base64_decode($bidId);
+        // A public email link (the id is only base64): it no longer votes or releases anything by itself. Investors
+        // decide in their Deal Room, signed in (pre-release, mid-milestone and final approval votes).
+        $bid = AcceptedBids::find((int) base64_decode((string) $bidId)) ?? AcceptedBids::find((int) $bidId);
+        $investor = $bid ? User::find($bid->investor_id) : Auth::user();
 
-        try {
-            $progressVotingService = new AgreeToProgressVotingService($this->Client);
-
-            $progressVotingService->ProcessBidsAndReleasePayment($bidId);
-
-            return redirect()->to(config('app.app_url').'?agreetobid=yes');
-
-        } catch (\Exception $e) {
-
-            DB::rollBack();
-
-            ErrorLogService::report($e, [
-                'input' => request()->except(['password','token'])
-            ]);
-
-            return redirect()->to(config('app.app_url'));
-        }
+        return redirect()->to(\App\Service\Notification\EmailLink::url('dealroom', $investor) ?? \App\Service\Notification\RecipientUrl::url('dashboard', $investor));
     }
 
     // Withdraw Accepted Investment
@@ -216,7 +224,15 @@ class BidsController extends Controller
             DB::beginTransaction();
             $bidService = new BusinessBidService($this->Client);
 
-            $bid = AcceptedBids::with('milestone')->findOrFail($bidId);
+            $bid = AcceptedBids::with('milestone')->find($bidId);
+            if (!$bid || (int) $bid->investor_id !== (int) Auth::id()) {
+                DB::rollBack();
+                return response()->json(['message' => 'Investment not found.'], 404); // only the investor can withdraw it
+            }
+            if ($bid->milestone && ($bid->milestone->fund_released || $bid->milestone->fund_released_75)) {
+                DB::rollBack();
+                return response()->json(['message' => 'This milestone\'s money has already been released to the business, so the investment can no longer be withdrawn.'], 409);
+            }
             $investor = User::select('id','first_name','last_name','email')
                 ->findOrFail($bid->investor_id);
 
@@ -238,7 +254,7 @@ class BidsController extends Controller
                 'invest_count'     => $business->invest_count - 1
             ]);
 
-            $bid->milestone->decrement('funding_collected', $bid->amount);
+            $bid->milestone?->decrement('funding_collected', $bid->amount);
 
 
             /*| Notifications */
@@ -282,6 +298,9 @@ class BidsController extends Controller
             DB::rollBack();
 
             ErrorLogService::report($e, ['input' => request()->except(['password','token']),]);
+            if (in_array($e->getCode(), [422, 502], true)) {
+                return response()->json(['message' => $e->getMessage()], $e->getCode());
+            }
             return response()->json([
                 'message' => 'Something went wrong, please try again later.'
             ], 500);
@@ -290,77 +309,65 @@ class BidsController extends Controller
 
     public function withdrawPendingInvestment($id)
     {
+        $bid = BusinessBids::find($id);
+        if (!$bid || (int) $bid->investor_id !== (int) Auth::id()) {
+            return response()->json(['message' => 'Bid not found.'], 404); // only the investor who made it can withdraw it
+        }
+
         try {
-            $bid = BusinessBids::findOrfail($id);
-
-            $owner = User::select('id','email')->findOrfail($bid->owner_id);
-            $investor = User::select('first_name','last_name')->findOrfail($bid->investor_id);
-            $invName = $investor->first_name.' '.$investor->last_name;
-
-            // Refund / cleanup
-            if ($bid->type === 'Monetary') {
-
-                if ($bid->method === 'lipr') {
-                    return response()->json(['message'=>'Lipr refund not available right now, please try later!'],500);
-                }
-
-                if ($bid->method === 'stripe') {
-                    $this->Client->refunds->create(['charge'=>$bid->stripe_charge_id]);
-                }
-
-            } else {
-                foreach (['legal_doc','optional_doc','photos'] as $f) {
-                    if ($bid->$f && file_exists($bid->$f)) unlink($bid->$f);
-                }
-            }
-
+            $owner = User::select('id', 'email', 'first_name')->findOrFail($bid->owner_id);
+            $investor = User::select('id', 'first_name', 'last_name', 'lipr_wallet')->findOrFail($bid->investor_id);
+            $invName = trim($investor->first_name.' '.$investor->last_name);
             $listing = Listing::find($bid->business_id);
 
-            $activeMilestone = $listing->milestones()
-                ->where('progress_percentage','<',100)
-                ->orderBy('id')->first();
-
-            $bid->delete();
-
-            // Funding update
-            $listing->milestone->decrement('pending_collected',$bid->amount);
-
-            // Threshold check
-            if ($activeMilestone) {
-                $bidService = new BusinessBidService($this->Client);
-                $bidService->checkThreshold($listing, $bid);
+            // Refund first: the bid is only removed once its deposit is on its way back
+            if ($bid->type === 'Monetary') {
+                if ($bid->method === 'lipr') {
+                    $payment = \App\Models\Finance\LiprPayment::where('reference_id', $bid->lipr_transaction_id)->first();
+                    $refundKes = (float) ($payment->amount ?? 0);
+                    $platformWallet = Setting::where('key', 'platform_lipr_wallet')->value('value');
+                    if (!$investor->lipr_wallet) {
+                        return response()->json(['message' => 'Set up your wallet first, so your deposit can be refunded to it.'], 422);
+                    }
+                    if ($refundKes <= 0 || !$platformWallet) {
+                        return response()->json(['message' => 'The refund could not be worked out. Please contact support.'], 422);
+                    }
+                    $refund = app(LiprW2W::class)->send((int) round($refundKes), $investor->lipr_wallet, $platformWallet, null, [
+                        'narration' => 'Bid deposit refund', 'listing_id' => $bid->id,
+                    ]);
+                    if (empty($refund['success'])) {
+                        return response()->json(['message' => 'The refund could not be sent right now; your bid is unchanged. Please try again.'], 502);
+                    }
+                    (new \App\Service\Misc\TransactionRecord())->create($investor->id, 'refund', 'lipr', $refundKes, $refund['reference'] ?? null, $investor->id);
+                } elseif ($bid->method === 'stripe' && $bid->stripe_charge_id) {
+                    $this->Client->refunds->create(['charge' => $bid->stripe_charge_id]);
+                }
+            } else {
+                foreach (['legal_doc', 'optional_doc', 'photos'] as $f) {
+                    if ($bid->$f && is_string($bid->$f) && file_exists($bid->$f)) unlink($bid->$f);
+                }
             }
 
-            // Notifications
-            $this->notification->create(
-                $owner->id, $bid->investor_id,
-                'A bid to business '.$listing->name.' was cancelled by '.$invName,
-                'investment-bids', 'business'
-            );
+            DB::transaction(function () use ($bid, $listing) {
+                // The bid counted as pending on its milestone until now
+                if ($bid->ms_id) {
+                    Milestones::where('id', $bid->ms_id)->where('pending_collected', '>=', $bid->amount)->decrement('pending_collected', $bid->amount);
+                }
+                $bid->delete();
+            });
 
-            $this->notification->create(
-                $bid->investor_id, $owner->id,
-                'Your bid to business '.$listing->name.' was cancelled.',
-                'investment-bids', 'business'
-            );
+            if ($listing) {
+                (new BusinessBidService($this->Client))->checkThreshold($listing, $bid);
+            }
 
-            $this->emailService->send(
-                'Bid Cancelled', 'bids.cancelled',
-                ['business_name'=>$listing->name,'investor'=>$invName], $owner->email
-            );
+            $this->notification->create($owner->id, $bid->investor_id, 'A bid to business '.($listing->name ?? '').' was cancelled by '.$invName, 'investment-bids', 'investor');
+            $this->notification->create($bid->investor_id, $owner->id, 'Your bid to business '.($listing->name ?? '').' was cancelled and your deposit refunded.', 'my-investments', 'business');
+            (new \App\Service\Notification\EmailService())->send('Bid Cancelled', 'bids.cancelled', ['business_name' => $listing->name ?? '', 'investor' => $invName], $owner->email);
 
-            return response()->json([
-                'status'=>200,
-                'message'=>'Bid removed & refund initiated!'
-            ],200);
-
+            return response()->json(['status' => 200, 'message' => 'Bid withdrawn and your deposit refunded.'], 200);
         } catch (\Exception $e) {
-
-            ErrorLogService::report($e,['input'=>request()->except(['password','token'])]);
-
-            return response()->json([
-                'message'=>'Something went wrong, please try again later.'
-            ],500);
+            ErrorLogService::report($e, ['input' => request()->except(['password', 'token'])]);
+            return response()->json(['message' => 'Something went wrong, please try again later.'], 500);
         }
     }
 
@@ -368,34 +375,12 @@ class BidsController extends Controller
     // optional from milestone done email click
     public function agreeToNextmile($bidId)
     {
-        try {
-            $bid = AcceptedBids::findOrFail($bidId);
+        // A public email link (the id is only base64): it no longer votes or releases anything by itself. Investors
+        // decide in their Deal Room, signed in (pre-release, mid-milestone and final approval votes).
+        $bid = AcceptedBids::find((int) base64_decode((string) $bidId)) ?? AcceptedBids::find((int) $bidId);
+        $investor = $bid ? User::find($bid->investor_id) : Auth::user();
 
-            if ($bid->next_mile_agree) {
-                return response()->json(['message' => 'Already agreed to next milestone.'], 409);
-            }
-
-            $bid->update(['next_mile_agree' => 1]);
-
-            $listing = listing::findOrFail($bid->business_id);
-            $investmentNeeded = $listing->investment_needed;
-
-            $total_vote = AcceptedBids::where('business_id', $bid->business_id)
-                ->where('ms_id', $bid->ms_id)
-                ->where('next_mile_agree', 1)->get()
-                ->sum(fn($b) => round(($b->amount / $investmentNeeded) * 10, 1) + ($b->project_manager ? 1 : 0));
-
-            Milestones::where('listing_id', $bid->business_id)
-                ->where('status', 'to_do')
-                ->where('active', false)
-                ->first()?->update(['active' => $total_vote >= 5.1]);
-
-            return redirect()->to(config('app.app_url') . '?agreetonext=yes');
-
-        } catch (\Exception $e) {
-            ErrorLogService::report($e, ['input' => request()->except(['password', 'token'])]);
-            return response()->json(['message' => 'Something went wrong, please try again later.'], 500);
-        }
+        return redirect()->to(\App\Service\Notification\EmailLink::url('dealroom', $investor) ?? \App\Service\Notification\RecipientUrl::url('dashboard', $investor));
     }
 
 

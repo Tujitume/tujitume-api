@@ -3,7 +3,10 @@
 
     <div style="padding:20px;font-size:14px;line-height:1.6;">
         <p>Hi,</p>
-        <p>Milestone <strong>{{ $milestone }}</strong> for the service <strong>{{ $service }}</strong> is being reviewed by the customer and has been set to “In Progress”.</p>
+        <p>Milestone <strong>{{ $milestone }}</strong> for the service <strong>{{ $service }}</strong> is being reviewed by the customer and has been set back to “In Progress”.</p>
+        @if (!empty($note))
+            <p><strong>What the customer asked for:</strong> {{ $note }}</p>
+        @endif
 
         @include('programs.partials.brand_button')
 

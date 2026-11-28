@@ -74,6 +74,7 @@ class AiReviewRunner
                     'quota', 'daily_requests', 'requests_per_minute', 'tokens_per_minute' => 'The AI provider is busy or has reached its limit for now. Only the automatic checks ran. Press Run again in a few minutes.',
                     'disabled' => 'AI review is switched off on this platform. Only the automatic checks ran.',
                     'no_provider' => 'No AI provider is set up for this organization. Only the automatic checks ran.',
+                    'no_consent' => 'Your organization has not yet confirmed that applicant data may be sent to the AI provider. Only the automatic checks ran. Confirm it in the AI review panel, then press Run again.',
                     default => 'The AI provider could not be reached. Only the automatic checks ran. Press Run again in a few minutes.',
                 },
                 'completed_at' => now(),
@@ -89,6 +90,7 @@ class AiReviewRunner
         }
 
         $this->store($review, $out, $input);
+        $rubricIssues = $out['rubric_issues'] ?? [];
 
         // 4. After ready
         if ($round->isAiOnly()) {
@@ -96,7 +98,15 @@ class AiReviewRunner
             if (! $result['scored']) {
                 $review->update(['status' => ApplicationAiReview::STATUS_NEEDS_ATTENTION, 'error' => $result['reason']]);
             }
-        } else {
+        }
+        // ISSUE-35: the AI answer did not fit the rubric even after one repair (scores capped / missing ones at 0)
+        if ($rubricIssues) {
+            $review->update([
+                'status' => ApplicationAiReview::STATUS_NEEDS_ATTENTION,
+                'error' => 'The AI scores did not fully fit the rubric, so they were capped to each range (and any missing criterion recorded as 0). Check them before relying on this review: '.implode('; ', array_slice($rubricIssues, 0, 3)).'.',
+            ]);
+        }
+        if (! $round->isAiOnly()) {
             // The person this application is assigned to is told (batched, so a long run is a few notices, not one each).
             // With nobody assigned, it is the program owner's to review.
             $reviewerId = ReviewerApplicationAssignment::where(['round_id' => $round->id, 'application_id' => $application->id])->value('reviewer_id')

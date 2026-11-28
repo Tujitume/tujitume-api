@@ -30,7 +30,10 @@ class ProviderRouter
 
         $candidates = array_values(array_diff($this->gate->allowedProviders($program), $skip));
         if (! $candidates) {
-            return ['client' => null, 'wait' => null, 'reason' => 'no_provider'];
+            // A provider is set up, but the organisation has not yet confirmed applicant data may go to it
+            $configured = array_filter(array_unique(array_filter([config('ai_review.default_provider'), ...config('ai_review.fallbacks', [])])), fn ($name) => $this->gate->configured($name));
+
+            return ['client' => null, 'wait' => null, 'reason' => $configured ? 'no_consent' : 'no_provider'];
         }
 
         $shortest = null;

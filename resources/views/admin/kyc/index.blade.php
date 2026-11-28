@@ -62,7 +62,8 @@
                                             <strong>{{ trim(($kyc->user?->first_name ?? '').' '.($kyc->user?->last_name ?? '')) ?: ($kyc->user?->display_name ?? 'Deleted user') }}</strong>
                                             <div class="text-muted small">{{ $kyc->user?->email }}</div>
                                         </td>
-                                        <td>{{ ucfirst(str_replace('_', ' ', $kyc->verification_type)) }}</td>
+                                        {{-- an investor is verified with the entrepreneur's identity check, but is shown as an investor --}}
+                                        <td>{{ $kyc->verification_type === 'entrepreneur' && (int) $kyc->user?->user_type_id === 2 ? 'Investor' : ucfirst(str_replace('_', ' ', $kyc->verification_type)) }}</td>
                                         <td>{{ $kyc->submitted_at?->format('Y-m-d H:i') ?? '—' }}</td>
                                         <td>{{ $kyc->documents_count }} document(s), {{ $kyc->people_count }} person(s)</td>
                                         <td>
@@ -79,7 +80,16 @@
                                             @endif
                                         </td>
                                     </tr>
+                                @empty
+                                    <tr><td colspan="6" class="text-center text-muted">No {{ $status === 'verified' ? 'verified' : 'pending' }} KYC records found.</td></tr>
+                                @endforelse
+                            </tbody>
+                        </table>
+                    </div>
 
+                    {{-- The modals sit outside the table: a <form> inside <tbody> is closed by the browser at once, so the
+                         reject form lost its reason box and button and could not be sent --}}
+                    @foreach($kycVerifications as $kyc)
                                     <div class="modal fade" id="kycDetails{{ $kyc->id }}" tabindex="-1" role="dialog" aria-hidden="true">
                                         <div class="modal-dialog modal-lg" role="document">
                                             <div class="modal-content">
@@ -152,12 +162,7 @@
                                             </div>
                                         </div>
                                     @endif
-                                @empty
-                                    <tr><td colspan="6" class="text-center text-muted">No {{ $status === 'verified' ? 'verified' : 'pending' }} KYC records found.</td></tr>
-                                @endforelse
-                            </tbody>
-                        </table>
-                    </div>
+                    @endforeach
 
                     @if($kycVerifications->hasPages())
                         <div class="mt-3">{{ $kycVerifications->links() }}</div>

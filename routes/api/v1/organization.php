@@ -7,9 +7,10 @@ use Illuminate\Support\Facades\Route;
 
 
 
-Route::group(['prefix' => 'organizations'], function () {
+Route::group(['prefix' => 'organizations', 'middleware' => 'org.role:organizations'], function () {
     Route::get('{organization}/reviewers', [OrganizationController::class, 'reviewers']);
     Route::post('/', [OrganizationController::class, 'createOrganization']);
+    Route::get('{organization}', [OrganizationController::class, 'show'])->whereNumber('organization'); // members read their organization
     Route::patch('{organization}', [OrganizationController::class, 'updateOrganization']);
     Route::get('external-reviewers', [ExternalReviewerController::class, 'index']);
 

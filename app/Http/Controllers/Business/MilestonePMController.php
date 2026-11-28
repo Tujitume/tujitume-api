@@ -9,6 +9,7 @@ use App\Models\Milestones\MidPMVote;
 use App\Models\Milestones\MilestonePreReleaseRequest;
 use App\Models\Milestones\PrPMVote;
 use App\Models\Shared\PMAudit;
+use App\Service\Audits\ProjectManagerAudits;
 use App\Service\Balance\BalanceService;
 use App\Service\Balance\CurrencyConverter;
 use App\Service\Business\Milestone\MilestoneFundReleaseService;
@@ -39,6 +40,32 @@ class MilestonePMController extends Controller
         $this->liprW2W = new LiprW2W();
         $this->convert = new CurrencyConverter();
         $this->usdToKes = $this->convert->UsdToKes();
+    }
+
+
+    /** Who may vote for a project manager: an investor whose money is in, for one of the candidates, before one is chosen. */
+    private function pmVoteRefusal($pmAudit, $milestone, int $investorId, int $pmId): ?\Illuminate\Http\JsonResponse
+    {
+        if (!$pmAudit || !$milestone) {
+            return response()->json(['message' => 'PM audit record not found.'], 404);
+        }
+        $isInvestor = $milestone->accepted_bids()->where('investor_id', $investorId)
+            ->whereIn('status', ['confirmed', 'Confirmed', 'verified', 'equipment_released'])->exists();
+        if (!$isInvestor) {
+            return response()->json(['message' => 'Only investors in this milestone can choose its project manager.'], 403);
+        }
+        if ($pmAudit->assigned_pm_id) {
+            return response()->json(['message' => 'A project manager has already been chosen for this audit.'], 409);
+        }
+        $candidates = array_map('intval', (array) ($pmAudit->candidate_pm_ids ?? []));
+        if ($candidates && !in_array($pmId, $candidates, true)) {
+            return response()->json(['message' => 'Choose one of the suggested project managers.'], 422);
+        }
+        // With no nearby candidates, the person chosen must at least be a service provider
+        if (!$candidates && (int) User::where('id', $pmId)->value('user_type_id') !== 3) {
+            return response()->json(['message' => 'Choose a service provider as the project manager.'], 422);
+        }
+        return null;
     }
 
     public function audits($type){
@@ -136,6 +163,7 @@ class MilestonePMController extends Controller
             $validated = $request->validate([
                 'audit_id'   => 'required|integer|exists:p_m_audits,id',
                 'action'        => 'required|string|in:accept,reject',
+                'fee'           => 'nullable|numeric|min:0|max:10000000', // DECISION-9: the PM's quoted fee
             ]);
 
             $audit = PMAudit::find($validated['audit_id']);
@@ -143,8 +171,12 @@ class MilestonePMController extends Controller
                 return response()->json(['message' => 'PM audit record not found.'], 404);
             }
 
-            $audit->status = $validated['action'] .'ed';
-            $audit->save();
+            // Only the project manager the investors chose may answer it, and only once
+            try {
+                (new ProjectManagerAudits())->businessRespond($audit, $request->user(), $validated['action'], isset($validated['fee']) ? (float) $validated['fee'] : null);
+            } catch (\RuntimeException $e) {
+                return response()->json(['message' => $e->getMessage()], $e->getCode() ?: 422);
+            }
 
             return response()->json([
                 'message' => 'Request '. $validated['action'] .'ed.',
@@ -203,6 +235,7 @@ class MilestonePMController extends Controller
                 return response()->json(['message' => 'You already submitted your vote.'], 409);
             }
             $pmAudit = PMAudit::find($validated['audit_id']);
+            if ($refusal = $this->pmVoteRefusal($pmAudit, $pmAudit?->midMilestone?->milestone, (int) $investorId, (int) $validated['voted_pm_id'])) return $refusal;
             $investor_share = $pmAudit->midMilestone->milestone->accepted_bids()
                 ->where('investor_id', $investorId)->sum('representation');
 
@@ -322,6 +355,7 @@ class MilestonePMController extends Controller
                 return response()->json(['message' => 'You already submitted your vote.'], 409);
             }
             $pmAudit = PMAudit::with('prVotes')->find($validated['audit_id']);
+            if ($refusal = $this->pmVoteRefusal($pmAudit, $pmAudit?->preReleaseRequest?->milestone, (int) $investorId, (int) $validated['voted_pm_id'])) return $refusal;
             $investor_share = $pmAudit->preReleaseRequest->milestone->accepted_bids()
                 ->where('investor_id', $investorId)->sum('representation');
 
@@ -334,7 +368,7 @@ class MilestonePMController extends Controller
             ]);
 
             // reload relation
-            //$pmAudit->load('prVotes');
+            $pmAudit->load('prVotes'); // the votes were loaded before this one was saved, so the evaluation saw none
 
             $uniqueInvestors = $pmAudit->preReleaseRequest->milestone->investors()->distinct('users.id')->count('users.id');
             $total_votes = PrPMVote::where('pm_audit_id', $validated['audit_id'])->count();
@@ -437,6 +471,7 @@ class MilestonePMController extends Controller
                 return response()->json(['message' => 'You already submitted your vote.'], 409);
             }
             $pmAudit = PMAudit::with('finalVotes')->find($validated['audit_id']);
+            if ($refusal = $this->pmVoteRefusal($pmAudit, $pmAudit?->thisMilestone, (int) $investorId, (int) $validated['voted_pm_id'])) return $refusal;
             $investor_share = $pmAudit->thisMilestone->accepted_bids()
                 ->where('investor_id', $investorId)->sum('representation');
 
@@ -454,6 +489,7 @@ class MilestonePMController extends Controller
 
             // evaluate votes after each vote - will release / escalate / reject as per rules
             if($total_votes >= $uniqueInvestors && !$pmAudit->assigned_pm_id){
+                $pmAudit->load('finalVotes'); // include the vote just saved
                 $this->finalEvaluateVotes($pmAudit);
             }
 
@@ -540,9 +576,12 @@ class MilestonePMController extends Controller
                 'boName' => $milestone->listing->name,
                 'milestoneName' => $milestone->title,
                 'pmName' => $recipient->first_name . ' ' . $recipient->last_name,
-                'reviewUrl' => 'https://beta.tujitume.com/dashboard/milestones',
+                'reviewUrl' => \App\Service\Notification\RecipientUrl::url('dashboard/milestones', $mail_to),
             ];
-            $this->emailService->send($subject, 'milestone.pre_release.pm_assigned', $data, $mail_to);
+            // One email each to the project manager and the owner (an array of addresses crashed the send)
+            foreach (array_filter((array) $mail_to) as $address) {
+                $this->emailService->send($subject, 'milestone.pre_release.pm_assigned', ['reviewUrl' => \App\Service\Notification\RecipientUrl::url('dashboard/milestones', $address)] + $data, $address);
+            }
         }
         if ($type == 'mid_pm_assigned') {
             $owner = $milestone->listing->owner;
@@ -566,9 +605,12 @@ class MilestonePMController extends Controller
                 'boName' => $milestone->listing->name,
                 'milestoneName' => $milestone->title,
                 'pmName' => $recipient->first_name . ' ' . $recipient->last_name,
-                'reviewUrl' => 'https://beta.tujitume.com/dashboard/milestones',
+                'reviewUrl' => \App\Service\Notification\RecipientUrl::url('dashboard/milestones', $mail_to),
             ];
-            $this->emailService->send($subject, 'milestone.mid_milestone.pm_assigned', $data, $mail_to);
+            // One email each to the project manager and the owner (an array of addresses crashed the send)
+            foreach (array_filter((array) $mail_to) as $address) {
+                $this->emailService->send($subject, 'milestone.mid_milestone.pm_assigned', ['reviewUrl' => \App\Service\Notification\RecipientUrl::url('dashboard/milestones', $address)] + $data, $address);
+            }
         }
         if ($type == 'final_pm_assigned') {
             $owner = $milestone->listing->owner;
@@ -592,9 +634,12 @@ class MilestonePMController extends Controller
                 'boName' => $milestone->listing->name,
                 'milestoneName' => $milestone->title,
                 'pmName' => $recipient->first_name . ' ' . $recipient->last_name,
-                'reviewUrl' => 'https://beta.tujitume.com/dashboard/milestones',
+                'reviewUrl' => \App\Service\Notification\RecipientUrl::url('dashboard/milestones', $mail_to),
             ];
-            $this->emailService->send($subject, 'milestone.final_approval.pm_assigned', $data, $mail_to);
+            // One email each to the project manager and the owner (an array of addresses crashed the send)
+            foreach (array_filter((array) $mail_to) as $address) {
+                $this->emailService->send($subject, 'milestone.final_approval.pm_assigned', ['reviewUrl' => \App\Service\Notification\RecipientUrl::url('dashboard/milestones', $address)] + $data, $address);
+            }
 
             // Notice  to  Investors
             $investors = $milestone->investors;
@@ -615,10 +660,21 @@ class MilestonePMController extends Controller
             $validated = $request->validate([
                 'audit_id'   => 'required|integer|exists:p_m_audits,id',
                 'action'        => 'required|string|in:approved,rejected',
+                'notes'         => 'nullable|string|max:2000',
             ]);
 
             $audit = PMAudit::find($validated['audit_id']);
             if (!$audit) { return response()->json(['message' => 'PM audit record not found.'], 404); }
+
+            // Only the assigned project manager, after accepting, and only once
+            try {
+                ProjectManagerAudits::assertBusinessDecision($audit, $request->user());
+            } catch (\RuntimeException $e) {
+                return response()->json(['message' => $e->getMessage()], $e->getCode() ?: 422);
+            }
+            // The report is in: the PM's held fee is paid now, whatever they recommend; a release below then comes
+            // to the owner less that fee (DECISION-9)
+            \App\Service\Audits\AuditFee::releaseBusiness($audit);
 
             $milestone = $audit->milestone ?? $audit->midMilestone->milestone ?? $audit->preReleaseRequest->milestone;
             $type = $audit->type;
@@ -678,7 +734,7 @@ class MilestonePMController extends Controller
                     }
 
 
-                    $daysToExec = $milestone->no_o_days;
+                    $daysToExec = $milestone->n_o_days; // the milestone's execution days (the column is n_o_days; no_o_days was always null, so the deadline was today)
                     $milestone->fund_released_75 = true;
                     $milestone->status = 'in_progress';
 
@@ -727,6 +783,9 @@ class MilestonePMController extends Controller
                 }
 
             }
+
+            // The audit's own outcome, shown in Project Manager Audits
+            $audit->update(['decision' => $validated['action'], 'decided_at' => now(), 'notes' => $validated['notes'] ?? null]);
 
             return response()->json([
                 'message' => 'Review submitted',

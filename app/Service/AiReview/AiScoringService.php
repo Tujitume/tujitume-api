@@ -40,7 +40,9 @@ class AiScoringService
             if (! $s && ! $allowIncomplete) { $missing[] = $name; continue; }
             $max = $this->rubric->maxScoreFor($c);
             $score = $s ? round(max(0, min($max, (float) $s['score'])), 2) : 0.0;
-            $rationale = $s['rationale'] ?? 'No usable AI score was returned for this criterion; recorded as 0 so the owner can review it.';
+            $rationale = $s && trim((string) ($s['rationale'] ?? '')) !== ''
+                ? $s['rationale']
+                : ($s ? 'The AI gave no reason for this score; check it before relying on it.' : 'No usable AI score was returned for this criterion; recorded as 0 so the owner can review it.');
             $scores[] = ['criterion' => $name, 'score' => $score, 'max' => $max, 'rationale' => $rationale, 'comment' => $rationale];
         }
         if ($missing) return ['ok' => false, 'reason' => 'The AI did not score: '.implode(', ', $missing), 'scores' => $scores, 'total' => null];

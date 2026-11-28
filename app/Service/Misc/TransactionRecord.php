@@ -26,6 +26,7 @@ class TransactionRecord
         // }
 
         //direction
+        $direction = null;
         $creditTypes = [
             'deposit',
             'refund',
@@ -41,6 +42,7 @@ class TransactionRecord
             'investment',
             'investment_awaiting',
             'service_fee',
+            'subscription', // a plan paid from the wallet (ISSUE-52)
         ];
 
         if (in_array($type, $creditTypes)) {

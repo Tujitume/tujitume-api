@@ -17,19 +17,13 @@
             <p style="margin:0.5rem 0;"><strong>Status:</strong> Completed</p>
         </div>
 
-        <p><strong>Next steps:</strong> please confirm if you would like to proceed to the next milestone.</p>
+        <p><strong>Next steps:</strong> open the milestone in Tujitume and check the work.</p>
         <ul style="padding-left:1.25rem;">
-            <li>Once confirmed, the payment for this milestone will be released to the service owner.</li>
-            <li><strong>Review Milestone</strong> will set the milestone back to “In Progress” and the work will continue.</li>
+            <li><strong>Approve and release</strong> sends this milestone's payment to the service owner and starts the next milestone.</li>
+            <li><strong>Request changes</strong> sets the milestone back to “In Progress” with your note, and the work continues.</li>
         </ul>
-
-        <div style="background-color:#fff3cd;padding:1rem 1.25rem;border-radius:0.5rem;margin:1.5rem 0;border-left:4px solid #ffc107;">
-            <p style="margin:0.5rem 0;">If no action is taken within <strong>7 days</strong> from the date of this email, the payment for this milestone will be automatically released to the service owner as per our auto-approval policy.</p>
-            <p style="margin:0.5rem 0;">If you have any concerns about the milestone, please <strong>contact us</strong> before the auto-approval period ends.</p>
-        </div>
         <div style="text-align:center;margin-top:2rem;">
-            <a href="{{ config('app.api_url') }}agreeToMileS/{{ $rep_id }}/{{ $booker_id }}" style="background-color:#14532d;color:white;display:inline-block;padding:0.85rem 2rem;border-radius:999px;text-decoration:none;font-weight:700;font-size:1rem;box-shadow:0 4px 12px rgba(0,0,0,0.18);margin:0.25rem;">Confirm and Proceed</a>
-            <a href="{{ config('app.api_url') }}reviewMilestoneS/{{ $rep_id }}/{{ $booker_id }}" style="background-color:#374151;color:white;display:inline-block;padding:0.85rem 2rem;border-radius:999px;text-decoration:none;font-weight:700;font-size:1rem;box-shadow:0 4px 12px rgba(0,0,0,0.18);margin:0.25rem;">Review Milestone</a>
+            <a href="{{ $link ?? config('app.app_url') }}" style="background-color:#14532d;color:white;display:inline-block;padding:0.85rem 2rem;border-radius:999px;text-decoration:none;font-weight:700;font-size:1rem;box-shadow:0 4px 12px rgba(0,0,0,0.18);margin:0.25rem;">Review Milestone</a>
         </div>
 
         @include('programs.partials.brand_footer')

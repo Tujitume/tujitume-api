@@ -52,7 +52,15 @@ return [
             'throw' => true,
         ],
 
-        's3' => [
+        // Local machines without an AWS bucket keep "s3" uploads on disk (public/local-s3) so the app can be used
+        // end to end; any environment with AWS_BUCKET set, and every non-local one, uses the real bucket below
+        's3' => env('APP_ENV') === 'local' && ! env('AWS_BUCKET') ? [
+            'driver' => 'local',
+            'root' => public_path('local-s3'),
+            'url' => 'http://127.0.0.1:8000/local-s3',
+            'visibility' => 'public',
+            'throw' => true,
+        ] : [
             'driver' => 's3',
             'key' => env('AWS_ACCESS_KEY_ID'),
             'secret' => env('AWS_SECRET_ACCESS_KEY'),

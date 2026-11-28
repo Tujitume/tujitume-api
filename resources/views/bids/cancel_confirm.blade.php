@@ -7,8 +7,8 @@
 
         <div style="text-align:center;margin-top:2rem;">
             <a href="{{ config('app.api_url') }}CancelAssetBid/{{ $bid_id }}/ok" style="background-color:#9f1239;color:white;display:inline-block;padding:0.85rem 2rem;border-radius:999px;text-decoration:none;font-weight:700;font-size:1rem;box-shadow:0 4px 12px rgba(0,0,0,0.18);margin:0.25rem;">OK, Cancel Bid</a>
-            <a href="{{ config('app.app_url') }}dashboard?b_idToVWPM={{ $bid_id }}" style="background-color:#14532d;color:white;display:inline-block;padding:0.85rem 2rem;border-radius:999px;text-decoration:none;font-weight:700;font-size:1rem;box-shadow:0 4px 12px rgba(0,0,0,0.18);margin:0.25rem;">Request a Project Manager</a>
-            <a href="{{ config('app.app_url') }}dashboard?b_idToVWBO={{ $bid_id }}" style="background-color:#14532d;color:white;display:inline-block;padding:0.85rem 2rem;border-radius:999px;text-decoration:none;font-weight:700;font-size:1rem;box-shadow:0 4px 12px rgba(0,0,0,0.18);margin:0.25rem;">Request Business Owner</a>
+            <a href="{{ $app_url ?? config('app.app_url') }}dashboard?b_idToVWPM={{ $bid_id }}" style="background-color:#14532d;color:white;display:inline-block;padding:0.85rem 2rem;border-radius:999px;text-decoration:none;font-weight:700;font-size:1rem;box-shadow:0 4px 12px rgba(0,0,0,0.18);margin:0.25rem;">Request a Project Manager</a>
+            <a href="{{ $app_url ?? config('app.app_url') }}dashboard?b_idToVWBO={{ $bid_id }}" style="background-color:#14532d;color:white;display:inline-block;padding:0.85rem 2rem;border-radius:999px;text-decoration:none;font-weight:700;font-size:1rem;box-shadow:0 4px 12px rgba(0,0,0,0.18);margin:0.25rem;">Request Business Owner</a>
         </div>
 
         @include('programs.partials.brand_footer')

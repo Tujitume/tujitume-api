@@ -19,8 +19,17 @@ return [
     'name' => env('APP_NAME', 'Laravel'),
 
     //prod
-    'app_url' => env('APP_URL', 'http://localhost:81/'),
+    // The website people open from emails and notifications. APP_WEB_URL when the website is not at APP_URL (the
+    // API's own address), e.g. locally the app is on :81 and the API on :8000; otherwise APP_URL as before.
+    'app_url' => env('APP_WEB_URL') ?: env('APP_URL', 'http://localhost:81/'),
     'frontend_url' => env('FRONTEND_URL', 'https://tujitume.com'),
+
+    // An organisation's workspace address. Links sent to the organisation's own people (owner and team
+    // members) open there, because their session lives on that address. {slug} is the workspace name.
+    // Staging: https://{slug}.beta.tujitume.com   Local: http://{slug}.localhost:81   Empty: main site only.
+    'workspace_url_pattern' => env('WORKSPACE_URL_PATTERN', 'https://{slug}.tujitume.com'),
+    // workspace_status values whose address links may use (comma separated); any other falls back to app_url
+    'workspace_link_statuses' => array_values(array_filter(array_map('trim', explode(',', (string) env('WORKSPACE_LINK_STATUSES', 'active,pending_verification'))))),
     'api_url' => env('API_URL', 'http://127.0.0.1:8000/api/'),
     'api_base_url' => env('API_BASE_URL', 'http://127.0.0.1:8000/'),
 
@@ -54,6 +63,9 @@ return [
     */
 
     'debug' => (bool) env('APP_DEBUG', false),
+
+    // Emails of the people who may read the server error log (debug panel) outside local development
+    'debug_admin_emails' => env('DEBUG_ADMIN_EMAILS', ''),
 
     /*
     |--------------------------------------------------------------------------
@@ -179,15 +191,13 @@ return [
          */
         App\Providers\AppServiceProvider::class,
         App\Providers\AuthServiceProvider::class,
-        // App\Providers\BroadcastServiceProvider::class,
+        App\Providers\BroadcastServiceProvider::class, // /api/broadcasting/auth for the private chat and notification channels
         App\Providers\EventServiceProvider::class,
         App\Providers\RouteServiceProvider::class,
         \Safaricom\Mpesa\MpesaServiceProvider::class,
         App\Providers\NotificationServiceProvider::class,
         App\Providers\MatchServiceProvider::class,
         App\Providers\AiListingServiceProvider::class,
-        // Optional module: remove this line (and app/Modules/ProgramImport) to uninstall it. No-op unless PROGRAM_IMPORTS_ENABLED=true.
-        App\Modules\ProgramImport\ProgramImportServiceProvider::class,
         //ConsoleTVs\Profanity\ProfanityServiceProvider::class,
     ])->toArray(),
 

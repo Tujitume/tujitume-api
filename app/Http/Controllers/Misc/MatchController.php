@@ -14,31 +14,13 @@ class MatchController extends Controller
     // A guest works out the score before applying: same calculation, the program is found by its public id
     public function scorePublic(Request $request, string $publicId)
     {
-        $program = Program::where('public_id', $publicId)->where('status', 'published')->firstOrFail();
+        $program = Program::where('public_id', $publicId)->listedForApplicants()->firstOrFail();
 
         return $this->score($request, $program->id);
     }
 
     public function score(Request $request, $program_id)
     {
-        $customProgram = Program::find($program_id);
-        $fieldValues = app(\App\Service\Program\CustomFields\CustomFieldValueService::class);
-        $customFields = $customProgram ? $fieldValues->applicationFields($customProgram) : collect();
-        if ($customFields->isNotEmpty() && $request->has('custom_answers')) {
-            // Preview from the program's own fields: nothing is saved, and the applicant sees matched / partial / not matched only
-            $rules = collect($fieldValues->rules($customFields))->map(fn ($r) => array_values(array_diff($r, ['required'])) ?: ['nullable'])->all();
-            $answers = $request->validate($rules)['custom_answers'] ?? [];
-            $typed = [];
-            foreach ($customFields as $f) {
-                $v = $request->hasFile("custom_answers.{$f->key}") ? 'file' : ($answers[$f->key] ?? null);
-                $typed[$f->key] = match ($f->type) { 'number' => $v === null ? null : (float) $v, 'boolean' => $v === null ? null : filter_var($v, FILTER_VALIDATE_BOOLEAN), default => $v };
-            }
-            $engine = app(\App\Service\Program\MatchScore\MatchScoreEngine::class);
-            $computed = $engine->compute($customProgram, $typed);
-            $limit = $customProgram->match_score_limit;
-
-            return response()->json(['match_score' => $computed['score'], 'below_threshold' => $limit !== null && $computed['score'] !== null && $computed['score'] < $limit, 'breakdown_for_applicant' => $engine->applicantView($computed)], 200);
-        }
         $validated = $request->validate([
             'round_answers' => 'nullable|array',
             'round_answers.*.question_id' => 'required_with:round_answers|integer',
@@ -48,6 +30,8 @@ class MatchController extends Controller
             'round_answers.*.files.*' => 'file|max:10240',
         ]);
         $program = Program::findOrFail($program_id);
+        // A draft or hidden program is invisible to everyone but its own team
+        abort_unless(\App\Service\Program\ProgramAccess::owns($program) || $program->isListedForApplicants(), 404);
         $answers = $validated['round_answers'] ?? [];
         $round = $program->rounds()->where('round_number', 1)->first();
 
@@ -74,7 +58,7 @@ class MatchController extends Controller
 
         $applicantBreakdown = collect($computed['breakdown'] ?? [])
             ->map(function ($item) {
-                $status = in_array($item['status'] ?? null, ['matched', 'partial'], true) ? $item['status'] : 'not matched';
+                $status = in_array($item['status'] ?? null, ['matched', 'partial', 'not answered'], true) ? $item['status'] : 'not matched';
                 return [
                     'question_id' => $item['question_id'] ?? null,
                     'question_text' => $item['question_text'] ?? null,
@@ -91,9 +75,18 @@ class MatchController extends Controller
         return response()->json($payload, 200);
     }
 
-    public function score_capital(MatchScore $match, Request $request, $capital_id)
+    /**
+     * POST capital/match-score/{capital_id}: how well a draft capital application fits the offer (the same calculation
+     * investment-application stores). {score, result, score_breakdown: {sector, geo, stage, revenue, team, impact,
+     * milestones, documents, bonus}}
+     */
+    public function score_capital(Request $request, $capital_id)
     {
-        $score = $match->capital($request, $capital_id);
-        return response()->json($score,200);
+        $offer = \App\Models\Capital\CapitalOffer::where('visible', 1)->find($capital_id);
+        if (! $offer) {
+            return response()->json(['message' => 'Capital offer not found.'], 404);
+        }
+
+        return response()->json((new \App\Service\Capital\CapitalMatchScore())->score($offer, $request), 200);
     }
 }

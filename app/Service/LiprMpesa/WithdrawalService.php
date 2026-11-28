@@ -104,16 +104,12 @@ class WithdrawalService
             throw new \Exception('Wallet does not exist, please create your lipr wallet first', 404);
         }
 
-        $liprBalance = $this->retrieveBalance->lipr($user->id);
-
-        if ($amountKes > $liprBalance) {
-            throw new \Exception("{$amountKes} (KES) Insufficient balance to complete request", 422);
-        }
-
-        $amountUsd = round($this->converter->KesToUsd() * $amountKes, 2);
-
-        if ($amountUsd > $user->balance->balance) {
-            throw new \Exception("{$amountUsd} (\$) Insufficient balance to complete request", 422);
+        // DECISION-6 (owner, 27 Nov): balances are KES. Deposits credit KES and processStatus deducts KES, so the check is
+        // in KES too. (It used to compare KES against the whole LIPR response array, which never blocked, and then USD
+        // against a KES balance.)
+        $balance = (float) ($user->balance?->balance ?? 0);
+        if ($amountKes > $balance) {
+            throw new \Exception('Your balance is KES ' . number_format($balance, 2) . ', which does not cover a withdrawal of KES ' . number_format($amountKes, 2) . '.', 422);
         }
     }
 
@@ -121,7 +117,7 @@ class WithdrawalService
 
     private function notifyWithdrawal(User $user, float $amountUsd): void
     {
-        $link = in_array($user->user_type_id, [4, 3]) ? 'overview/account' : 'account';
+        $link = in_array((int) $user->user_type_id, [3, 4, 5], true) ? 'overview/account' : 'account';
         $text = "Withdrawal started\nUSD {$amountUsd} was taken from your wallet for your withdrawal. Open your account to follow it.";
 
         $this->notification->create($user->id, $user->id, $text, $link, 'withdraw');

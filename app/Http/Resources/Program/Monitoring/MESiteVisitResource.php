@@ -7,6 +7,24 @@ use Illuminate\Http\Resources\Json\JsonResource;
 
 class MESiteVisitResource extends JsonResource
 {
+    /** The reviewer's service per request (a WeakMap, gone with the request), so a list of one officer's visits asks once, not per row. */
+    private static ?\WeakMap $services = null;
+
+    private static function serviceOf(int $reviewerId, Request $request)
+    {
+        self::$services ??= new \WeakMap();
+        $byReviewer = self::$services[$request] ?? [];
+        if (! array_key_exists($reviewerId, $byReviewer)) {
+            $byReviewer[$reviewerId] = \App\Models\Services\Services::where('user_id', $reviewerId)
+                ->whereIn('category', ['project_management', 'business_coaching'])
+                ->orderByRaw('CASE WHEN lat IS NOT NULL AND lng IS NOT NULL THEN 0 ELSE 1 END')
+                ->first();
+            self::$services[$request] = $byReviewer;
+        }
+
+        return $byReviewer[$reviewerId];
+    }
+
     /**
      * Transform a site visit into its monitoring API representation.
      *
@@ -15,10 +33,7 @@ class MESiteVisitResource extends JsonResource
     public function toArray(Request $request): array
     {
         $reviewer = $this->reviewer;
-        $service = $reviewer ? \App\Models\Services\Services::where('user_id', $reviewer->id)
-            ->whereIn('category', ['project_management', 'business_coaching'])
-            ->orderByRaw('CASE WHEN lat IS NOT NULL AND lng IS NOT NULL THEN 0 ELSE 1 END')
-            ->first() : null;
+        $service = $reviewer ? self::serviceOf($reviewer->id, $request) : null;
         return [
             'id' => $this->id,
             'inspector' => $this->inspector,

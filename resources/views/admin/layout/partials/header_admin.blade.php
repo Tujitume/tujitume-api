@@ -6,11 +6,11 @@
 
 			<!-- Logo -->
 			<div class="header-left">
-				<a href="index_admin" class="logo">
-					<img src="../../images/logo.png" alt="Logo">
+				<a href="{{ route('admin.dashboard') }}" class="logo">
+					<img src="{{ asset('images/logo.png') }}" alt="Logo">
 				</a>
-				<a href="index_admin" class="logo logo-small">
-					<img src="../../images/logo2.png" alt="Logo" width="30" height="30">
+				<a href="{{ route('admin.dashboard') }}" class="logo logo-small">
+					<img src="{{ asset('images/logo.png') }}" alt="Logo" width="30" height="30">
 				</a>
 			</div>
 			<!-- /Logo -->
@@ -79,7 +79,7 @@ function logoutUser() {
     const csrfToken = document.querySelector('meta[name="csrf_token"]').getAttribute('content');
 
     // Send a POST request to the /logout route with the CSRF token
-    fetch('logout', {
+    fetch(@json(route('logout')), {
         method: 'GET',
         headers: {
         'X-CSRF-TOKEN': csrfToken
@@ -88,7 +88,7 @@ function logoutUser() {
     .then(response => {
         if (response.ok) {
         // Redirect to the login page or other appropriate action
-        window.location.href = './login';
+        window.location.href = @json(route('admin.login'));
         } else {
         // Handle error, e.g., display an error message
         console.error('Logout failed:', response.statusText);

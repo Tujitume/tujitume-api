@@ -28,6 +28,8 @@ class Disbursement extends Model
         'recipient_type',
         'recipient_user_id',
         'amount',
+        // the transfer fee the program paid on top (ISSUE-22)
+        'fee_amount',
         'currency',
         'payment_method',
         'payment_reference',
@@ -43,6 +45,7 @@ class Disbursement extends Model
 
     protected $casts = [
         'amount' => 'decimal:2',
+        'fee_amount' => 'decimal:2',
         'paid_at' => 'datetime',
     ];
 

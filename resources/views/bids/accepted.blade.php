@@ -21,13 +21,13 @@
             <a href="{{ config('app.api_url') }}agreeToProgressWithMilestone/{{ $bid_id }}" style="background-color:#14532d;color:white;display:inline-block;padding:0.85rem 2rem;border-radius:999px;text-decoration:none;font-weight:700;font-size:1rem;box-shadow:0 4px 12px rgba(0,0,0,0.18);">Proceed with Milestones</a>
         </div>
 
-        <p style="margin-top:1.5rem;">If you require a project manager, please <a href="{{ config('app.app_url') }}dashboard?b_idToVWPM={{ $bid_id }}" style="color:#14532d;font-weight:700;">click here</a>. (Investors with assets must have a project manager.)</p>
+        <p style="margin-top:1.5rem;">If you require a project manager, please <a href="{{ $app_url ?? config('app.app_url') }}dashboard?b_idToVWPM={{ $bid_id }}" style="color:#14532d;font-weight:700;">click here</a>. (Investors with assets must have a project manager.)</p>
         @else
         <p>Please request a Project Manager to proceed with this investment. (Investors with assets must have a project manager.)</p>
 
         <div style="text-align:center;margin-top:2rem;">
-            <a href="{{ config('app.app_url') }}dashboard?b_idToVWPM={{ $bid_id }}" style="background-color:#14532d;color:white;display:inline-block;padding:0.85rem 2rem;border-radius:999px;text-decoration:none;font-weight:700;font-size:1rem;box-shadow:0 4px 12px rgba(0,0,0,0.18);margin:0.25rem;">Project Manager Verify</a>
-            <a href="{{ config('app.app_url') }}dashboard?b_idToVWBO={{ $bid_id }}" style="background-color:#14532d;color:white;display:inline-block;padding:0.85rem 2rem;border-radius:999px;text-decoration:none;font-weight:700;font-size:1rem;box-shadow:0 4px 12px rgba(0,0,0,0.18);margin:0.25rem;">Business Owner Verify</a>
+            <a href="{{ $app_url ?? config('app.app_url') }}dashboard?b_idToVWPM={{ $bid_id }}" style="background-color:#14532d;color:white;display:inline-block;padding:0.85rem 2rem;border-radius:999px;text-decoration:none;font-weight:700;font-size:1rem;box-shadow:0 4px 12px rgba(0,0,0,0.18);margin:0.25rem;">Project Manager Verify</a>
+            <a href="{{ $app_url ?? config('app.app_url') }}dashboard?b_idToVWBO={{ $bid_id }}" style="background-color:#14532d;color:white;display:inline-block;padding:0.85rem 2rem;border-radius:999px;text-decoration:none;font-weight:700;font-size:1rem;box-shadow:0 4px 12px rgba(0,0,0,0.18);margin:0.25rem;">Business Owner Verify</a>
             <a href="{{ config('app.api_url') }}CancelAssetBid/{{ $bid_id }}/confirm" style="background-color:#9f1239;color:white;display:inline-block;padding:0.85rem 2rem;border-radius:999px;text-decoration:none;font-weight:700;font-size:1rem;box-shadow:0 4px 12px rgba(0,0,0,0.18);margin:0.25rem;">Cancel</a>
         </div>
         @endif

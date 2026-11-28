@@ -117,6 +117,11 @@ class AiReviewController extends Controller
         $notQueuedYet = max(0, $submitted - $ready - $attention - $working - $queued);
         $waiting = $queued + $notQueuedYet;
 
+        // ISSUE-39: a finalized round asks nobody for action; what never completed is "AI review didn't run"
+        $finalized = $round->status === 'finalized';
+        $notRun = $finalized ? $working + $waiting + $attention : 0;
+        if ($finalized) { $working = 0; $queued = 0; $waiting = 0; $attention = 0; }
+
         // The application being worked on now (the longest-running one if several run at once)
         $now = $base()->whereIn('application_ai_reviews.status', ['extracting', 'analyzing'])->orderBy('application_ai_reviews.started_at')->first();
 
@@ -144,7 +149,7 @@ class AiReviewController extends Controller
         $recent = $base()->whereIn('application_ai_reviews.status', ['ready', 'failed', 'needs_attention'])->orderByDesc('application_ai_reviews.completed_at')->limit(8)->get();
         // The tabs: finished well, and needing a person, each its own newest-first list
         $doneList = $base()->where('application_ai_reviews.status', 'ready')->orderByDesc('application_ai_reviews.completed_at')->limit(15)->get();
-        $attentionList = $base()->whereIn('application_ai_reviews.status', ['failed', 'needs_attention'])->orderByDesc('application_ai_reviews.completed_at')->limit(15)->get();
+        $attentionList = $finalized ? collect() : $base()->whereIn('application_ai_reviews.status', ['failed', 'needs_attention'])->orderByDesc('application_ai_reviews.completed_at')->limit(15)->get();
         $row = fn ($r) => [
             'application_id' => $r->application_id, 'applicant_name' => $name($r), 'status' => $r->status,
             'queued_at' => $r->created_at?->toIso8601String(), 'started_at' => $r->started_at?->toIso8601String(), 'completed_at' => $r->completed_at?->toIso8601String(),
@@ -193,11 +198,11 @@ class AiReviewController extends Controller
             ->selectRaw('round_status, current_round_id, count(*) as n')->groupBy('round_status', 'current_round_id')->get()
             ->map(fn ($r) => ['status' => (string) $r->round_status, 'here' => (int) $r->current_round_id === (int) $round->id, 'count' => (int) $r->n])->values();
 
-        $state = $stopped ? 'stopped' : ($working > 0 ? 'working' : ($stalled ? 'stalled' : ($waiting > 0 ? ($cooldown > 0 || $capacity['requests_remaining_today'] <= 0 ? 'paused' : 'starting') : ($submitted > 0 && $ready + $attention >= $submitted ? 'done' : 'idle'))));
+        $state = $finalized ? 'finalized' : ($stopped ? 'stopped' : ($working > 0 ? 'working' : ($stalled ? 'stalled' : ($waiting > 0 ? ($cooldown > 0 || $capacity['requests_remaining_today'] <= 0 ? 'paused' : 'starting') : ($submitted > 0 && $ready + $attention >= $submitted ? 'done' : 'idle')))));
 
         return response()->json(['data' => [
             'state' => $state,
-            'counts' => ['total' => $submitted, 'done' => $ready, 'working' => $working, 'waiting' => $waiting, 'attention' => $attention],
+            'counts' => ['total' => $submitted, 'done' => $ready, 'working' => $working, 'waiting' => $waiting, 'attention' => $attention, 'not_run' => $notRun],
             'now' => $now ? ['application_id' => $now->application_id, 'applicant_name' => $name($now), 'step' => $now->status, 'started_at' => $now->started_at?->toIso8601String(), 'elapsed_seconds' => $now->started_at ? max(0, (int) $now->started_at->diffInSeconds(now())) : null] : null,
             'next' => $next ? ['application_id' => $next->application_id, 'applicant_name' => $next->name, 'queued_at' => $next->at->toIso8601String()] : null,
             'stalled' => $stalled,
@@ -233,6 +238,9 @@ class AiReviewController extends Controller
             'tab' => 'required|in:pending,success,attention',
             'page' => 'nullable|integer|min:1',
             'per_page' => 'nullable|integer|in:10,25,50,100',
+            'search' => 'nullable|string|max:200',
+            'export' => 'nullable|boolean',
+            'with_round' => 'nullable|boolean',
         ]);
 
         // Each application's newest non-stale review (or none)
@@ -255,14 +263,69 @@ class AiReviewController extends Controller
             $query->whereIn('r.status', ['failed', 'needs_attention'])->orderByDesc('r.completed_at');
         }
 
-        $page = $query->orderByDesc('pa.id')
-            ->select('pa.id as application_id', 'pa.startup_name', 'pa.contact_person_name', 'pa.updated_at as app_updated_at', 'r.status', 'r.updated_at as review_updated_at', 'r.started_at', 'r.completed_at', 'r.suggested_total', 'r.error')
-            ->paginate((int) ($data['per_page'] ?? 10), ['*'], 'page', (int) ($data['page'] ?? 1));
+        // Every word typed must be in the business, contact name or contact email
+        foreach (\App\Support\ListQuery::words($data['search'] ?? null) as $word) {
+            $like = '%'.\App\Support\ListQuery::escapeLike($word).'%';
+            $query->where(fn ($q) => $q->whereRaw("pa.startup_name like ? escape '!'", [$like])
+                ->orWhereRaw("pa.contact_person_name like ? escape '!'", [$like])
+                ->orWhereRaw("pa.contact_person_email like ? escape '!'", [$like]));
+        }
+
+        $query->orderByDesc('pa.id')
+            ->select('pa.id as application_id', 'pa.startup_name', 'pa.contact_person_name', 'pa.updated_at as app_updated_at', 'r.id as review_id', 'r.status', 'r.updated_at as review_updated_at', 'r.started_at', 'r.completed_at', 'r.suggested_total', 'r.error',
+                'r.summary', 'r.provider', 'r.model', 'r.missing_items', 'r.deterministic_checks');
+
+        // export=1: every row of the tab (no cap), read in chunks; otherwise one page
+        $export = (bool) ($data['export'] ?? false);
+        $page = $export ? null : $query->paginate((int) ($data['per_page'] ?? 10), ['*'], 'page', (int) ($data['page'] ?? 1));
+        $source = $export ? $query->lazy(500) : collect($page->items());
 
         $iso = fn ($value) => $value ? \Illuminate\Support\Carbon::parse($value)->toIso8601String() : null;
+        // Each row explains the result without opening it: the one-line summary, how many findings, what is missing,
+        // which automatic checks failed, and which AI ran it (findings counted in one query for the rows shown)
+        $reviewIds = collect($export ? [] : $source)->pluck('review_id')->filter()->values();
+        $findingCounts = $reviewIds->isEmpty() ? collect() : \Illuminate\Support\Facades\DB::table('application_ai_findings')
+            ->whereIn('review_id', $reviewIds)->selectRaw('review_id, COUNT(*) as n')->groupBy('review_id')->pluck('n', 'review_id');
+        $jsonList = fn ($value) => is_array($value) ? $value : (is_string($value) && $value !== '' ? (json_decode($value, true) ?: []) : []);
+        $explain = fn ($r) => [
+            'summary' => $r->summary ? \Illuminate\Support\Str::limit(trim((string) preg_replace('/\s+/', ' ', $r->summary)), 240) : null,
+            'findings_count' => $r->review_id ? (int) ($findingCounts[$r->review_id]
+                ?? ($export ? \Illuminate\Support\Facades\DB::table('application_ai_findings')->where('review_id', $r->review_id)->count() : 0)) : 0,
+            'missing_count' => count($jsonList($r->missing_items)),
+            'checks_failed' => collect($jsonList($r->deterministic_checks))->where('status', 'fail')->count(),
+            'provider' => $r->provider,
+            'model' => $r->model,
+            'started_at' => $iso($r->started_at),
+            'completed_at' => $iso($r->completed_at),
+        ];
 
-        return response()->json(['data' => [
-            'items' => collect($page->items())->map(fn ($r) => [
+        // with_round=1: each row carries its applicant as the round's table shows it (decision, Business Coach score,
+        // contact) and `summary` the round's score numbers, so the AI tab does not need the whole round in the browser
+        $joined = (bool) ($data['with_round'] ?? false);
+        $applicants = $joined ? \App\Service\Program\RoundApplicantList::build($round)[0]->keyBy('id') : collect();
+        $coachScore = fn ($a) => $a && ! $round->isAiOnly() && \App\Service\Program\RoundApplicantList::scored($a) ? \App\Service\Program\RoundApplicantList::score($a) : null;
+        $withApplicant = fn (array $item) => $joined ? $item + ['app' => ($a = $applicants->get($item['application_id'])) ? $a + [
+            'status_key' => \App\Service\Program\RoundApplicantList::statusKey($a),
+            'coach_score' => $coachScore($a),
+        ] : null] : $item;
+
+        $extra = [];
+        if ($joined) {
+            $ready = $applicants->filter(fn ($a) => ($a['ai_review']['status'] ?? null) === 'ready' && ($a['ai_review']['suggested_total'] ?? null) !== null)
+                ->map(fn ($a) => (float) $a['ai_review']['suggested_total'])->values();
+            $coach = $applicants->map($coachScore)->filter(fn ($v) => $v !== null)->values();
+            $gaps = $applicants->map(fn ($a) => ($c = $coachScore($a)) !== null && ($a['ai_review']['status'] ?? null) === 'ready' && ($a['ai_review']['suggested_total'] ?? null) !== null
+                ? abs($c - (float) $a['ai_review']['suggested_total']) : null)->filter(fn ($v) => $v !== null)->values();
+            $avg = fn ($c) => $c->isEmpty() ? null : round($c->avg(), 2);
+            $extra['summary'] = [
+                'ai_average' => $avg($ready), 'ai_highest' => $ready->max(), 'ai_lowest' => $ready->min(),
+                'coach_average' => $avg($coach), 'average_gap' => $avg($gaps),
+            ];
+        }
+
+        return response()->json(['data' => $extra + [
+            'export_truncated' => false,
+            'items' => $source->map(fn ($r) => $withApplicant([
                 'application_id' => $r->application_id,
                 'applicant_name' => $r->startup_name ?: ($r->contact_person_name ?: '#'.$r->application_id),
                 'status' => $r->status ?? 'not_started',
@@ -270,8 +333,8 @@ class AiReviewController extends Controller
                 'seconds' => $r->started_at && $r->completed_at ? max(1, \Illuminate\Support\Carbon::parse($r->started_at)->diffInSeconds(\Illuminate\Support\Carbon::parse($r->completed_at))) : null,
                 'suggested_total' => $r->suggested_total !== null ? (float) $r->suggested_total : null,
                 'error' => $r->error,
-            ])->values(),
-            'meta' => ['current_page' => $page->currentPage(), 'last_page' => $page->lastPage(), 'per_page' => $page->perPage(), 'total' => $page->total(), 'from' => $page->firstItem(), 'to' => $page->lastItem()],
+            ] + $explain($r)))->values()->all(),
+            'meta' => $page ? ['current_page' => $page->currentPage(), 'last_page' => $page->lastPage(), 'per_page' => $page->perPage(), 'total' => $page->total(), 'from' => $page->firstItem(), 'to' => $page->lastItem()] : null,
         ]]);
     }
 

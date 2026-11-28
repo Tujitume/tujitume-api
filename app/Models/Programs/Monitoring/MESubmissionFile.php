@@ -10,6 +10,9 @@ class MESubmissionFile extends Model
 {
     use HasFactory;
 
+    /** File categories a submission accepts. 'photo_video' is the old combined category, kept for older clients and saved rows. */
+    public const FILE_TYPES = ['document', 'photo', 'video', 'photo_video', 'beneficiary_list', 'other'];
+
     protected $fillable = [
         'submission_id',
         'file_type',

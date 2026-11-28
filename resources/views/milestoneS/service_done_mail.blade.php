@@ -12,7 +12,7 @@
         <p>The service <strong>{{ $service }}</strong> is now marked as fully completed. If you have any feedback or requests, contact Tujitume support at <a href="mailto:support@tujitume.com" style="color:#14532d;">support@tujitume.com</a>.</p>
 
         <div style="text-align:center;margin-top:2rem;">
-            <a href="{{ config('app.app_url') }}service-details/{{ $s_id }}?review_popup=true" style="background-color:#14532d;color:white;display:inline-block;padding:0.85rem 2rem;border-radius:999px;text-decoration:none;font-weight:700;font-size:1rem;box-shadow:0 4px 12px rgba(0,0,0,0.18);">Leave a Review</a>
+            <a href="{{ $link ?? ($app_url ?? config('app.app_url')) }}" style="background-color:#14532d;color:white;display:inline-block;padding:0.85rem 2rem;border-radius:999px;text-decoration:none;font-weight:700;font-size:1rem;box-shadow:0 4px 12px rgba(0,0,0,0.18);">Leave a Review</a>
         </div>
 
         @include('programs.partials.brand_footer')

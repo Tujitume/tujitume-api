@@ -20,6 +20,8 @@ class PMAudit extends Model
 
     protected $casts = [
         'candidate_pm_ids' => 'array',
+        // a date: Project Manager Audits sends it as ISO (a string broke the PM's whole stage list once decided)
+        'decided_at' => 'datetime',
     ];
 
     public function midMilestone()

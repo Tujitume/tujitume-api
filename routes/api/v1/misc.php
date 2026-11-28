@@ -59,7 +59,7 @@ Route::post('raise-dispute', [ResolutionController::class, 'raiseDispute']);
 Route::get('isSubscribed/{id}', [BusinessController::class, 'listingDetailsInfo']);
 Route::post('bidsAccepted', [BidsController::class, 'accept']);
 
-Route::get('bidInfo/{id}', [BidsController::class, 'bid_info']);
+Route::get('bidInfo/{id}', [BidsController::class, 'bidInfo']);
 Route::get('withdraw_investment/{id}', [BidsController::class, 'withdraw_investment']);
 
 // Meetings
@@ -93,8 +93,8 @@ Route::get('listing_auth/{id}', [BusinessController::class,'listing'])->name('li
 Route::get('searchResultsAuth/{ids}', [BusinessController::class,'listingResultsByIds']);
 Route::get('serviceResultsAuth/{ids}', [ServiceController::class, 'serviceResultsByIds']);
 
-Route::get('getMilestonesS_Auth/{id}', [ServiceMilestoneController::class, 'getMilestones'])->name('getMilestonesS');
-Route::get('getMilestonesAuth/{id}', [MilestoneController::class ,'getMilestones'])->name('getMilestones');
+Route::get('getMilestonesS_Auth/{id}', [ServiceMilestoneController::class, 'getMilestones']); // unnamed: the public route has this name; a second name breaks route:cache on deploy
+Route::get('getMilestonesAuth/{id}', [MilestoneController::class ,'getMilestones']); // unnamed: the public route has this name; a second name breaks route:cache on deploy
 
 Route::get('latBusinessAuth', [BusinessController::class,'featuredListings']);
 Route::get('latServicesAuth', [ServiceController::class, 'featuredServices']);
@@ -110,3 +110,5 @@ Route::prefix('/loans')->group(function(){
 // metadata for frontend
 Route::get('metadata/{type}', [MetadataController::class, 'show']);
 
+// Server error log for the debug panel: signed in, and a debug admin (see MiscController::canReadErrorLogs)
+Route::get('/error-logs', [\App\Http\Controllers\Misc\MiscController::class, 'errorLogs']);

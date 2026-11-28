@@ -84,20 +84,36 @@ class AiReviewAnalyzer
             $blocks = $this->trimToFit($blocks, max(1200, $kept - (int) (($estimate - $limit + 150) * 3.3)), $notes);
         }
         $notes = array_values(array_unique($notes));
-        $criteria = collect($round->scoring_criteria ?? [])->pluck('name')->all();
+        // Each criterion with its top score, so the reply is checked against the rubric (ISSUE-35)
+        $rubric = app(\App\Service\Program\RubricCalculator::class);
+        $criteria = collect($round->scoring_criteria ?? [])->map(fn ($c) => ['name' => (string) ($c['name'] ?? ''), 'max' => $rubric->maxScoreFor($c)])->all();
         $schema = $this->prompts->schema($withScores);
         $repairs = 0;
 
         $response = $this->call(new LlmRequest($messages, $schema, $reserveOut), $program, $review, $usage);
         $result = $this->validator->validate($response->json, $criteria, $withScores);
-        if ($result['errors']) {
+        // ISSUE-35: an answer that does not fit the rubric is sent back once, like an invalid one
+        if ($result['errors'] || $result['rubric_issues']) {
             $repairs = 1;
-            $response = $this->call(new LlmRequest($this->prompts->repair($messages, $response->text, $result['errors']), $schema, $reserveOut), $program, $review, $usage);
-            $result = $this->validator->validate($response->json, $criteria, $withScores);
+            $first = $result;
+            try {
+                $response = $this->call(new LlmRequest($this->prompts->repair($messages, $response->text, array_merge($result['errors'], $result['rubric_issues'])), $schema, $reserveOut), $program, $review, $usage);
+                $result = $this->validator->validate($response->json, $criteria, $withScores);
+            } catch (AiUnavailableException $e) {
+                throw $e;
+            } catch (\Throwable $e) {
+                // The repair could not be had: keep the first answer when it was only off the rubric
+                if ($first['errors']) throw $e;
+                $result = $first;
+            }
+            // A repair that is worse (unusable) than a first answer that only missed the rubric: keep the first
+            if ($result['errors'] && ! $first['errors']) $result = $first;
         }
         if ($result['errors']) {
             throw new \UnexpectedValueException('The model did not return a valid report after one repair: '.implode('; ', array_slice($result['errors'], 0, 3)));
         }
+        // Still off the rubric after the repair: the scores are capped / zero-filled, and the review needs a person
+        $rubricIssues = $result['rubric_issues'];
 
         // A name, email and phone number are checked in code, whatever the model made of the masked value
         if ($withScores) {
@@ -141,6 +157,7 @@ class AiReviewAnalyzer
 
         return [
             'data' => $result['data'], 'findings' => $findings, 'quality' => $quality, 'usage' => $usage,
+            'rubric_issues' => $rubricIssues,
             'provider' => $response->provider, 'model' => $response->model, 'notes' => $notes,
         ];
     }

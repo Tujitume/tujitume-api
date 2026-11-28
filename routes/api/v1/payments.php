@@ -19,12 +19,14 @@ use App\Http\Controllers\Mpesa\MpesaPollingController;
 use App\Http\Controllers\Program\ProgramWalletController;
 
 // Onboarding Routes | Stripe
-Route::post('/connect/{id}', [WalletController::class, 'stripeOnboardingInitiate'])->name('connect.stripe');
-Route::get('/saveStripe/{token}', [WalletController::class, 'onboardingSuccess'])->name('return.stripe');
+Route::post('/connect/{id}', [WalletController::class, 'stripeOnboardingInitiate']); // unnamed: web.php has the named one; a second name breaks route:cache on deploy
+Route::get('/saveStripe/{token}', [WalletController::class, 'onboardingSuccess']); // unnamed: web.php has the named one; a second name breaks route:cache on deploy
 
 // LIPR Onboarding & Subscription
 Route::post('/lipr-onboard', [WalletController::class,'lipr_onboarding']);
 Route::post('/lipr-subscription-initiate', [AccountController::class,'lipr_subscription_initiate']);
+// ISSUE-53: price and wallet check only, no money moves (the checkout asks it when "Wallet" is picked)
+Route::post('/lipr-subscription-quote', [AccountController::class,'lipr_subscription_quote']);
 Route::post('/lipr-subscription', [AccountController::class,'lipr_subscription']);
 
 // Unlock & Payments

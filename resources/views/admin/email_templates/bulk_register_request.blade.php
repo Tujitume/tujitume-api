@@ -62,8 +62,9 @@
         Complete Registration
     </div>
     <div class="content">
-        <p>Please go to <a href="https://beta.tujitume.com">beta.tujitume.com</a> and complete registration as a business owner by clicking <strong>'Sign In'</strong>, then you can create your own business.</p>
-        <p><a href="https://beta.tujitume.com?registerModal=open" class="button">Sign Up</a></p>
+        @php($siteUrl = rtrim((string) ($app_url ?? config('app.app_url')), '/'))
+        <p>Please go to <a href="{{ $siteUrl }}">{{ parse_url($siteUrl, PHP_URL_HOST) ?: $siteUrl }}</a> and complete registration as a business owner by clicking <strong>'Sign In'</strong>, then you can create your own business.</p>
+        <p><a href="{{ $siteUrl }}/?registerModal=open" class="button">Sign Up</a></p>
         <img
             src="{{ $message->embed(public_path('images/Email/register.png'))}}"
             alt="registration"

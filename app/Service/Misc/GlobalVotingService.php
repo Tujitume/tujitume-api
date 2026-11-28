@@ -99,7 +99,8 @@ class GlobalVotingService
             ->where('reference_id', $milestoneContextModel->id)
             ->where('status', 'open')->first();
 
-        $window->update([
+        // Not every vote opens a window (pre-release requests are voted on per investor): close one if there is one
+        $window?->update([
             'status' => 'closed',
             'ends_at' => now(),
         ]);
@@ -120,7 +121,7 @@ class GlobalVotingService
                 'business_name' => $milestone->listing->name,
                 'days_remaining' => 7,
                 'amount_raised' => $milestone->pending_collected,
-                'reviewUrl' => 'https://beta.tujitume.com/dashboard/milestones',
+                'reviewUrl' => \App\Service\Notification\RecipientUrl::url('dashboard/milestones', $mail_to),
             ];
 
             $text = "The milestone '{$milestone->title}' for the business '{$milestone->listing->name}' has been gone for IPM voting to decide by investors whether to continue or not.";

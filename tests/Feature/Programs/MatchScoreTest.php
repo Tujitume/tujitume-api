@@ -69,6 +69,9 @@ describe('Round 1 match scoring', function () {
             ->and($questionResponse->json('data.match_answers.country') ?? $questionResponse->json('data.data.match_answers.country'))
             ->toBe(['Kenya', 'Uganda', 'Tanzania']);
 
+        // Applications open only once the first round is published (Program::applicationsClosedReason)
+        ProgramRound::whereKey($roundId)->update(['status' => 'published']);
+
         $business = Listing::create([
             'user_id' => $this->applicantUser->id,
             'name' => 'Northstar Foods',
@@ -124,7 +127,56 @@ describe('Round 1 match scoring', function () {
             ->assertJsonPath('data.breakdown_for_applicant.0.status', 'matched')
             ->assertJsonMissingPath('data.breakdown_for_applicant.0.match_points')
             ->assertJsonMissingPath('data.breakdown_for_applicant.0.match_answers');
-    })->skip('Temporarily disabled while application match-score validation is investigated.');
+    });
+
+    it('creates a program with the match score turned off: no threshold, no scored questions, no score', function () {
+        $industryId = DB::table('program_industries')->insertGetId([
+            'name' => 'Retail', 'url' => 'retail', 'created_at' => now(), 'updated_at' => now(),
+        ]);
+
+        // The Create Program form sends the checkbox as '0' / '1' in multipart form data
+        $created = $this->actingAsOrgOwner()->post('/api/v1/programs/create-program', [
+            'program_title' => 'Unscored Grant',
+            'program_industry_id' => $industryId,
+            'total_program_amount' => 100000,
+            'funding_per_business' => 10000,
+            'application_start_date' => now()->toDateString(),
+            'application_deadline' => now()->addDays(30)->toDateString(),
+            'program_type' => 'single_round',
+            'status' => 'published',
+            'use_match_score' => '0',
+            'match_score_limit' => 60,
+        ], ['Accept' => 'application/json'])->assertOk();
+
+        $data = $created->json('data') ?? $created->json();
+        $programId = $data['program']['id'];
+        $roundId = ($data['firstRound'] ?? $data['first_round'])['id'];
+        expect($data['program']['use_match_score'])->toBeFalse()
+            ->and($data['program']['match_score_limit'])->toBeNull();
+        $this->assertDatabaseHas('programs', ['id' => $programId, 'use_match_score' => false, 'match_score_limit' => null]);
+
+        // A question cannot be put into a score the program does not use
+        $this->actingAsOrgOwner()->postJson("/api/v1/programs/rounds/{$roundId}/questions", [
+            'question_text' => 'Are you registered?', 'question_type' => 'yes_no', 'is_required' => true,
+            'display_order' => 1, 'use_in_match_score' => true, 'match_points' => 20, 'match_answers' => ['yes'],
+        ])->assertStatus(422)->assertJsonValidationErrors(['use_in_match_score']);
+
+        $question = $this->actingAsOrgOwner()->postJson("/api/v1/programs/rounds/{$roundId}/questions", [
+            'question_text' => 'Are you registered?', 'question_type' => 'yes_no', 'is_required' => true, 'display_order' => 1,
+        ])->assertCreated();
+        $questionId = $question->json('data.id') ?? $question->json('data.data.id');
+
+        ProgramRound::whereKey($roundId)->update(['status' => 'published']);
+        $applied = $this->actingAsApplicant()->postJson("/api/v1/programs/{$programId}/applications", [
+            'startup_name' => 'Northstar Foods', 'contact_person_name' => 'Amina Otieno', 'contact_person_email' => 'amina@example.test',
+            'total_amount_requested' => 1000,
+            'round_answers' => [['question_id' => $questionId, 'response' => 'no']],
+        ])->assertCreated();
+
+        // No score is worked out, so nothing can be refused for being below a minimum
+        expect($applied->json('data.match_score'))->toBeNull();
+        $this->assertDatabaseHas('program_applications', ['id' => $applied->json('data.id'), 'match_score' => null]);
+    });
 
     it('scores location by any matching configured part and caps summed checkbox option points', function () {
         $location = RoundCustomQuestion::create([
@@ -271,7 +323,9 @@ describe('Round 1 match scoring', function () {
             ->and($score($company, 'not an email'))->toBe(0.0);
 
         $any = $make(null);
-        expect($score($any, 'amina@gmail.com'))->toBe(10.0);
+        // Both questions are in the round now; an unanswered one is left out of the score, so read this question's own points
+        $earned = collect($svc->score($this->program, $this->round, [$any->id => ['response' => 'amina@gmail.com']])['breakdown'])->firstWhere('question_id', $any->id)['earned_points'];
+        expect($earned)->toBe(10.0);
     });
 
     it('gives full points for a text answer when the owner set no words', function () {
@@ -314,6 +368,8 @@ describe('Round 1 match scoring', function () {
 
     it('takes several files for one question, up to the owner\'s limit, and keeps all of them', function () {
         Storage::fake('s3');
+        // One application per applicant and program: drop the one ProgramTestCase made so this applicant can apply
+        $this->application->delete();
         $question = RoundCustomQuestion::create([
             'round_id' => $this->round->id, 'question_text' => 'Upload your business plan and pitch document',
             'question_type' => 'file_upload', 'options' => ['document', 'type:pdf', 'max_files:2'],
@@ -339,7 +395,7 @@ describe('Round 1 match scoring', function () {
         foreach ($answer->file_paths as $stored) {
             Storage::disk('s3')->assertExists($stored);
         }
-    })->skip('Temporarily disabled while multiple file upload validation is investigated.');
+    });
 
     it('rejects scored questions outside Round 1 and prevents the point budget from exceeding 100', function () {
         $this->actingAsOrgOwner()->postJson("/api/v1/programs/rounds/{$this->round->id}/questions", [

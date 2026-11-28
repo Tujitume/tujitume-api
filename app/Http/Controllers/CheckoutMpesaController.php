@@ -18,6 +18,7 @@ use App\Models\Misc\Setting;
 use App\Models\ReviewerOrder;
 use App\Models\Services\ServiceBooking;
 use App\Models\Services\ServiceBookingMilestone;
+use App\Service\Services\ServiceBookingFlow;
 use App\Service\Balance\BalanceService;
 use App\Service\Balance\CurrencyConverter;
 use App\Service\LiprMpesa\ProgramDisbursementService;
@@ -85,7 +86,7 @@ class CheckoutMpesaController extends Controller
 
             $token = $this->auth();
             $platform_wallet = Setting::where('key', 'platform_lipr_wallet')->value('value');
-            $callbackUrl = rtrim(config('app.api_url'), '/') . '/lipr-callback';
+            $callbackUrl = \App\Service\LiprMpesa\LiprCallback::url('/lipr-callback');
 
             if (!$platform_wallet) {
                 return response()->json(['message' => 'Tujitume platform lipr account not found.'], 404);
@@ -97,6 +98,9 @@ class CheckoutMpesaController extends Controller
                 $payment['amount'],
                 $payment['amountKes']
             );
+            if (!$amountKes || $amountKes <= 0) {
+                return response()->json(['message' => 'The amount to pay could not be worked out.'], 422);
+            }
 
             if ($request->purpose === 'reviewer_payment') {
                 $payment['order']->update(['fee_kes' => $amountKes]);
@@ -107,6 +111,14 @@ class CheckoutMpesaController extends Controller
             $fields = $this->buildInitiatePaymentPayload($request, $payment['callbackUrl'], $amountKes, $platform_wallet);
             $result = $this->sendInitiatePaymentRequest($fields, $token);
 
+            // ISSUE-45: LIPR refused (or could not be reached) → a 4xx with its reason, so the checkout never waits for a
+            // payment that never started
+            if ($refusal = self::liprRefusal($result)) {
+                return response()->json(['message' => 'The M-Pesa payment could not start: '.$refusal.'.', 'liprResponse' => $result], 422);
+            }
+
+            $this->rememberPaymentIntent($result, $request->purpose, $amountKes, $converter);
+
             return response()->json([
                 'liprResponse' => $result,
             ], 200);
@@ -115,19 +127,57 @@ class CheckoutMpesaController extends Controller
             return response()->json(['message' => 'Validation failed.', 'errors' => $e->errors()], 422);
         }
         catch (\Exception $e) {
+            // A refusal the person can read (not theirs, not found, an audit is open...) is not an error to log
+            if (in_array($e->getCode(), [403, 404, 422])) {
+                return response()->json(['message' => $e->getMessage()], $e->getCode());
+            }
+
             ErrorLogService::report($e, [
                 'input' => request()->except(['password', 'token']),
             ]);
-
-            if (in_array($e->getCode(), [404, 422])) {
-                return response()->json(['message' => $e->getMessage()], $e->getCode());
-            }
 
             return response()->json([
                 'message' => 'Something went wrong, please try again later.'
             ], 500);
         }
 
+    }
+
+    /**
+     * The payment row is written by LIPR's callback, which only knows the reference: record here who started it, for
+     * what and how much, so the status polls can check the payment is the caller's own (the callback keeps these).
+     */
+    private function rememberPaymentIntent($result, string $purpose, $amountKes, CurrencyConverter $converter): void
+    {
+        $reference = null;
+        $stack = [is_array($result) ? $result : (array) $result];
+        while ($stack && !$reference) {
+            $node = array_shift($stack);
+            foreach (['reference_id', 'referenceId', 'reference', 'transaction_id', 'transactionId'] as $key) {
+                if (!empty($node[$key]) && is_scalar($node[$key])) { $reference = (string) $node[$key]; break; }
+            }
+            foreach ($node as $value) if (is_array($value)) $stack[] = $value;
+        }
+        if (!$reference) return;
+
+        try {
+            $kesToUsd = $converter->KesToUsd();
+            $payment = LiprPayment::firstOrNew(['reference_id' => $reference]);
+            $payment->user_id = $payment->user_id ?: Auth::id();
+            $payment->purpose = $payment->purpose ?: $purpose;
+            if (!$payment->exists) {
+                $payment->status = 'pending';
+                // LIPR's transaction id arrives with the callback; until then a placeholder unique to this payment
+                // (transaction_id is unique: an empty one let only one payment at a time be pending app-wide, so every
+                // other payment started meanwhile was never recorded and its poll was refused)
+                $payment->transaction_id = 'PENDING-'.$reference;
+                $payment->amount = $amountKes;
+                $payment->amount_usd = $kesToUsd ? round($amountKes * $kesToUsd, 2) : null;
+            }
+            $payment->save();
+        } catch (\Throwable $e) {
+            Log::warning('Could not record the payment intent: '.$e->getMessage());
+        }
     }
 
 
@@ -231,17 +281,24 @@ class CheckoutMpesaController extends Controller
             $listing = Listing::select('id', 'investors_fee')->where('id', $request->listing_id)
                 ->with('owner')
                 ->firstOrFail();
+            // The unlock fee is a fixed KSh amount (Listing::investors_fee): charged as it is, never converted from USD
             $amount = $listing->investors_fee;
+            $amountKes = self::kesWithFees($amount, $request->amount);
         } elseif ($request->purpose === 'awaiting_payment') {
-            $bid = AcceptedBids::select('id', 'business_id', 'amount')->where('id', $request->listing_id)
+            $bid = AcceptedBids::select('id', 'business_id', 'amount', 'investor_id')->where('id', $request->listing_id)
                 ->firstOrFail();
+            if ((int) $bid->investor_id !== (int) Auth::id()) {
+                throw new \Exception('This investment is not yours.', 403);
+            }
+            // A business's money (goal, milestones, bids) is in KSh, as the business form and checkout show it
             $amount = round($bid->amount * 0.75, 2);
+            $amountKes = self::kesWithFees($amount, $request->amount);
         } elseif ($request->purpose === 'program_milestone') {
             $milestone = ProgramMilestone::where('id', $request->listing_id)
                 ->with('application')
                 ->firstOrFail();
             $amount = $milestone->amount;
-            $callbackUrl = rtrim(config('app.api_url'), '/') . '/lipr-callback/disbursement-direct'; // immeadiate
+            $callbackUrl = \App\Service\LiprMpesa\LiprCallback::url('/lipr-callback/disbursement-direct'); // immeadiate
 
             if ($milestone->application->program_owner_id !== auth()->id()) {
                 throw new \Exception('Unauthorized', 403);
@@ -264,7 +321,7 @@ class CheckoutMpesaController extends Controller
             if ($releasedAmount > 0) {
                 $amount = ProgramMilestone::where('app_id', $milestone->app_id)->where('is_template', false)->where('fund_release_status', '!=', 'released')->sum('amount');
             }
-            $callbackUrl = rtrim(config('app.api_url'), '/') . '/lipr-callback/disbursement-escrow';
+            $callbackUrl = \App\Service\LiprMpesa\LiprCallback::url('/lipr-callback/disbursement-escrow');
 
             if ($milestone->application->program_owner_id !== auth()->id()) {
                 throw new \Exception('Unauthorized', 403);
@@ -276,13 +333,28 @@ class CheckoutMpesaController extends Controller
                 ->map(fn($group) => $group->first()->amount)
                 ->sum();
         } elseif ($request->purpose === 'capital_milestone') {
-            $milestone = CapitalMilestone::where('id', $request->listing_id)
-                ->with('application')
-                ->firstOrFail();
-            $amount = $milestone->amount;
+            // The capital provider pays one tranche: the milestone amount plus the platform and M-Pesa fee (ISSUE-22);
+            // the entrepreneur receives the full amount (MpesaPollingController@capitalDisbursementStatus)
+            $milestone = CapitalMilestone::where('id', $request->listing_id)->firstOrFail();
+            if ($refusal = \App\Service\Capital\CapitalRelease::refusal(Auth::user(), $milestone)) {
+                throw new \Exception($refusal[0], $refusal[1] === 409 ? 422 : $refusal[1]);
+            }
+            $base = (float) $milestone->amount;
+            $amount = round($base + \App\Service\Capital\CapitalRelease::fee($base, 'mpesa'), 2);
         } elseif ($request->purpose === 's_mile') {
-            $milestone = ServiceBookingMilestone::with('service')->where('id', $request->listing_id)->first();
-            $amount = $milestone->service->price;
+            // Paying a booked service: listing_id is one of the booking's milestones. Only the person who booked pays,
+            // once the provider has accepted and while it is unpaid; the amount comes from the booking (agreed price,
+            // else the service price) plus the checkout fees, never from the request
+            $milestone = ServiceBookingMilestone::with('booking.service')->where('id', $request->listing_id)->first();
+            if (!$milestone || !$milestone->booking) {
+                throw new \Exception('Booking not found.', 404);
+            }
+            try {
+                ServiceBookingFlow::assertPayable($milestone->booking, Auth::user());
+            } catch (\RuntimeException $e) {
+                throw new \Exception($e->getMessage(), 422);
+            }
+            $amountKes = ServiceBookingFlow::charge($milestone->booking, in_array($request->payment_method, ['local_card', 'intl_card'], true) ? $request->payment_method : 'mpesa');
         } elseif ($request->purpose === 'reviewer_payment') {
             $order = ReviewerOrder::where('id', $request->listing_id)
                 ->with(['reviewer', 'program'])
@@ -305,7 +377,7 @@ class CheckoutMpesaController extends Controller
             }
 
             $amount = $order->fee_amount;
-            $callbackUrl = rtrim(config('app.api_url'), '/') . '/lipr-callback/reviewer-payment';
+            $callbackUrl = \App\Service\LiprMpesa\LiprCallback::url('/lipr-callback/reviewer-payment');
         }
         else {
             throw new \Exception('Invalid purpose', 400);
@@ -314,12 +386,26 @@ class CheckoutMpesaController extends Controller
         return compact('amount', 'amountKes', 'callbackUrl', 'order');
     }
 
+    /**
+     * What M-Pesa charges for a KSh amount due: the checkout's total (the amount plus the platform and gateway fees it
+     * shows), never less than the amount due and never more than the fees could add (10%).
+     */
+    private static function kesWithFees($due, $requested): float
+    {
+        $due = (float) $due;
+        $requested = is_numeric($requested) ? (float) $requested : 0;
+
+        return round(min(max($requested, $due), $due * 1.10), 0);
+    }
+
     private function calculateInitiatePaymentAmount(string $purpose, $amount, $amountKes)
     {
         if ($purpose !== 'bids') {
             if (in_array($purpose, [
                 'program_milestone_bulk',
                 'program_milestone',
+                // the escrow amount (total, or the unreleased remainder) is worked out in $amount, not $amountKes
+                'program_disbursement_escrow',
                 'capital_milestone',
                 'reviewer_payment',
             ])) {
@@ -338,7 +424,7 @@ class CheckoutMpesaController extends Controller
         return [
             'requestId' => 'stk-' . now()->format('YmdHis') . '-' . uniqid(),
             'resultUrl' => $callbackUrl,
-            'timeoutUrl' => rtrim(config('app.api_url'), '/') . '/lipr-callback/timeout',
+            'timeoutUrl' => \App\Service\LiprMpesa\LiprCallback::url('/lipr-callback/timeout'),
             'metadata' => ['listingId' => $request->listing_id],
             'wallet' => $platform_wallet, // escrow(test), tujitume(prod)
             'narration' => $request->purpose,
@@ -347,6 +433,22 @@ class CheckoutMpesaController extends Controller
                 'account' => $request->acc_number,
             ]],
         ];
+    }
+
+    /** Why LIPR did not start a payment (no reply, a non-200 status, or the first recipient refused), or null when it did. */
+    public static function liprRefusal($result): ?string
+    {
+        if (! is_array($result)) {
+            return 'M-Pesa could not be reached';
+        }
+        $first = $result['data'][0] ?? null;
+        if (($result['status'] ?? null) !== 200 || ($result['success'] ?? true) === false || (is_array($first) && ($first['success'] ?? true) === false)) {
+            $reason = (is_array($first) ? ($first['reason'] ?? null) : null) ?? $result['message'] ?? $result['error'] ?? 'M-Pesa refused the request';
+
+            return is_string($reason) ? rtrim($reason, '.') : 'M-Pesa refused the request';
+        }
+
+        return null;
     }
 
     private function sendInitiatePaymentRequest(array $fields, $token)

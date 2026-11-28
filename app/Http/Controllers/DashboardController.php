@@ -10,6 +10,7 @@ use App\Models\Communication\Notifications;
 use App\Models\Milestones\Milestones;
 use App\Models\Services\Services;
 use App\Service\Misc\ErrorLogService;
+use App\Service\Services\ServiceLists;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
@@ -32,11 +33,16 @@ class DashboardController extends Controller
                 return $this->myInvestments();
             }
 
+            // My Services table: a server-paged list when the page asks for one (the old answer otherwise)
+            if ($query === 'service' && ServiceLists::wanted(request())) {
+                return (new ServiceLists((int) $user->id))->services(request());
+            }
+
             return response()->json([
                 'investor'   => $user->user_type_id === 1,
                 'user_email' => $user->email,
                 'user_name'  => $user->first_name . ' ' . $user->last_name,
-                'services'   => Services::where('user_id', $user->id)->get(),
+                'services'   => Services::where('user_id', $user->id)->get()->each->makeVisible(Services::OWNER_ONLY),
             ]);
         }
         catch(\Exception $e) {
@@ -121,7 +127,13 @@ class DashboardController extends Controller
             $notifications = $query->latest()->get();
         }
 
-        $result = $notifications->filter(function ($notice) {
+        // The stored `date` text was written in the server's zone (UTC) when the notification was made; it is rebuilt
+        // here from created_at in the viewer's zone (Settings > Timezone, else their device's), like every other date
+        $settingsZone = \App\Models\Auth\UserSetting::where('user_id', Auth::id())->value('timezone');
+        $viewerZone = \App\Support\UserDateFormatter::zone($settingsZone ?: $request->header('X-Timezone'));
+
+        $result = $notifications->filter(function ($notice) use ($viewerZone) {
+            if ($notice->created_at) $notice->date = $notice->created_at->copy()->setTimezone($viewerZone)->format('d M, h:i a');
             $notifier = $this->notifierFor($notice);
 
             if (!$notifier) return false;

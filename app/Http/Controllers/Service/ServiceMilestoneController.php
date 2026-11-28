@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Service;
 
+use App\Service\Services\ServiceLists;
 use App\Http\Controllers\Controller;
 use App\Models\Auth\User;
 use App\Models\Finance\Transactions;
@@ -15,9 +16,11 @@ use App\Service\Balance\BalanceService;
 use App\Service\Balance\CurrencyConverter;
 use App\Service\LiprMpesa\LiprW2W;
 use App\Service\Misc\ErrorLogService;
+use App\Service\Services\ServiceBookingFlow;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Stripe\StripeClient;
 
@@ -99,7 +102,7 @@ class ServiceMilestoneController extends Controller
                 'payment_deadline' => $booked ? $milestones->first()?->deadline : null,
             ], 200);
 
-        } catch (Exception $e) {
+        } catch (\Throwable $e) {
             ErrorLogService::report($e, ['input' => request()->except(['password', 'token'])]);
             return response()->json(['message' => 'Something went wrong, please try again later.'], 500);
         }
@@ -110,12 +113,21 @@ class ServiceMilestoneController extends Controller
         return response()->json(['message' => 'Milestone deleted successfully.'], 200);
     }
 
-    public function milestones(string $id)
+    // GET /services/bBQhdsfE_WWe4Q-_f7ieh7Hdhf4F_-{id}: the provider's services and the milestones of service {id};
+    // with "all", the milestones of every service of theirs. With list parameters (page, search, filters, sort, export),
+    // "all" is the Service Milestones table: one row per service with its milestone counts and total.
+    public function milestones(Request $request, string $id)
     {
-        $userId   = Auth::id();
+        $userId = Auth::id();
+        if ($id === 'all' && ServiceLists::wanted($request)) {
+            return (new ServiceLists((int) $userId))->milestoneServices($request);
+        }
+
         $business = Services::where('user_id', $userId)->get();
 
-        $milestones    = $id === 'all' ? collect() : Smilestones::where('listing_id', $id)->get();
+        $milestones    = $id === 'all'
+            ? Smilestones::whereIn('listing_id', $business->pluck('id'))->get()
+            : Smilestones::where('listing_id', $id)->get();
         $business_name = $id === 'all' ? 'Select Service' : (Services::find($id)?->name ?? '');
 
         return response()->json([
@@ -131,7 +143,6 @@ class ServiceMilestoneController extends Controller
     {
         $uploadedFiles = [];
 
-        DB::beginTransaction();
         try {
             $validated = $request->validate([
                 'title'       => 'required|string|max:255',
@@ -141,21 +152,28 @@ class ServiceMilestoneController extends Controller
                 'n_o_days'    => 'required|integer|min:1',
                 'time_type'   => 'nullable|string|in:Days,Weeks,Months',
             ]);
+        } catch (ValidationException $e) {
+            return response()->json(['message' => 'Validation failed.', 'errors' => $e->errors()], 422);
+        }
 
-            $service = Services::where('id', $validated['business_id'])
-                ->where('user_id', Auth::id())
-                ->firstOrFail();
+        // Only the provider who owns the service adds its milestones
+        $service = Services::where('id', $validated['business_id'])->where('user_id', Auth::id())->first();
+        if (! $service) {
+            return response()->json(['message' => 'You can only add milestones to your own service.'], 403);
+        }
 
+        $covered = Smilestones::where('listing_id', $validated['business_id'])->sum('amount') + $validated['amount'];
+        if ($covered > $service->price) {
+            return response()->json(['message' => 'The amount exceeds the service price.'], 422);
+        }
+
+        DB::beginTransaction();
+        try {
             $noDays = match($validated['time_type'] ?? 'Days') {
                 'Weeks'  => $validated['n_o_days'] * 7,
                 'Months' => $validated['n_o_days'] * 30,
                 default  => $validated['n_o_days'],
             };
-
-            $covered = Smilestones::where('listing_id', $validated['business_id'])->sum('amount') + $validated['amount'];
-            if ($covered > $service->price) {
-                return response()->json(['message' => 'The amount exceeds the service price.'], 422);
-            }
 
             // First milestone is active, subsequent ones are on hold
             $hasExisting = Smilestones::where('listing_id', $validated['business_id'])->exists();
@@ -168,7 +186,8 @@ class ServiceMilestoneController extends Controller
             }
 
             Smilestones::create([
-                ...$validated,
+                'title'      => $validated['title'],
+                'amount'     => $validated['amount'],
                 'user_id'    => Auth::id(),
                 'listing_id' => $validated['business_id'],
                 'n_o_days'   => $noDays,
@@ -179,9 +198,7 @@ class ServiceMilestoneController extends Controller
             DB::commit();
             return response()->json(['message' => 'Milestone created successfully.'], 200);
 
-        } catch (ValidationException $e) {
-            return response()->json(['message' => 'Validation failed.', 'errors' => $e->errors()], 422);
-        } catch (Exception $e) {
+        } catch (\Throwable $e) {
             DB::rollBack();
             foreach ($uploadedFiles as $file) {
                 if ($file && file_exists(public_path($file))) unlink(public_path($file));
@@ -191,34 +208,14 @@ class ServiceMilestoneController extends Controller
         }
     }
 
+    /**
+     * Old email link "Review Milestone" (GET reviewMilestoneS/{rep}/{booker}). Links in emails must never change
+     * anything: it opens the booking's milestones panel, where the signed-in customer approves or asks for changes.
+     */
     public function reviewMilestone(string $repId, string $bookerId)
     {
-        try {
-            $repId    = explode('.', base64_decode($repId))[0];
-            $mile  = ServiceBookingMilestone::select('id', 'service_id', 'amount', 'title', 'released')
-                ->findOrFail($repId);
-            $serv  = Services::select('name', 'id', 'user_id', 'price')->findOrFail($mile->service_id);
-            $owner = User::select('first_name', 'id', 'connect_id', 'email')->findOrFail($serv->user_id);
-
-            $mile->update(['status' => 'In Progress']);
-
-            $this->notification->create(
-                $owner->id, null, 'Milestone ' . $mile->title . ' for service ' . $serv->name . ' is being reviewed by the customer.', '/', 'service'
-            );
-
-            $this->emailService->send(
-                'Milestone Review', 'milestoneS.milestone_review',
-                ['service' => $serv->name, 'milestone' => $mile->title], $owner->email
-            );
-
-            return redirect()->to(config('app.app_url') . 'service-milestones/' . base64_encode(base64_encode($serv->id)));
-
-        } catch (Exception $e) {
-            ErrorLogService::report($e, ['rep_id' => $repId ?? null]);
-            return response()->json(['message' => 'Something went wrong, please try again later.'], 500);
-        }
+        return $this->openMilestonesPanel($repId);
     }
-
 
     public function setMilestoneStatus(Request $request)
     {
@@ -226,18 +223,41 @@ class ServiceMilestoneController extends Controller
             $validated = $request->validate([
                 'id'     => 'required|integer|exists:service_booking_milestones,id',
                 'status' => 'required|string',
+                // Marking it done: what was delivered (optional), shown to the customer before they approve it
+                'note'    => 'nullable|string|max:2000',
+                'files'   => 'nullable|array|max:5',
+                'files.*' => 'file|mimes:pdf,doc,docx,xls,xlsx,csv,ppt,pptx,jpg,jpeg,png,zip|max:10240',
             ]);
 
             $mile = ServiceBookingMilestone::findOrFail($validated['id']);
-            $mile->update(['status' => $validated['status'], 'active' => 0]);
+            // Only the provider of a paid booking moves its milestones, in order (ServiceBookingFlow)
+            try {
+                $bookingOfMile = ServiceBookingFlow::assertProviderStep($mile, Auth::user(), $validated['status']);
+            } catch (\RuntimeException $e) {
+                return response()->json(['message' => $e->getMessage()], in_array($e->getCode(), [404, 409], true) ? $e->getCode() : 422);
+            }
+            $update = ['status' => $validated['status'], 'active' => $validated['status'] === 'In Progress' ? 1 : 0];
+            if ($validated['status'] === 'Done') {
+                $files = [];
+                foreach ($request->file('files', []) as $file) {
+                    $files[] = ['name' => $file->getClientOriginalName(), 'path' => $this->fileUpload->saveFile($file, 'files/service-deliveries/' . $mile->booking_id)];
+                }
+                // each delivery replaces the one before (after a change request the provider sends the new work)
+                $update += ['delivery_note' => $validated['note'] ?? null, 'delivery_files' => $files ?: null, 'delivered_at' => now()];
+            }
+            $mile->update($update);
 
-            $notLastMile = ServiceBookingMilestone::where('service_id', $mile->service_id)
-                ->where('booker_id', $mile->booker_id)
-                ->where('status', 'To Do')->exists();
+            // Starting a milestone tells nobody; marking it done asks the customer to approve it
+            if ($validated['status'] === 'In Progress') {
+                return response()->json(['message' => 'Milestone started.'], 200);
+            }
+
+            $notLastMile = ServiceBookingMilestone::where('booking_id', $mile->booking_id)
+                ->where('id', '!=', $mile->id)
+                ->where(fn ($q) => $q->whereNull('released')->orWhere('released', 0))->exists();
 
             $business = Services::findOrFail($mile->service_id);
-            $booking  = ServiceBooking::where('service_id', $mile->service_id)
-                ->where('booker_id', $mile->booker_id)->latest()->firstOrFail();
+            $booking  = $bookingOfMile;
 
             $owner    = User::findOrFail($booking->service_owner_id);
             $customer = User::findOrFail($mile->booker_id);
@@ -246,9 +266,9 @@ class ServiceMilestoneController extends Controller
                 ? ['milestoneS.milestone_mail_done', 'Milestone ' . $mile->title . ' has been marked as done by the Service Owner.']
                 : ['milestoneS.last_mile',           'Final milestone ' . $mile->title . ' has been marked as done and the Service is completed.'];
 
-            $serviceLink = 'service-milestones/' . base64_encode(base64_encode($business->id));
+            $serviceLink = ServiceBookingFlow::customerLinkKey($booking);
 
-            $this->notification->create($customer->id, $owner->id, $text, $serviceLink, 'service');
+            $this->notification->create($customer->id, $owner->id, $text . ' Review it to release its payment.', $serviceLink, 'service');
 
             $this->emailService->send('Milestone Done', $view, [
                 'name'       => $mile->title,
@@ -258,16 +278,59 @@ class ServiceMilestoneController extends Controller
                 'booker_id'  => $mile->booker_id,
                 'owner'      => $owner->first_name . ' ' . $owner->last_name,
                 'rep_id'     => $validated['id'],
+                'link'       => ServiceBookingFlow::customerLink($booking),
             ], $customer->email);
 
             return response()->json(['message' => 'Status updated and notification sent.'], 200);
 
         } catch (ValidationException $e) {
             return response()->json(['message' => 'Validation failed.', 'errors' => $e->errors()], 422);
-        } catch (Exception $e) {
+        } catch (\Throwable $e) {
             ErrorLogService::report($e, ['input' => $request->except(['password', 'token'])]);
             return response()->json(['message' => 'Something went wrong, please try again later.'], 500);
         }
+    }
+
+    /**
+     * GET services/milestones/running: the signed-in provider's milestones running now, across every customer: on
+     * paid bookings, not released yet, in progress or done and waiting for the customer's approval. Soonest due first.
+     */
+    public function running()
+    {
+        $rows = ServiceBookingMilestone::query()
+            ->join('service_bookings as b', 'b.id', '=', 'service_booking_milestones.booking_id')
+            ->join('services as s', 's.id', '=', 'service_booking_milestones.service_id')
+            ->leftJoin('users as u', 'u.id', '=', 'b.booker_id')
+            ->where('b.service_owner_id', Auth::id())
+            ->where('b.paid', 1)
+            ->whereIn('service_booking_milestones.status', ['In Progress', 'Done'])
+            ->where(fn ($q) => $q->whereNull('service_booking_milestones.released')->orWhere('service_booking_milestones.released', 0))
+            ->orderByRaw('service_booking_milestones.deadline IS NULL, service_booking_milestones.deadline ASC')
+            ->limit(100)
+            ->get([
+                'service_booking_milestones.id', 'service_booking_milestones.title', 'service_booking_milestones.amount',
+                'service_booking_milestones.status', 'service_booking_milestones.deadline', 'service_booking_milestones.change_note',
+                'service_booking_milestones.n_o_days', 'service_booking_milestones.booking_id', 'service_booking_milestones.service_id',
+                'b.booker_id', 's.name as service_name', 'u.first_name', 'u.last_name', 'u.email', 'u.image',
+            ])
+            ->map(fn ($m) => [
+                'id' => $m->id,
+                'title' => $m->title,
+                'amount' => (float) $m->amount,
+                'status' => $m->status,
+                'waiting_approval' => $m->status === 'Done',
+                'deadline' => $m->deadline,
+                'days' => $m->n_o_days ? (int) $m->n_o_days : null,
+                'change_note' => $m->change_note,
+                'booking_id' => $m->booking_id,
+                'service_id' => $m->service_id,
+                'service_name' => $m->service_name,
+                'booker_id' => $m->booker_id,
+                'customer_name' => trim(($m->first_name ?? '').' '.($m->last_name ?? '')) ?: $m->email,
+                'customer_image' => $m->image,
+            ])->values();
+
+        return response()->json(['data' => $rows]);
     }
 
     public function findMilestones(int $serviceId, int $bookerId)
@@ -289,95 +352,23 @@ class ServiceMilestoneController extends Controller
     }
 
 
-    // Optional - Email Click Methods
+    /**
+     * Old email link "Confirm and Proceed" / "Release Final Payment" (GET agreeToMileS/{rep}/{booker}). It used to
+     * release the milestone's payment to anyone holding the link; it now only opens the milestones panel, where the
+     * signed-in customer approves the milestone (ServiceBookingFlow::approve).
+     */
     public function agreeToProgressWithServiceMilestone($rep_id, $booker_id)
     {
-        $rep_id = explode('.', base64_decode($rep_id))[0];
-        $booker_id = explode('.', base64_decode($booker_id))[0];
-
-        try {
-            $milestone = ServiceBookingMilestone::findOrFail($rep_id);
-            if ($milestone->released) {
-                return 'Payment already released for this milestone!';
-            }
-
-            $service = $milestone->service;
-            $customer = User::findOrFail($milestone->booker_id);
-            $owner = $service->owner;
-            $s_id = base64_encode(base64_encode($service->id));
-            $transferAmount = round($milestone->amount, 2);
-
-            // Fetch last transaction
-            $transaction = Transactions::where([
-                'user_id' => $customer->id, 'recipient_id' => $owner->id, 'type' => 'service_fee'
-            ])->latest()->first();
-
-            // Release Payment
-            if ($transaction->method === 'stripe') {
-
-                if (!$owner->connect_id) return 'Service owner not onboarded to Stripe to receive payment.';
-                $transfer = $this->Client->transfers->create([
-                    'amount' => $transferAmount * 100,
-                    'currency' => 'USD',
-                    'destination' => $owner->connect_id
-                ]);
-                $this->transaction->create(
-                    $customer->id, 'service_milestone', 'stripe', $transferAmount, $transfer->id, $owner->id
-                );
-
-            } else { // Lipr
-
-                if (!$owner->lipr_wallet) return 'Service owner not onboarded to Lipr.';
-
-                $amountKes = round($this->convert->UsdToKes() * $transferAmount, 2);
-                $transfer = $this->liprW2W->send($amountKes, $owner->lipr_wallet, $this->tujitume_lipr, 'Service Milestone Payment');
-
-                if (!$transfer || !$transfer['success']) return 'Milestone release failed: ' . ($transfer['errors'][0] ?? 'Unknown error');
-                $this->transaction->create($customer->id, 'service_milestone', 'lipr', $transferAmount, 'N/A', $owner->id);
-            }
-
-            $milestone->update(['released' => 1]);
-
-            // Activate next milestone if exists
-            $nextMilestone = ServiceBookingMilestone::where('service_id', $milestone->service_id)
-                ->where('booker_id', $booker_id)->where('status', 'To Do')->first();
-            if ($nextMilestone) $nextMilestone->update(['active' => 1, 'status' => 'In Progress']);
-
-            // Update balance
-            $this->balance->updateBalance($owner->id, $transferAmount, 'Unknown');
-
-            // Notifications
-            $this->createNotification(
-                $owner->id, null, "Milestone payment for {$milestone->title} released", "/service-milestones/{$s_id}", 'service'
-            );
-            $this->createNotification(
-                $booker_id, null, "Milestone payment for {$milestone->title} released. Next milestone in progress", "/service-milestones/{$s_id}", 'service'
-            );
-
-            // Check if service completed
-            $pending = ServiceBookingMilestone::where('service_id', $milestone->service_id)
-                ->where('booker_id', $booker_id)
-                ->whereIn('status', ['To Do','In Progress'])
-                ->exists();
-
-            $stage = $pending ? "{$milestone->title} Released" : 'Service Delivered';
-            ServiceBooking::where('id', $milestone->booking_id)->update(['stage' => $stage, 'status' => $pending ? 'In Progress' : 'delivered']);
-
-            // Send emails if service completed
-            if (!$pending) {
-                $dataCustomer = ['s_id' => $s_id, 'service' => $service->name, 'amount' => $service->price, 'to' => 1, 'user_name' => $customer->first_name];
-                $dataOwner = ['s_id' => $s_id, 'service' => $service->name, 'amount' => $service->price, 'to' => 2, 'user_name' => $owner->first_name];
-
-                $this->emailService->send('Service Done', 'milestoneS.service_done_mail', $dataCustomer, $customer->email);
-                $this->emailService->send('Service Done', 'milestoneS.service_done_mail', $dataOwner, $owner->email);
-            }
-
-            return redirect()->to(config('app.app_url') . "service-milestones/{$s_id}?payment_released=true");
-
-        } catch (\Exception $e) {
-            ErrorLogService::report($e, ['input' => request()->except(['password','token'])]);
-            return redirect()->to(config('app.app_url'));
-        }
+        return $this->openMilestonesPanel((string) $rep_id);
     }
 
+    private function openMilestonesPanel(string $repId)
+    {
+        $id = (int) explode('.', (string) base64_decode($repId, true))[0];
+        $booking = $id ? ServiceBookingMilestone::find($id)?->booking : null;
+
+        return redirect()->away($booking
+            ? (ServiceBookingFlow::customerLink($booking) ?? \App\Service\Notification\RecipientUrl::main())
+            : \App\Service\Notification\RecipientUrl::main());
+    }
 }

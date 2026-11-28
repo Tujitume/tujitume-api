@@ -7,7 +7,7 @@
         <p>If you require a Transaction Advisor, use the button below.</p>
 
         <div style="text-align:center;margin-top:2rem;">
-            <a href="{{ config('app.app_url') }}services" style="background-color:#14532d;color:white;display:inline-block;padding:0.85rem 2rem;border-radius:999px;text-decoration:none;font-weight:700;font-size:1rem;box-shadow:0 4px 12px rgba(0,0,0,0.18);">Find a Transaction Advisor</a>
+            <a href="{{ $app_url ?? config('app.app_url') }}services" style="background-color:#14532d;color:white;display:inline-block;padding:0.85rem 2rem;border-radius:999px;text-decoration:none;font-weight:700;font-size:1rem;box-shadow:0 4px 12px rgba(0,0,0,0.18);">Find a Transaction Advisor</a>
         </div>
 
         @include('programs.partials.brand_footer')

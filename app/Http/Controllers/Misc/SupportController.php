@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers\Misc;
 
+
+use Illuminate\Support\Facades\DB;
 use App\Http\Controllers\Controller;
 use App\Models\Business\Listing;
 use App\Models\DemoRequest;
@@ -105,53 +107,5 @@ class SupportController extends Controller
         }
     }
 
-    public function requestDemo(Request $request)
-    {
-        $validated = $request->validate([
-            'name' => 'required|string|max:150',
-            'org' => 'required|string|max:255',
-            'email' => 'required|email|max:191',
-
-            'request_type' => 'required|in:demo,meeting,trial,consultation',
-            // Keep this list aligned with the demo_requests table enum. The
-            // frontend normalizes its more specific marketing categories.
-            'type' => 'required|in:program,investment,capital,service,platform',
-
-            'notes' => 'nullable|string|max:5000',
-        ]);
-
-        try {
-            $demoRequest = DemoRequest::create($validated);
-
-                $this->emailService->send(
-                    'New Demo Request - ' . ucfirst($demoRequest->type),
-                    'tujitume_demo_request',
-                    [
-                        'name'        => $demoRequest->name,
-                        'org'         => $demoRequest->org,
-                        'email'       => $demoRequest->email,
-                        'request_type' => $demoRequest->request_type,
-                        'type'        => $demoRequest->type,
-                        'notes'       => $demoRequest->notes,
-                    ], $demoRequest->email 
-                    //'info@tujitume.com' //'stevemonitoring.gathirus@gmail.com'
-                    //config('mail.tujitume.contact_email') // ← send to tujitume internal email
-                );
-
-                return response()->json(['message' => 'Request submitted successfully.'], 200);
-
-        }
-        catch (ValidationException $e) {
-            return response()->json([
-                'message' => 'Validation error.', 'errors' => $e->errors(),
-            ], 422);
-        }
-        catch (Exception $e) {
-            ErrorLogService::report($e, ['input' => $request->except(['password', 'token'])]);
-            return response()->json([
-                'message' => 'Something went wrong, please try again later.'
-            ], 500);
-        }
-    }
-
+    // The landing-page request form is handled by DemoRequestController::store.
 }

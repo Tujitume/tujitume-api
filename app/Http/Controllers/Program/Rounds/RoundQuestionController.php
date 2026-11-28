@@ -53,6 +53,8 @@ class RoundQuestionController extends Controller
                 'question_text'  => 'sometimes|required|string|max:500',
                 'question_type'  => 'sometimes|required|in:knockout,short_answer,long_text,long_answer,paragraph,multiple_choice,checkbox,checkboxes,dropdown,yes_no,true_false,rating,rating_scale,linear_scale,number,email,phone,phone_number,url,url_website,video_link,date,time,datetime,date_time,file_upload,address,currency,currency_money,percentage,matrix,matrix_grid,ranking,signature,budget_breakdown,knockout_yes_no,location',
                 'options'        => 'nullable|array',
+                'file_category'  => 'nullable',
+                'file_category.*' => 'string',
                 'is_required'    => 'nullable|boolean',
                 'display_order'  => 'sometimes|required|integer|min:1',
                 'knockout_fail_value' => 'nullable|string|max:45',
@@ -103,6 +105,8 @@ class RoundQuestionController extends Controller
                 'question_text' => 'required|string|max:500',
                 'question_type' => 'required|in:knockout,short_answer,long_text,long_answer,paragraph,multiple_choice,checkbox,checkboxes,dropdown,yes_no,true_false,rating,rating_scale,linear_scale,number,email,phone,phone_number,url,url_website,video_link,date,time,datetime,date_time,file_upload,address,currency,currency_money,percentage,matrix,matrix_grid,ranking,signature,budget_breakdown,knockout_yes_no,location',
                 'options' => 'nullable|array', // For multiple choice
+                'file_category' => 'nullable', // file upload: a category or a list of them
+                'file_category.*' => 'string',
                 'is_required' => 'nullable|boolean',
                 'display_order' => 'required|integer|min:1',
                 'knockout_fail_value' => 'nullable|string|max:45',
@@ -213,6 +217,10 @@ class RoundQuestionController extends Controller
             if ($reason = $application->currentRound?->notOpenReason()) {
                 return response()->json(['message' => $reason, 'error' => $reason], 422);
             }
+            // ...and a closed one takes no more answers
+            if ($reason = $application->currentRound?->closedReason()) {
+                return response()->json(['message' => $reason, 'error' => $reason, 'code' => 'round_closed'], 422);
+            }
 
             $validated = $request->validate([
                 'question_id' => 'required|exists:round_custom_questions,id',
@@ -293,8 +301,9 @@ class RoundQuestionController extends Controller
             $application = ProgramApplication::with('program')->findOrFail($applicationId);
 
             // Authorization: Applicant or program owner can view
-            $isApplicant = $application->user_id === $userId;
-            $isProgramOwner = $application->program->user_id === $userId;
+            $isApplicant = (int) $application->user_id === (int) $userId;
+            // the owner and their organization's program team
+            $isProgramOwner = \App\Service\Program\ProgramAccess::owns($application->program);
 
             if (!$isApplicant && !$isProgramOwner) {
                 return response()->json(['error' => 'Unauthorized'], 403);
@@ -304,6 +313,16 @@ class RoundQuestionController extends Controller
                 ->where('application_id', $applicationId)
                 ->where('round_id', $roundId)
                 ->get();
+
+            // The applicant sees their questions as the apply form shows them: never the scoring key (points per
+            // answer, match answers, the knockout answer that fails)
+            if (!$isProgramOwner) {
+                $answers = $answers->map(function ($answer) {
+                    $row = $answer->toArray();
+                    if ($answer->question) $row['question'] = $answer->question->applicantView();
+                    return $row;
+                });
+            }
 
             return response()->json([
                 'data' => $answers,

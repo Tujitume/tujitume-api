@@ -124,6 +124,10 @@ class WalletController extends Controller
     {
         try {
             $id = Auth::id();
+            // A 7-day demo account never gets a real wallet: full access is a fresh account with its own
+            if (\App\Models\Organizations\Organization::whereKey(Auth::user()?->organization_id)->where('is_trial', true)->exists()) {
+                return response()->json(['message' => 'A demo account cannot set up a wallet. Get full access to set one up.'], 403);
+            }
             $user = User::select('lipr_wallet')->where('id', $id)->first();
             if($user->lipr_wallet != null){
                 //return response()->json([ 'message' => 'Lipr wallet exists.'],409);
@@ -175,7 +179,7 @@ class WalletController extends Controller
                 $seller->load('organizationRole.role');
                 $role = $seller->organizationRole?->role?->name ?? null;
             }
-            else if($seller->user_type_id == 3){
+            else if((int) $seller->user_type_id === 5){
                 $seller->load('capital_profile.role');
                 $role = $seller->capital_profile?->role?->name ?? null;
             }
@@ -254,7 +258,7 @@ class WalletController extends Controller
             DB::table('users')->where('id',$seller->id)
                 ->update(['completed_onboarding'=>1]);
         }
-        redirect()->to(config('app.app_url').'dashboard')->send();
+        redirect()->to(\App\Service\Notification\RecipientUrl::url('dashboard', $seller))->send();
     }
     // O n b o a r d i n g   E N D S
 
@@ -275,7 +279,7 @@ class WalletController extends Controller
                     $user_id = $user->organizationOwnerId();
                 }
             }
-            else if($user->user_type_id == 3) {
+            else if((int) $user->user_type_id === 5) {
                 $user->load('capital_profile.role');
                 $role = $user->capital_profile?->role?->name ?? null;
                 if ($role) {
@@ -334,8 +338,8 @@ class WalletController extends Controller
 
             $fields = [
                 "requestId" => 'stk-' . now()->format('YmdHis') . '-' . uniqid(),
-                "resultUrl" => rtrim(config('app.api_url'), '/') . '/lipr-callback',
-                "timeoutUrl" => rtrim(config('app.api_url'), '/') . '/lipr-callback/timeout',
+                "resultUrl" => \App\Service\LiprMpesa\LiprCallback::url('/lipr-callback'),
+                "timeoutUrl" => \App\Service\LiprMpesa\LiprCallback::url('/lipr-callback/timeout'),
                 //"metadata" => ["user_id" => $user->id, "purpose" => $request->purpose, //"customerId" => "CUST-441"],
 
                 "wallet" => $user->lipr_wallet, // 'tujitume-2v'
@@ -365,6 +369,25 @@ class WalletController extends Controller
                         ?? $response['error'] ?? $response['errors'] ?? 'API request failed',
                     'response' => $response
                 ], $response['status_code'] ?? 400);
+            }
+
+            // The callback only knows the reference: record whose deposit it is, so only they can credit it
+            $reference = $response['data'][0]['reference'] ?? null;
+            if ($reference) {
+                try {
+                    $payment = LiprPayment::firstOrNew(['reference_id' => (string) $reference]);
+                    $payment->user_id = $payment->user_id ?: $user->id;
+                    $payment->purpose = $payment->purpose && $payment->purpose !== 'transfer' ? $payment->purpose : 'deposit';
+                    if (! $payment->exists) {
+                        $payment->status = 'pending';
+                        $payment->transaction_id = 'pending-'.$reference; // unique; LIPR's id arrives with the callback
+                        $payment->amount = $amount;
+                        $payment->amount_usd = 0;
+                    }
+                    $payment->save();
+                } catch (\Throwable $e) {
+                    \Illuminate\Support\Facades\Log::warning('Could not record the deposit intent: '.$e->getMessage());
+                }
             }
 
             return response()->json(['data' => $response], 200);
@@ -413,6 +436,14 @@ class WalletController extends Controller
                     ],200);
                 }
 
+                // Only the person who started this deposit can credit it, and never with a payment made for something else
+                if ($payment->user_id && (int) $payment->user_id !== (int) $user->id) {
+                    return response()->json(['message' => 'This payment was made by someone else.'], 403);
+                }
+                if ($payment->purpose && ! in_array($payment->purpose, ['deposit', 'transfer'], true)) {
+                    return response()->json(['message' => 'This payment was not a wallet deposit.'], 422);
+                }
+
             DB::transaction(function () use ($request, $user, &$amount, &$payment)
             {
 
@@ -436,7 +467,7 @@ class WalletController extends Controller
 
             //NotificationService
             $link = 'account';
-            if($user->user_type_id == 4 || $user->user_type_id == 3){
+            if(in_array((int) $user->user_type_id, [3, 4, 5], true)){
                 $link = 'overview/account';
             }
             $text = 'Hi, your wallet was credited by KES '. $amount .' from deposit.';
@@ -525,7 +556,7 @@ class WalletController extends Controller
                 });
                 //NotificationService
                 $link = 'account';
-                if($user->user_type_id == 4 || $user->user_type_id == 3){
+                if(in_array((int) $user->user_type_id, [3, 4, 5], true)){
                     $link = 'overview/account';
                 }
                 $text = 'Hi, your wallet was credited by USD $'. $netAmount .' from deposit.';

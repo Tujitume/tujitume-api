@@ -269,6 +269,31 @@ it('pages the AI tab tables: pending, success and needs attention, newest first'
     $this->actingAsOrgOwner()->getJson($url('pending', '&per_page=7'))->assertStatus(422);
 });
 
+it('explains each AI tab row: summary, findings, missing details, failed checks and the AI that ran it', function () {
+    $review = \App\Models\Programs\Ai\ApplicationAiReview::where('application_id', $this->application->id)->firstOrFail();
+    $review->update([
+        'summary' => "Strong water access plan.\nPricing needs proof.", 'provider' => 'groq', 'model' => 'llama-3.3-70b',
+        'missing_items' => [['item' => 'Customer count'], ['item' => 'Price list']],
+        'deterministic_checks' => [['check' => 'required_answer', 'status' => 'fail', 'detail' => 'Unanswered: Q2'], ['check' => 'required_document', 'status' => 'pass']],
+        'started_at' => now()->subMinute(), 'completed_at' => now(),
+    ]);
+    \Illuminate\Support\Facades\DB::table('application_ai_findings')->insert([
+        ['review_id' => $review->id, 'author_type' => 'ai', 'dimension' => 'impact', 'polarity' => 'strength', 'title' => 'Reach', 'body' => 'Serves 400 homes', 'confidence' => 'high', 'status' => 'open', 'source_type' => 'answer', 'created_at' => now(), 'updated_at' => now()],
+        ['review_id' => $review->id, 'author_type' => 'ai', 'dimension' => 'finance', 'polarity' => 'risk', 'title' => 'Pricing', 'body' => 'No price proof', 'confidence' => 'medium', 'status' => 'open', 'source_type' => 'answer', 'created_at' => now(), 'updated_at' => now()],
+    ]);
+
+    $row = $this->actingAsOrgOwner()->getJson("/api/v1/programs/rounds/{$this->round->id}/ai-reviews/items?tab=success")->assertOk()->json('data.items.0');
+    expect($row['summary'])->toBe('Strong water access plan. Pricing needs proof.')
+        ->and($row['findings_count'])->toBe(\Illuminate\Support\Facades\DB::table('application_ai_findings')->where('review_id', $review->id)->count())
+        ->and($row['findings_count'])->toBeGreaterThanOrEqual(2)
+        ->and($row['missing_count'])->toBe(2)
+        ->and($row['checks_failed'])->toBe(1)
+        ->and($row['provider'])->toBe('groq')
+        ->and($row['model'])->toBe('llama-3.3-70b')
+        ->and($row['started_at'])->not->toBeNull()
+        ->and($row['completed_at'])->not->toBeNull();
+});
+
 it('keeps the AI tab tables away from people who are not signed in', function () {
     $this->getJson("/api/v1/programs/rounds/{$this->round->id}/ai-reviews/items?tab=pending")->assertStatus(401);
 });
@@ -408,4 +433,26 @@ it('works the queue first come first served: an application with no review yet t
     }
 
     expect($order)->toBe(['B', 'A', 'C']);
+});
+
+it('exports every row of an AI tab past the first page, and searches on the server', function () {
+    \App\Models\Programs\Ai\ApplicationAiReview::where('application_id', $this->application->id)->update(['status' => 'queued', 'completed_at' => null]);
+    foreach (range(1, 12) as $i) {
+        $u = \App\Models\Auth\User::factory()->create(['user_type_id' => 1]);
+        \App\Models\Programs\ProgramApplication::factory()->create(['program_id' => $this->program->id, 'user_id' => $u->id, 'program_owner_id' => $this->orgUser->id, 'current_round_id' => $this->round->id, 'status' => 'pending', 'round_status' => 'submitted', 'startup_name' => $i <= 3 ? "Kilimo Farm {$i}" : "Duka {$i}"]);
+    }
+    $url = "/api/v1/programs/rounds/{$this->round->id}/ai-reviews/items?tab=pending";
+
+    $page = $this->actingAsOrgOwner()->getJson($url.'&per_page=10&page=1')->assertOk()->json('data');
+    expect($page['items'])->toHaveCount(10)->and($page['meta']['total'])->toBe(13);
+
+    $all = $this->actingAsOrgOwner()->getJson($url.'&export=1')->assertOk()->json('data');
+    expect($all['items'])->toHaveCount(13)->and($all['export_truncated'])->toBeFalse()->and($all['meta'])->toBeNull();
+
+    $found = $this->actingAsOrgOwner()->getJson($url.'&export=1&search=kilimo')->json('data.items');
+    expect(collect($found)->pluck('applicant_name')->sort()->values()->all())->toBe(['Kilimo Farm 1', 'Kilimo Farm 2', 'Kilimo Farm 3']);
+    expect($this->actingAsOrgOwner()->getJson($url.'&per_page=10&page=1&search=kilimo')->json('data.meta.total'))->toBe(3);
+
+    // still the owner's only
+    $this->actingAs($this->applicantUser, 'sanctum')->getJson($url.'&export=1')->assertForbidden();
 });

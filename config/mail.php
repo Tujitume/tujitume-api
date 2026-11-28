@@ -136,4 +136,15 @@ return [
         ],
     ],
 
+
+    /*
+    | Import emails (applicants, Business Coaches, suppliers, site visit officers, "import finished"): sent at a steady
+    | pace so a large send never goes out in a burst, and only to addresses whose domain can receive mail, so nothing
+    | bounces and the sending account (e.g. Zoho) is not flagged. Tests send at once and do not look domains up.
+    */
+    'import' => [
+        'per_minute' => (int) env('IMPORT_MAIL_PER_MINUTE', env('APP_ENV') === 'testing' ? 0 : 20),
+        'check_domains' => (bool) env('IMPORT_MAIL_CHECK_DOMAINS', env('APP_ENV') !== 'testing'),
+    ],
+
 ];

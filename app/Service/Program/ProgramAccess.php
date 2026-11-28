@@ -41,10 +41,15 @@ class ProgramAccess
         if ((int) $user->id === (int) $program->user_id) return true;
         if ((int) $user->user_type_id !== 4 || !$user->organization_id) return false;
 
-        $user->loadMissing('organizationRole.role');
-        if (!in_array($user->organizationRole?->role?->name, self::PROGRAM_TEAM_ROLES, true)) return false;
+        // ISSUE-38: the program belongs to its organization; the organization's owner and its program team may act on
+        // it, whoever on the team created it (it used to be only programs created by the organization's owner)
+        $orgId = $program->organizationId();
+        $userOrg = $user->organization_id ?: \App\Models\Organizations\Organization::where('owner_user_id', $user->id)->value('id');
+        if (! $orgId || (int) $userOrg !== (int) $orgId) return false;
+        if ((int) \App\Models\Organizations\Organization::whereKey($orgId)->value('owner_user_id') === (int) $user->id) return true;
 
-        return (int) $user->organizationOwnerId() === (int) $program->user_id;
+        $user->loadMissing('organizationRole.role');
+        return in_array($user->organizationRole?->role?->name, self::PROGRAM_TEAM_ROLES, true);
     }
 
     /** The program owner's organisation (owner, creator and every team member). */
@@ -53,8 +58,9 @@ class ProgramAccess
         if (!$user) return false;
         if ((int) $user->id === (int) $program->user_id) return true;
 
-        $owner = $program->owner;
-        if ($owner && $user->organization_id && (int) $user->organization_id === (int) $owner->organization_id) {
+        // The program's organization (ISSUE-38: by the program, not only by who created it)
+        $orgId = $program->organizationId();
+        if ($orgId && $user->organization_id && (int) $user->organization_id === (int) $orgId) {
             return true;
         }
 

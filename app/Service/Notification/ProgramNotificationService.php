@@ -56,22 +56,17 @@ class ProgramNotificationService
         $message = $config['title'] . "\n" . ($this->messageFor($event, $data) ?? $config['message']);
         $type = in_array($event, ['wallet.deposited']) ? 'deposit' : 'program';
 
-        // resolve custom email body
-        $customBody = null;
-        if (!empty($data['program_id']) && in_array($event, ProgramEmailTemplate::CUSTOMISABLE_EVENTS)) {
-            $customBody = ProgramEmailTemplate::resolve((int) $data['program_id'], $event);
-
-            if ($customBody) {
-                $variables = [
-                    'applicant_name' => $data['recipientName'] ?? 'Program Applicant',
-                    'program_title' => $data['program_title'] ?? '',
-                    'round_name' => $data['round_name'] ?? '',
-                ];
-
-                foreach ($variables as $key => $value) {
-                    $customBody = str_replace('{{' . $key . '}}', $value, $customBody);
-                }
-            }
+        // The four emails an owner may write: their own version, else the system default, in the program's language
+        $ownEmail = in_array($event, ProgramEmailTemplate::CUSTOMISABLE_EVENTS, true)
+            ? $this->ownerEmail($event, $data)
+            : null;
+        // An award is the "Application accepted" email of the Notifications step ("sent when an application is fully
+        // accepted / awarded"): the owner's own version when they wrote one, else the award email with its amount
+        if ($event === 'application.awarded') {
+            $ownEmail = $this->ownerEmail('application.accepted', $data, savedOnly: true);
+        }
+        if ($ownEmail) {
+            $data['program_id'] = $ownEmail['program_id'];
         }
 
         // Applicant events wear the program owner's brand; everything else is left to
@@ -80,7 +75,6 @@ class ProgramNotificationService
 
         foreach ($recipients as $recipient) {
             if (!$recipient) continue;
-            if (class_exists(\App\Modules\ProgramImport\Silent\OutboundGuard::class) && \App\Modules\ProgramImport\Silent\OutboundGuard::shouldSuppress($recipient)) continue; // program import: silent mode / unclaimed imported accounts
             // The system AI reviewer account never receives notifications or email
             if (strcasecmp((string) ($recipient->email ?? ''), (string) config('ai_review.system_user_email')) === 0) continue;
 
@@ -97,18 +91,20 @@ class ProgramNotificationService
                 Log::error("Notification '{$event}' for user {$recipient->id} was not saved: " . $e->getMessage());
             }
 
-            $this->emailService->send(
-                $config['email_subject'],
-                $config['email_view'],
-                array_merge($data, [
-                    'recipientName'  => $recipient->first_name ?? $recipient->name,
-                    'recipientEmail' => $recipient->email,
-                    'custom_body'    => $customBody,
-                    // The email button opens exactly what the in-app notification opens
-                    'action_url'     => EmailLink::url($link),
-                ] + ($brand ? ['brand' => $brand] : [])),
-                $recipient->email
-            );
+            $emailData = array_merge($data, [
+                'recipientName'  => $recipient->first_name ?? $recipient->name,
+                'recipientEmail' => $recipient->email,
+                // The email button opens exactly what the in-app notification opens
+                'action_url'     => EmailLink::url($link, $recipient),
+            ] + ($brand ? ['brand' => $brand] : []));
+
+            $subject = $config['email_subject'];
+            $view = $config['email_view'];
+            if ($ownEmail) {
+                [$subject, $view, $emailData] = $this->fillOwnerEmail($ownEmail, $emailData, $recipient);
+            }
+
+            $this->emailService->send($subject, $view, $emailData, $recipient->email);
         }
     }
 
@@ -124,6 +120,71 @@ class ProgramNotificationService
     ];
 
     // -------------------------- H E L P E R S ---------------------------------//
+
+    /**
+     * What one of the owner-writable emails says for this program: the owner's saved subject and body, or the
+     * system default for anything they left out, in the program's email language. The program is found from
+     * the application when the caller only passed application_id. Null when the program is not known.
+     */
+    private function ownerEmail(string $event, array $data, bool $savedOnly = false): ?array
+    {
+        $programId = (int) ($data['program_id'] ?? 0);
+        $application = null;
+        if (!empty($data['application_id'])) {
+            $application = ProgramApplication::query()->select(['id', 'program_id', 'awarded_amount'])->find($data['application_id']);
+            $programId = $programId ?: (int) ($application?->program_id ?? 0);
+        }
+        if (!$programId) {
+            return null;
+        }
+
+        $program = \App\Models\Programs\Program::query()->select(['id', 'email_locale', 'funding_per_business'])->find($programId);
+        if (!$program) {
+            return null;
+        }
+
+        $locale = ProgramEmailDefaults::locale($program->email_locale);
+        $default = ProgramEmailDefaults::forEvent($event, $locale);
+        $saved = ProgramEmailTemplate::resolve($programId, $event);
+        if ($savedOnly && !$saved) {
+            return null;
+        }
+        $award = $data['award_amount'] ?? $data['amount'] ?? $application?->awarded_amount ?? $program->funding_per_business;
+
+        return [
+            'program_id' => $programId,
+            'locale' => $locale,
+            'subject' => $saved?->subject ?: $default['subject'],
+            'body_html' => $saved?->body_html ?: $default['body_html'],
+            'heading' => $default['heading'],
+            'button_label' => $default['button_label'],
+            'award_amount' => $award !== null && $award !== '' ? $this->money(array_merge($data, ['award_amount' => $award]), 'award_amount') : '',
+        ];
+    }
+
+    /** [subject, view, data] for one recipient of an owner-writable email, with every {{token}} filled in. */
+    private function fillOwnerEmail(array $email, array $data, $recipient): array
+    {
+        $values = [
+            'applicant_name' => $recipient->first_name ?? $recipient->name ?? '',
+            'program_title' => $data['program_title'] ?? '',
+            'round_name' => $data['round_name'] ?? '',
+            'award_amount' => $email['award_amount'],
+            'next_steps_url' => $data['action_url'] ?? '',
+            'dashboard_url' => $data['action_url'] ?? '',
+        ];
+
+        return [
+            ProgramEmailDefaults::renderSubject($email['subject'], $values, $email['locale']),
+            $this->view_base . 'program_email',
+            array_merge($data, [
+                'email_locale' => $email['locale'],
+                'email_heading' => $email['heading'],
+                'email_button' => $email['button_label'],
+                'email_body' => ProgramEmailDefaults::render($email['body_html'], $values, $email['locale']),
+            ]),
+        ];
+    }
 
     public function v(array $data, string $key): string
     {
@@ -194,16 +255,19 @@ class ProgramNotificationService
             'application.accepted' => "Good news: {$program} accepted your application. Open your deal room to set up your funding plan.",
             'application.rejected' => "{$program} did not select your application this time. You can look at other programs and apply again.",
             'round.opened' => "{$round} of {$program} is now open. Apply before it closes.",
-            'round.closing_soon' => "{$round} of {$program} closes in {$v('days_left')} days. Submit your application before then.",
+            'round.closing_soon' => "{$round} of {$program} closes in {$v('days_left')} days" . ($v('closes_at') !== '' ? " ({$v('closes_at')})" : '') . '. Submit your application before then.',
             'round.closed' => "{$round} of {$program} is closed. Your application is now being reviewed and we will tell you the result.",
             'round.advanced' => "You moved on to {$round} of {$program}. Open your application to complete this round.",
             'round.not_selected' => "Your application was not selected to continue after {$round} of {$program}. Thank you for taking part.",
-            'round.scoring_assigned' => ($d['assignment'] ?? 'request') === 'applications'
+            'round.scoring_assigned' => ($d['assignment'] ?? 'request') === 'total'
+                ? "You now have " . ($d['max_apps'] ?? 0) . " application(s) to review in {$round} of {$program}. Open Applications to see them."
+                : (($d['assignment'] ?? 'request') === 'applications'
                 ? ($d['max_apps'] ?? null ? "{$d['max_apps']} application(s)" : 'Applications') . " from {$round} of {$program} were assigned to you. Open Applications to start reviewing."
-                : "{$actor} asked you to review {$round} of {$program}. Open your requests to accept or decline.",
+                : "{$actor} asked you to review {$round} of {$program}. Open your requests to accept or decline."),
             'round.reviewer_invited_internal', 'round.reviewer_invited_external' => "You were invited to review applications for {$program}. Accept the invitation to get started.",
             'round.score_received' => "Your application to {$program} was reviewed. Open it to see the update.",
-            'application.awarded' => "Congratulations! {$program} awarded you " . ($this->money($d) ?: 'funding') . ". Open your funding plan to set up your milestones.",
+            // The amount is only known once the funding plan is set: never say "awarded you KES 0.00"
+            'application.awarded' => "Congratulations! {$program} awarded you " . ((float) ($d['amount'] ?? 0) > 0 ? $this->money($d) : 'funding') . ". Open your funding plan to set up your milestones.",
             'milestones.created' => "{$v('milestone_count')} milestones were created for your funding plan in {$program}. Open your plan to review them.",
             'funding_plan.submitted' => "{$v('business_name')} submitted a funding plan for {$program}. Review the milestones and funding setup.",
             'funding_plan.revision_requested' => "{$actor} sent your funding plan for {$program} back for revision. Open your deal room to review the plan.",
@@ -219,10 +283,23 @@ class ProgramNotificationService
             'supplier.added' => "You have been added as a supplier to {$ms} for {$program}. Open your account to view the assignment.",
             'budget.completed' => "The budget for {$ms} is complete. You can now submit your MPRV.",
             'mprv.submitted' => "{$v('business_name')} submitted the MPRV for {$ms}. Review it, then approve it or ask for changes.",
+            'verification.audit_needed' => "{$v('business_name')} sent the {$v('check')} for {$ms} again after it was sent back twice. Pick a project manager to audit it before it is decided.",
+            'agreement.changes_requested' => "{$actor} asked for changes to the {$v('check')} instructions for {$ms}: {$v('reason')}. Reply in the step conversation and agree again.",
+            'verification.audit_needed_applicant' => "Your {$v('check')} for {$ms} was sent back twice, so this submission goes to an independent project manager. You will be told the result.",
+            'application.completed_owner' => "{$v('business_name')} has completed {$program}: every milestone is approved and paid.",
+            'application.completed' => "Your program is complete: every milestone of {$v('business_name')}'s funding plan for {$program} is approved and paid.",
+            'mid_milestone.submitted' => "{$v('business_name')} submitted the mid-milestone check for {$ms}. Review it, then approve it or ask for changes.",
+            'final_approval.submitted' => "{$v('business_name')} submitted final approval for {$ms}. Review it, then approve it or ask for changes.",
             'mprv.approved' => "{$actor} approved your MPRV for {$ms}. The funds can now be released.",
             'mprv.rejected' => "{$actor} asked for changes to your MPRV for {$ms}: {$v('reason')}. Update it and submit it again.",
-            'mprv.audit_requested' => "You were asked to audit {$v('business_name')} for {$ms}. Open your audits to start.",
-            'mprv.audit_completed' => "The audit for {$ms} is finished. Open the deal room to see the result.",
+            'mprv.audit_requested' => "You were asked to audit {$v('business_name')} for {$ms}. Open Project Manager Audits to accept or decline.",
+            'mprv.audit_accepted' => "{$actor} accepted the audit of {$v('business_name')} for {$ms}. You will be told when the report is in.",
+            'mprv.audit_declined' => "{$actor} declined the audit of {$v('business_name')} for {$ms}. You can decide it yourself or ask another project manager.",
+            'mprv.audit_completed' => "{$actor} sent the audit report for {$v('business_name')}, {$ms}: recommends to {$v('recommendation')}. Open the deal room to review it and decide.",
+            // DECISION-9 / DECISION-8 change: paid audits, and the owner cancelling one
+            'mprv.audit_quoted' => "{$actor} accepted the audit of {$v('business_name')} for {$ms} for a fee of {$v('fee_label')}. Pay it from the organization wallet to start the audit.",
+            'mprv.audit_paid' => "The audit fee of {$v('fee_label')} for {$v('business_name')}, {$ms} is held for you. Start the audit and send your report: you are paid when it is in.",
+            'mprv.audit_cancelled' => "{$actor} cancelled the audit of {$v('business_name')} for {$ms}" . (filled($d['reason'] ?? null) ? ": {$v('reason')}" : '') . '. Any fee held is refunded to the payer.',
             'disbursement.created' => "A payment of " . ($this->money($d) ?: 'funds') . " to {$v('supplier_name')} for {$ms} was started. We will tell you when it completes.",
             'disbursement.supplier_processing' => "A payment of " . ($this->money($d) ?: 'funds') . " is on its way to you. We will confirm when it arrives.",
             'disbursement.completed' => "The payment of " . ($this->money($d) ?: 'funds') . " to {$v('supplier_name')} went through.",
@@ -241,6 +318,7 @@ class ProgramNotificationService
             'program.published' => "{$program} is published.",
             'program.opened' => "{$program} is now accepting applications.",
             'program.awarded' => "All rounds of {$program} are finished and {$v('awarded_count')} awardee(s) were selected. Open the deal room to start funding setup.",
+            'import.finished' => "Your import finished: {$v('created')} of {$v('total')} program(s) created in {$v('duration')}." . ((int) ($d['failed'] ?? 0) > 0 ? " {$v('failed')} need attention: open the import to see why." : ''),
             'program.closed' => "{$program} is closed to new applications.",
             'program.finalized' => "{$program} is complete: {$v('awarded_count')} business(es) funded.",
             'reviewer.scoring_complete' => "{$v('reviewer_name')} finished scoring {$round}. Check the results and finalize the round.",
@@ -250,6 +328,7 @@ class ProgramNotificationService
             'reviewer.work_delivered' => "{$v('reviewer_name')} submitted their {$v('order_type')} work for {$program}. Open Orders to review and approve it.",
             'reviewer.modification_requested' => "{$actor} asked you to change your work on {$program}. Open Orders to see what to fix.",
             'reviewer.work_approved' => "Your work on {$program} was approved.",
+            'reviewer.payout_setup_needed' => "Your payment for reviewing {$program} is ready, but you have no M-Pesa (LIPR) wallet set up. Open Settings, set up payouts, and the program can pay you.",
             'reviewer.site_visit_assigned' => "You were assigned a site visit for {$program}. Accept or decline the assignment.",
             'applicant.checkpoint_sent' => "A new monitoring checkpoint, {$v('checkpoint_name')}, is ready for you on {$program}. Open it to see what to submit.",
             'organization.checkpoint_assigned' => "{$v('checkpoint_name')} for {$program} was assigned to you. Open the program monitoring page to complete it.",
@@ -401,6 +480,16 @@ class ProgramNotificationService
     }
 
     /** Reviewer → their orders; with an order id, the delivery dialog for that order is open. */
+    /**
+     * Officer → the site visit itself. Business Coaches open their site visit page; a service provider's copy of
+     * the link becomes their Program Work visit report (Notifications::providerLink). Without a visit, the orders list.
+     */
+    private function siteVisitLink(array $data): string
+    {
+        if (empty($data['site_visit_id'])) return $this->link('dashboard.reviewerGrantOrg.orders');
+        return $this->link('dashboard.reviewerGrantOrg.siteVisitDetail', [], '', ['id' => $data['site_visit_id']]);
+    }
+
     public function reviewerOrdersLink(array $data = []): string
     {
         $orderId = $data['order_id'] ?? null;
@@ -455,7 +544,7 @@ class ProgramNotificationService
 
         if (!$appId && !empty($data['program_id'])) {
             $awarded = ProgramApplication::where('program_id', $data['program_id'])
-                ->where('status', 'awarded')
+                ->whereIn('status', ['awarded', 'in_monitoring', 'completed'])
                 ->limit(2)
                 ->pluck('id');
             if ($awarded->count() === 1) $appId = $awarded->first();
@@ -504,6 +593,16 @@ class ProgramNotificationService
      * Get configuration for each event type.
      * Links use dot-notation route names (resolved by frontend notificationLinkResolver.js).
      */
+    /** Project Manager Audits, on the page of the audit's stage (program audits). */
+    private function pmAuditLink(array $data): string
+    {
+        return $this->link(match ($data['audit_stage'] ?? 'pre_release') {
+            'mid_milestone' => 'dashboard.serviceProvider.pmAudits.midMilestone',
+            'final_approval' => 'dashboard.serviceProvider.pmAudits.finalApproval',
+            default => 'dashboard.serviceProvider.pmAudits.preRelease',
+        }, [], '', [], ['source' => 'program']);
+    }
+
     protected function getEventConfig(string $event, array $data): array
     {
         return match($event) {
@@ -744,6 +843,66 @@ class ProgramNotificationService
             ],
 
             // ── MPRV ─────────────────────────────────────────────────────────
+            'application.completed' => [
+                'title'         => 'Program completed',
+                'message'       => "Every milestone of your funding plan for {$this->v($data, 'program_title')} is approved",
+                'email_subject' => 'Your program is complete',
+                'email_view'    => $this->view_base . 'notice',
+                'link'          => $this->applicantDealroomLink($data),
+                // The program owner opens that application's deal room
+            ],
+
+            // The program owner's copy of a completed application (ISSUE-32)
+            // DECISION-8: a check sent back twice waits for a project manager audit
+            'verification.audit_needed' => [
+                'title'         => 'Audit needed',
+                'message'       => "{$this->v($data, 'business_name')}'s {$this->v($data, 'check')} for Milestone {$this->v($data, 'milestone_number')} needs a project manager audit",
+                'email_subject' => 'Pick a project manager to audit',
+                'email_view'    => $this->view_base . 'notice',
+                'link'          => $this->link('dashboard.programOrg.programDealroomDetail', $data, (string) ($data['step'] ?? 'mprv'), [], [], $this->milestoneHash($data)),
+            ],
+
+            // ISSUE-42: a first rejection of a step agreement (the second one settles it: verification.audit_needed_applicant)
+            'agreement.changes_requested' => [
+                'title'         => 'Changes asked for',
+                'message'       => "Changes asked for on the {$this->v($data, 'check')} of Milestone {$this->v($data, 'milestone_number')}: {$this->v($data, 'reason')}",
+                'email_subject' => "Changes asked for on the {$this->v($data, 'check')} of Milestone {$this->v($data, 'milestone_number')}",
+                'email_view'    => $this->view_base . 'notice',
+                'link'          => $this->applicantDealroomLink($data, (string) ($data['step'] ?? 'mprv')),
+            ],
+
+            'verification.audit_needed_applicant' => [
+                'title'         => 'Independent audit',
+                'message'       => "Your {$this->v($data, 'check')} for Milestone {$this->v($data, 'milestone_number')} goes to an independent audit",
+                'email_subject' => 'Your check goes to an independent audit',
+                'email_view'    => $this->view_base . 'notice',
+                'link'          => $this->applicantDealroomLink($data, (string) ($data['step'] ?? 'mprv')),
+            ],
+
+            'application.completed_owner' => [
+                'title'         => 'Program completed',
+                'message'       => "{$this->v($data, 'business_name')} has completed {$this->v($data, 'program_title')}",
+                'email_subject' => "{$this->v($data, 'business_name')} has completed the program",
+                'email_view'    => $this->view_base . 'notice',
+                'link'          => $this->link('dashboard.programOrg.programDealroomDetail', $data),
+            ],
+
+            'mid_milestone.submitted' => [
+                'title'         => 'Mid-milestone Check Submitted',
+                'message'       => "{$this->v($data, 'business_name')} submitted the mid-milestone check for Milestone {$this->v($data, 'milestone_number')}",
+                'email_subject' => 'New Mid-milestone Check Submitted',
+                'email_view'    => $this->view_base . 'notice',
+                'link'          => $this->link('dashboard.programOrg.programDealroomDetail', $data, 'mid-milestone', [], [], $this->milestoneHash($data)),
+            ],
+
+            'final_approval.submitted' => [
+                'title'         => 'Final Approval Submitted',
+                'message'       => "{$this->v($data, 'business_name')} submitted final approval for Milestone {$this->v($data, 'milestone_number')}",
+                'email_subject' => 'New Final Approval Submitted',
+                'email_view'    => $this->view_base . 'notice',
+                'link'          => $this->link('dashboard.programOrg.programDealroomDetail', $data, 'final-approval', [], [], $this->milestoneHash($data)),
+            ],
+
             'mprv.submitted' => [
                 'title'         => 'MPRV Submitted for Review',
                 'message'       => "{$this->v($data, 'business_name')} submitted MPRV for Milestone {$this->v($data, 'milestone_number')}",
@@ -775,8 +934,52 @@ class ProgramNotificationService
                 'message'       => "MPRV audit requested for {$this->v($data, 'business_name')} - Milestone {$this->v($data, 'milestone_number')}",
                 'email_subject' => 'MPRV Audit Assignment',
                 'email_view'    => $this->view_base . 'mprv_audit_requested',
-                // PM/auditor → program audit page
-                'link'          => $this->link('dashboard.serviceProvider.pmAudits.program'),
+                // The auditor answers it in Project Manager Audits, on the page of its stage
+                'link'          => $this->link(match ($data['audit_stage'] ?? 'pre_release') {
+                    'mid_milestone' => 'dashboard.serviceProvider.pmAudits.midMilestone',
+                    'final_approval' => 'dashboard.serviceProvider.pmAudits.finalApproval',
+                    default => 'dashboard.serviceProvider.pmAudits.preRelease',
+                }, [], '', [], ['source' => 'program']),
+            ],
+
+            'mprv.audit_accepted' => [
+                'title'         => 'Audit Accepted',
+                'message'       => "The project manager accepted the audit for Milestone {$this->v($data, 'milestone_number')}",
+                'email_subject' => 'Audit Accepted',
+                'email_view'    => $this->view_base . 'mprv_audit_update',
+                'link'          => $this->link('dashboard.programOrg.programDealroomDetail', $data, 'mprv', [], [], $this->milestoneHash($data)),
+            ],
+
+            'mprv.audit_declined' => [
+                'title'         => 'Audit Declined',
+                'message'       => "The project manager declined the audit for Milestone {$this->v($data, 'milestone_number')}",
+                'email_subject' => 'Audit Declined',
+                'email_view'    => $this->view_base . 'mprv_audit_update',
+                'link'          => $this->link('dashboard.programOrg.programDealroomDetail', $data, 'mprv', [], [], $this->milestoneHash($data)),
+            ],
+
+            'mprv.audit_quoted' => [
+                'title'         => 'Audit fee to pay',
+                'message'       => "The project manager quoted a fee for the audit of Milestone {$this->v($data, 'milestone_number')}",
+                'email_subject' => 'Pay the audit fee to start the audit',
+                'email_view'    => $this->view_base . 'notice',
+                'link'          => $this->link('dashboard.programOrg.programDealroomDetail', $data, (string) ($data['step'] ?? 'mprv'), [], [], $this->milestoneHash($data)),
+            ],
+
+            'mprv.audit_paid' => [
+                'title'         => 'Audit fee held',
+                'message'       => "The audit fee for {$this->v($data, 'business_name')} - Milestone {$this->v($data, 'milestone_number')} is held for you",
+                'email_subject' => 'Audit fee paid: start the audit',
+                'email_view'    => $this->view_base . 'notice',
+                'link'          => $this->pmAuditLink($data),
+            ],
+
+            'mprv.audit_cancelled' => [
+                'title'         => 'Audit cancelled',
+                'message'       => "The audit for {$this->v($data, 'business_name')} - Milestone {$this->v($data, 'milestone_number')} was cancelled",
+                'email_subject' => 'Audit cancelled',
+                'email_view'    => $this->view_base . 'notice',
+                'link'          => $this->pmAuditLink($data),
             ],
 
             'mprv.audit_completed' => [
@@ -795,6 +998,15 @@ class ProgramNotificationService
                 'email_view'    => $this->view_base . 'disbursement_created',
                 'link'          => $this->link('dashboard.programOrg.programDealroomDetail', $data, 'funding-setup', [], [], $this->milestoneHash($data)),
                 'links'         => $this->dealroomLinks($data),
+            ],
+
+            // The program owner paid a funding plan into escrow (MpesaCallbackController::callbackProgramDisburseToEscrow)
+            'disbursement.escrow_funded' => [
+                'title'         => 'Escrow funded',
+                'message'       => "{$this->v($data, 'currency')} {$this->v($data, 'amount')} for {$this->v($data, 'business_name')} in {$this->v($data, 'program_title')} is now held in escrow. Release each milestone from escrow when it is approved.",
+                'email_subject' => 'Your escrow payment went through',
+                'email_view'    => $this->view_base . 'notice',
+                'link'          => $this->link('dashboard.programOrg.programDealroomDetail', $data, 'funding-setup'),
             ],
 
             'disbursement.supplier_processing' => [
@@ -934,6 +1146,15 @@ class ProgramNotificationService
                 'link'          => $this->orgProgramLink($data),
             ],
 
+            // The person who started an import, once it is done (however many runs it took)
+            'import.finished' => [
+                'title'         => 'Import finished',
+                'message'       => "Your import finished: {$this->v($data, 'created')} of {$this->v($data, 'total')} program(s) created in {$this->v($data, 'duration')}.",
+                'email_subject' => 'Your program import is finished',
+                'email_view'    => $this->view_base . 'import_finished',
+                'link'          => $this->link('dashboard.grantOrg.programsImport', [], '', ['importId' => $data['import_id'] ?? null], ['step' => 'import']),
+            ],
+
             'program.awarded' => [
                 'title'         => 'Awardees Selected',
                 'message'       => "All rounds completed for {$this->v($data, 'program_title')}. {$this->v($data, 'awarded_count')} awardees selected. Funding setup is ready to begin.",
@@ -1003,25 +1224,25 @@ class ProgramNotificationService
             ],
 
             'reviewer.accepted' => [
-                'title'         => 'Reviewer Accepted Assignment',
+                'title'         => 'Business Coach Accepted Assignment',
                 'message'       => "{$this->v($data, 'reviewer_name')} accepted the review assignment for {$this->v($data, 'round_name')} in {$this->v($data, 'program_title')}.",
-                'email_subject' => 'Reviewer Accepted Assignment',
+                'email_subject' => 'Business Coach Accepted Assignment',
                 'email_view'    => $this->view_base . 'reviewer_accepted',
                 'link'          => $this->orgRoundLink($data + ['tab' => 'reviewers', 'hash' => 'round-reviewers']),
             ],
 
             'reviewer.accepted_insufficient_funds' => [
                 'title'         => 'Funds Required to Start Reviews',
-                'message'       => "A reviewer accepted the assignment for {$this->v($data, 'round_name')} in {$this->v($data, 'program_title')}. Deposit {$this->v($data, 'shortfall')} to the program wallet to enable reviews.",
+                'message'       => "A Business Coach accepted the assignment for {$this->v($data, 'round_name')} in {$this->v($data, 'program_title')}. Deposit {$this->v($data, 'shortfall')} to the program wallet to enable reviews.",
                 'email_subject' => 'Deposit Funds to Start Program Reviews',
                 'email_view'    => $this->view_base . 'reviewer_accepted_insufficient_funds',
                 'link'          => $this->orgDepositLink($data),
             ],
 
             'reviewer.work_delivered' => [
-                'title'         => 'Reviewer Work Submitted',
+                'title'         => 'Business Coach Work Submitted',
                 'message'       => "{$this->v($data, 'reviewer_name')} has submitted their {$this->v($data, 'order_type')} work for {$this->v($data, 'program_title')}.",
-                'email_subject' => 'Reviewer Work Submitted for Review',
+                'email_subject' => 'Business Coach Work Submitted for Review',
                 'email_view'    => $this->view_base . 'reviewer_work_delivered',
                 'link'          => $this->orgOrdersLink('delivered', $data['order_id'] ?? null),
             ],
@@ -1037,7 +1258,7 @@ class ProgramNotificationService
             'reviewer.work_approved' => [
                 'title'         => 'Work Approved 🎉',
                 'message'       => "Your work on {$this->v($data, 'program_title')} has been approved.",
-                'email_subject' => 'Reviewer Work Approved',
+                'email_subject' => 'Business Coach Work Approved',
                 'email_view'    => $this->view_base . 'reviewer_work_approved',
                 'link'          => $this->link('dashboard.reviewerGrantOrg.orders'),
             ],
@@ -1047,7 +1268,7 @@ class ProgramNotificationService
                 'message'       => "You have been assigned a site visit for {$this->v($data, 'program_title')}.",
                 'email_subject' => 'New Site Visit Assignment',
                 'email_view'    => $this->view_base . 'reviewer_site_visit_assigned',
-                'link'          => $this->link('dashboard.reviewerGrantOrg.orders'),
+                'link'          => $this->siteVisitLink($data),
             ],
 
             'applicant.checkpoint_sent' => [
@@ -1094,10 +1315,10 @@ class ProgramNotificationService
             ],
             'reviewer.fee_decided' => [
                 'title' => 'Site Visit Fee Answered',
-                'message' => ($data['accepted'] ?? false) ? 'The organization accepted your proposed fee.' : 'The organization declined your proposed fee.',
+                'message' => 'The organization ' . (($data['accepted'] ?? false) ? 'accepted' : 'declined') . ' your proposed fee for a site visit under ' . $this->v($data, 'program_title') . '.',
                 'email_subject' => 'Your Proposed Site Visit Fee Was Answered',
                 'email_view' => $this->view_base . 'reviewer_fee_decided',
-                'link' => $this->link('dashboard.reviewerGrantOrg.orders'),
+                'link' => $this->siteVisitLink($data),
             ],
             'applicant.site_visit_planned' => [
                 'title' => 'Site Visit Planned',
@@ -1147,18 +1368,31 @@ class ProgramNotificationService
                 'link'          => $this->link('dashboard.reviewerGrantOrg.orders'),
             ],
 
+            // DECISION-2: coaches review before payouts are set up; when a payment is due and they have none, they are told
+            'reviewer.payout_setup_needed' => [
+                'title'         => 'Set Up Payouts To Be Paid',
+                'message'       => "Your payment for {$this->v($data, 'program_title')} is ready, but you have no M-Pesa (LIPR) wallet set up",
+                'email_subject' => 'Set up payouts to receive your payment',
+                'email_view'    => $this->view_base . 'notice',
+                'links'         => [
+                    3 => $this->link('dashboard.serviceProvider.settings'),
+                    6 => $this->link('dashboard.reviewerGrantOrg.settings'),
+                    7 => $this->link('dashboard.reviewerGrantOrg.settings'),
+                ],
+            ],
+
             'reviewer.payment_failed' => [
                 'title'         => 'Payment Failed',
-                'message'       => "Payment to reviewer {$this->v($data, 'reviewer_name')} failed for {$this->v($data, 'program_title')}. Please retry.",
-                'email_subject' => 'Reviewer Payment Failed — Action Required',
+                'message'       => "Payment to Business Coach {$this->v($data, 'reviewer_name')} failed for {$this->v($data, 'program_title')}. Please retry.",
+                'email_subject' => 'Business Coach Payment Failed — Action Required',
                 'email_view'    => $this->view_base . 'reviewer_payment_failed',
                 'link'          => $this->orgOrdersLink('completed', $data['order_id'] ?? null),
             ],
 
             'reviewer.declined' => [
-                'title'         => 'Reviewer Declined Assignment',
+                'title'         => 'Business Coach Declined Assignment',
                 'message'       => "{$this->v($data, 'reviewer_name')} declined the review assignment for {$this->v($data, 'round_name')} in {$this->v($data, 'program_title')}.",
-                'email_subject' => 'Reviewer Declined Assignment — Action Required',
+                'email_subject' => 'Business Coach Declined Assignment — Action Required',
                 'email_view'    => $this->view_base . 'reviewer_declined',
                 'link'          => $this->orgRoundLink($data + ['tab' => 'reviewers', 'hash' => 'round-reviewers']),
             ],

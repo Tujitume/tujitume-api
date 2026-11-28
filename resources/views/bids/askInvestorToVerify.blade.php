@@ -6,7 +6,7 @@
         <p>The Business Owner of <strong>{{ $business_name }}</strong> will not be able to verify, so the Investor has to request a Project Manager to verify, or cancel altogether.</p>
 
         <div style="text-align:center;margin-top:2rem;">
-            <a href="{{ config('app.app_url') }}dashboard?b_idToVWPM={{ $bid_id }}" style="background-color:#14532d;color:white;display:inline-block;padding:0.85rem 2rem;border-radius:999px;text-decoration:none;font-weight:700;font-size:1rem;box-shadow:0 4px 12px rgba(0,0,0,0.18);">Request a Project Manager</a>
+            <a href="{{ $app_url ?? config('app.app_url') }}dashboard?b_idToVWPM={{ $bid_id }}" style="background-color:#14532d;color:white;display:inline-block;padding:0.85rem 2rem;border-radius:999px;text-decoration:none;font-weight:700;font-size:1rem;box-shadow:0 4px 12px rgba(0,0,0,0.18);">Request a Project Manager</a>
         </div>
 
         @include('programs.partials.brand_footer')

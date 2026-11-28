@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Controllers\Equipments;
 use App\Models\Auth\User;
 use App\Models\Services\ServiceBooking;
+use App\Service\Services\ServiceMatcher;
 use App\Models\Services\ServiceBookingMilestone;
 use App\Models\Services\ServiceMessages;
 use App\Models\Services\ServiceReviews;
@@ -64,6 +65,37 @@ class ServiceController extends Controller
         return null;
     }
 
+    /**
+     * The provider business details from the Add / Edit Service form (legal name, registration,
+     * tax PIN, address, licence flags). On edit, a field that is not sent keeps its saved value.
+     */
+    private function providerBusinessDetails(Request $request, ?Services $service = null): array
+    {
+        $request->validate([
+            'business_legal_name'  => 'nullable|string|max:255',
+            'legal_structure'      => 'nullable|string|max:100',
+            'registration_number'  => 'nullable|string|max:100',
+            'registration_country' => 'nullable|string|max:100',
+            'tax_pin'              => 'nullable|string|max:100',
+            'country'              => 'nullable|string|max:100',
+            'region'               => 'nullable|string|max:150',
+            'physical_address'     => 'nullable|string|max:300',
+        ]);
+
+        $fields = ['business_legal_name', 'legal_structure', 'registration_number', 'registration_country', 'tax_pin', 'country', 'region', 'physical_address'];
+        $details = [];
+        foreach ($fields as $field) {
+            if ($request->has($field)) $details[$field] = $request->input($field) ?: null;
+            elseif (!$service) $details[$field] = null;
+        }
+        foreach (['operates_through_business', 'requires_professional_licence'] as $flag) {
+            // FormData sends "true" / "false"; boolean() reads both
+            if ($request->has($flag) || !$service) $details[$flag] = $request->boolean($flag);
+        }
+
+        return $details;
+    }
+
     public function storeService(Request $request, SpamWordChecker $spam, SpamImageChecker $spamI)
     {
         if ($blocked = $this->listingBlockedReason(Auth::user())) {
@@ -78,8 +110,10 @@ class ServiceController extends Controller
                 'name'                 => 'required|string|max:255',
                 'image'                 => 'required|file|mimes:jpg,jpeg,png,webp|max:2048',
                 'identification'        => 'required|file|mimes:pdf,docx|max:2048',
-                'document'              => 'required|file|mimes:pdf,docx|max:2048',
-                'pin'                   => 'required|file|mimes:pdf,docx|max:2048',
+                // proof of registration only when the provider operates through a registered business
+                'document'              => ($request->boolean('operates_through_business') ? 'required' : 'nullable') . '|file|mimes:pdf,docx,jpg,jpeg,png|max:2048',
+                'pin'                   => 'required|file|mimes:pdf,docx,jpg,jpeg,png|max:2048',
+                'professional_licence'  => ($request->boolean('requires_professional_licence') ? 'required' : 'nullable') . '|file|mimes:pdf,docx,jpg,jpeg,png|max:2048',
                 'video'                 => 'nullable|file|mimes:mp4,mov,avi,webm,mpg,mpeg,wmv|max:51200',
                 'link'                  => 'nullable|string|url',
                 'price'                 => 'required|integer',
@@ -114,7 +148,11 @@ class ServiceController extends Controller
             }
 
             $listing = Services::create([
-                ...$validated,
+                ...collect($validated)->except(['image', 'identification', 'document', 'pin', 'professional_licence', 'video', 'link'])->all(),
+                ...$this->providerBusinessDetails($request),
+                // a typed (not picked) place has no coordinates: store none rather than the column's old London default
+                'lat'     => $validated['lat'] ?? null,
+                'lng'     => $validated['lng'] ?? null,
                 'name'    => $validated['name'],
                 'user_id' => Auth::id(),
             ]);
@@ -136,6 +174,7 @@ class ServiceController extends Controller
                 'pin'            => $saveFile('pin'),
                 'identification' => $saveFile('identification'),
                 'document'       => $saveFile('document'),
+                'professional_licence' => $saveFile('professional_licence'),
                 'video'          => $request->hasFile('video') ? $saveFile('video') : $request->link,
             ]);
 
@@ -178,9 +217,19 @@ class ServiceController extends Controller
                 'image'          => 'nullable|file|mimes:jpg,jpeg,png,webp|max:2048',
                 'pin'            => 'nullable|file|mimes:pdf,docx|max:2048',
                 'identification' => 'nullable|file|mimes:pdf,docx|max:2048',
-                'document'       => 'nullable|file|mimes:pdf,docx|max:2048',
+                'document'       => 'nullable|file|mimes:pdf,docx,jpg,jpeg,png|max:2048',
+                'professional_licence' => 'nullable|file|mimes:pdf,docx,jpg,jpeg,png|max:2048',
                 'video'          => 'nullable|file|mimes:mp4,mov,avi,webm,mpg,mpeg,wmv|max:51200',
                 'link'           => 'nullable|string|url',
+                'price'          => 'sometimes|numeric|min:0|max:1000000000',
+                'category'       => 'sometimes|string|max:155',
+                'sub_category'   => 'nullable|string|max:155',
+                'location'       => 'sometimes|string|max:300',
+                'lat'            => 'nullable|string|max:100',
+                'lng'            => 'nullable|string|max:100',
+                'social_impact_areas'   => 'nullable|array',
+                'social_impact_areas.*' => 'string|max:255',
+                'business_sector_focus' => 'nullable|array',
             ]);
 
             $service = Services::where('id', $validated['id'])
@@ -208,7 +257,11 @@ class ServiceController extends Controller
             }
 
             $fileDir = 'files/services/' . $service->id;
-            $data    = $request->except(['_token', 'link', 'created_at', 'updated_at', 'id']);
+            // Only the service's own columns: anything else in the form used to reach the UPDATE and fail it
+            $data = [
+                ...collect($validated)->only(['name', 'details', 'price', 'category', 'sub_category', 'location', 'lat', 'lng', 'social_impact_areas', 'business_sector_focus'])->all(),
+                ...$this->providerBusinessDetails($request, $service),
+            ];
 
             $replaceFile = function ($key, $oldPath) use ($request, $fileDir, &$data, &$uploadedFiles) {
                 if (!$request->hasFile($key)) return;
@@ -228,6 +281,7 @@ class ServiceController extends Controller
             $replaceFile('pin',            $service->pin);
             $replaceFile('identification', $service->identification);
             $replaceFile('document',       $service->document);
+            $replaceFile('professional_licence', $service->professional_licence);
             $replaceFile('video',          $service->video);
 
             if ($request->filled('link')) $data['video'] = $request->link;
@@ -282,6 +336,13 @@ class ServiceController extends Controller
             if (!Smilestones::where('listing_id', $validated['id'])->exists()) {
                 return response()->json(['message' => 'A service must have at least one milestone before activation.'], 400);
             }
+            // The customer pays the service price and gets it back to the provider milestone by milestone: the milestones
+            // must add up to the price, or part of what the customer paid is never released to the provider
+            $covered = (float) Smilestones::where('listing_id', $validated['id'])->sum('amount');
+            if (abs($covered - (float) $service->price) >= 0.01) {
+                return response()->json(['message' => 'The milestones must add up to the service price (KES '.number_format((float) $service->price)
+                    .'). They add up to KES '.number_format($covered).' now: add or change a milestone, then activate.'], 422);
+            }
 
             $service->update(['active' => 1]);
             return response()->json(['message' => 'Service activated successfully.'], 200);
@@ -322,27 +383,48 @@ class ServiceController extends Controller
     }
 
 
-    //Rating
+    /**
+     * Rate a service (GET services/ratingService/{id}/{rating}/{text}): 1 to 5 stars and a comment.
+     * services.rating is the AVERAGE out of 5 (what every list and card shows) and rating_count how many rated it, so
+     * a new rating moves the average: (average × count + stars) / (count + 1). It used to add the stars onto the
+     * average (a 3.8 average plus 5 stars read 8.8). A row already holding a total above 5 is read as total / count,
+     * so it heals on its next rating. The values may come in the path or as query/body input.
+     */
     public function serviceRating(Request $request)
     {
         try {
+            $request->merge(array_filter([
+                'id'     => $request->input('id', $request->route('id')),
+                'rating' => $request->input('rating', $request->route('rating')),
+                'text'   => $request->input('text', is_string($request->route('text')) ? trim($request->route('text')) : null),
+            ], fn ($value) => $value !== null && $value !== ''));
             $validated = $request->validate([
                 'id'     => 'required|integer|exists:services,id',
                 'rating' => 'required|integer|between:1,5',
                 'text'   => 'nullable|string|max:1000',
             ]);
 
-            $service = Services::findOrFail($validated['id']);
-            $service->increment('rating', $validated['rating']);
-            $service->increment('rating_count');
+            $stars = (int) $validated['rating'];
+            DB::transaction(function () use ($validated, $stars) {
+                $service = Services::lockForUpdate()->findOrFail($validated['id']);
+                $count = max(0, (int) $service->rating_count);
+                $stored = (float) $service->rating;
+                // An older row may hold the sum of every rating instead of the average
+                $average = $stored > 5 ? ($count > 0 ? $stored / $count : 5.0) : $stored;
+                $average = max(0.0, min(5.0, $average));
+                $service->forceFill([
+                    'rating' => round((($average * $count) + $stars) / ($count + 1), 2),
+                    'rating_count' => $count + 1,
+                ])->save();
 
-            ServiceReviews::create([
-                'user_id'    => Auth::id(),
-                'listing_id' => $validated['id'],
-                'user_name'  => Auth::user()->first_name,
-                'text'       => mb_convert_encoding($validated['text'] ?? '', 'UTF-8', 'UTF-8'),
-                'rating'     => $validated['rating'],
-            ]);
+                ServiceReviews::create([
+                    'user_id'    => Auth::id(),
+                    'listing_id' => $validated['id'],
+                    'user_name'  => Auth::user()->first_name,
+                    'text'       => mb_convert_encoding($validated['text'] ?? '', 'UTF-8', 'UTF-8'),
+                    'rating'     => $stars,
+                ]);
+            });
 
             return response()->json(['success' => 'Success', 200]);
 
@@ -359,18 +441,45 @@ class ServiceController extends Controller
     {
         try {
             $userId  = Auth::id();
+            // ?all=1 (Explore services): every live service, with who offers it and its milestones for the details
+            // panel. Without it, the latest 15 as before (landing page and matches)
+            $all = request()->boolean('all');
+            // a cancelled or rejected booking does not count: the service can be booked again (serviceBook allows it)
+            $booked = $userId ? ServiceBooking::where('booker_id', $userId)->whereNotIn('status', ['rejected', 'cancelled'])->pluck('service_id')->flip() : collect();
 
-            $results = Services::withCount('liked')
-                ->where('active', 1)
-                ->latest()->take(15)->get()
-                ->each(function ($listing) use ($userId) {
-                    if (strlen($listing->location) > 30) {
+            $query = Services::withCount('liked')->where('active', 1)->latest();
+            if ($all) {
+                $query->with([
+                    'owner:id,first_name,last_name,image,city,country',
+                    'milestones:id,listing_id,title,amount,n_o_days',
+                ]);
+            }
+
+            $results = ($all ? $query->get() : $query->take(15)->get())
+                ->each(function ($listing) use ($userId, $all, $booked) {
+                    if (! $all && strlen($listing->location) > 30) {
                         $listing->location = substr($listing->location, 0, 30) . '...';
                     }
                     $listing->price  = number_format($listing->price);
                     $listing->file   = null;
                     $listing->liked  = $userId ? $listing->liked()->where('user_id', $userId)->exists() : false;
+                    $listing->booked = $booked->has($listing->id);
+                    // the provider's identity / registration documents are never public
+                    $listing->makeHidden(['pin', 'identification', 'document']);
+                    if ($all) {
+                        $owner = $listing->owner;
+                        $listing->provider_name  = $owner ? trim($owner->first_name . ' ' . $owner->last_name) : null;
+                        $listing->provider_image = $owner?->image;
+                        // Only the name and picture of the provider are shown; nothing else of the account is sent
+                        $listing->unsetRelation('owner');
+                        $listing->makeHidden(['pin', 'identification', 'document', 'video']);
+                    }
                 });
+
+            // Explore services: how well each suits the person (their interests, role, sectors, ratings), best first
+            if ($all) {
+                $results = ServiceMatcher::sort(ServiceMatcher::score($results, Auth::user()));
+            }
 
             return response()->json(['data' => $results], 200);
 
@@ -380,6 +489,33 @@ class ServiceController extends Controller
                 'message' => 'Something went wrong, please try again later.'
             ], 500);
         }
+    }
+
+    /**
+     * POST services/{service}/viewed {seconds}: the person looked at a service's details for this long (the Explore
+     * Services panel). Kept per person and service, so their recommendations follow what they spend time on.
+     */
+    public function recordView(Request $request, int $service)
+    {
+        $seconds = (int) min(600, max(0, (int) $request->input('seconds', 0)));
+        if (! Services::whereKey($service)->where('active', 1)->exists()) {
+            return response()->json(['message' => 'Service not found.'], 404);
+        }
+        $user = Auth::user();
+        $row = DB::table('service_views')->where('user_id', $user->id)->where('service_id', $service)->first();
+        if ($row) {
+            DB::table('service_views')->where('id', $row->id)->update([
+                'views' => $row->views + 1, 'seconds' => min(86400, $row->seconds + $seconds),
+                'organization_id' => $user->organization_id, 'last_viewed_at' => now(), 'updated_at' => now(),
+            ]);
+        } else {
+            DB::table('service_views')->insert([
+                'user_id' => $user->id, 'service_id' => $service, 'organization_id' => $user->organization_id,
+                'views' => 1, 'seconds' => $seconds, 'last_viewed_at' => now(), 'created_at' => now(), 'updated_at' => now(),
+            ]);
+        }
+
+        return response()->json(['message' => 'Noted.']);
     }
 
     public function serviceResultsByIds(string $ids)
@@ -396,8 +532,8 @@ class ServiceController extends Controller
 
                 $listing->liked  = $userId ? $listing->liked()->where('user_id', $userId)->exists() : false;
                 $listing->price  = number_format($listing->price);
-                $listing->lat    = (float) $listing->lat;
-                $listing->lng    = (float) $listing->lng;
+                $listing->lat    = $listing->lat !== null ? (float) $listing->lat : null;
+                $listing->lng    = $listing->lng !== null ? (float) $listing->lng : null;
                 $listing->booked = $userId && ServiceBooking::where('service_id', $id)
                     ->where('booker_id', $userId)
                     ->exists() ? 1 : 0;

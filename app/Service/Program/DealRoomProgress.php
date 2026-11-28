@@ -18,13 +18,6 @@ class DealRoomProgress
     {
         $fundingDone = $application->funding_setup_status === 'completed';
 
-        // A milestone's status is a plain string, or an object/array carrying `value` once decorated for the API
-        $statusOf = function ($m): string {
-            $status = $m->status ?? '';
-            if (is_object($status)) return (string) ($status->value ?? '');
-            if (is_array($status)) return (string) ($status['value'] ?? '');
-            return (string) $status;
-        };
         $required = fn (string $flag) => $milestones->contains(fn ($m) => (bool) $m->{$flag});
 
         $mprvRequired = $required('mprv_required');
@@ -46,11 +39,10 @@ class DealRoomProgress
             );
         };
         $finalMilestones = $milestones->filter(fn ($m) => (bool) $m->final_approval_required);
-        $milestonesComplete = $milestones->isNotEmpty()
-            && $milestones->every(fn ($m) => $statusOf($m) === 'completion_approved');
-        $checkpoints = \App\Models\Programs\Monitoring\MECheckpoint::where('app_id', $application->id)->get();
-        $monitoringComplete = $milestonesComplete && $checkpoints->isNotEmpty()
-            && $checkpoints->every(fn ($checkpoint) => $checkpoint->status === 'verified');
+        // ISSUE-33: one rule for a finished milestone (paid, and its final approval approved as a check or a completion
+        // report); it used to look only for status completion_approved, which the final approval check never sets
+        $milestonesComplete = $milestones->isNotEmpty() && $milestones->every(fn ($m) => $m->isFinished());
+        $monitoringComplete = $milestonesComplete && ApplicationCompletion::monitoringFinished($application);
 
         $steps = [
             ['id' => 'funding-setup', 'required' => true, 'done' => $fundingDone],
@@ -58,7 +50,7 @@ class DealRoomProgress
             ['id' => 'mid-milestone', 'required' => $midRequired, 'done' => $midRequired && $allApprovedVerifications('mid_milestone')],
             ['id' => 'final-approval', 'required' => $finalRequired, 'done' => $finalRequired
                 && $finalMilestones->isNotEmpty()
-                && $finalMilestones->every(fn ($m) => $statusOf($m) === 'completion_approved')],
+                && $finalMilestones->every(fn ($m) => $m->isFinished())],
             ['id' => 'monitoring-evaluation', 'required' => true, 'done' => $monitoringComplete],
         ];
 

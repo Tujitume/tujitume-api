@@ -85,7 +85,7 @@ class ApplicationScoreController extends Controller
                 ->where('order_type', 'round_review')
                 ->latest('id')->first();
             if (!$order || in_array($order->work_status, ['approved', 'rejected'], true)) {
-                return response()->json(['error' => 'This reviewer order is no longer open for scoring.'], 422);
+                return response()->json(['error' => 'This Business Coach order is no longer open for scoring.'], 422);
             }
         }
 
@@ -242,7 +242,7 @@ class ApplicationScoreController extends Controller
             && in_array($order->work_status, ['assigned', 'in_progress'], true)) {
             $order->update(['work_status' => 'delivered', 'delivered_at' => now()]);
 
-            $this->programNotification->send('reviewer.scoring_complete', [$round->program->owner], [
+            $this->programNotification->send('reviewer.scoring_complete', \App\Service\Program\ProgramTeam::members($round->program)->all(), [
                 'program_title' => $round->program->program_title,
                 'round_name' => $round->round_name,
                 'reviewer_name' => Auth::user()->first_name . ' ' . Auth::user()->last_name,

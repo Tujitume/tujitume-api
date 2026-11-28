@@ -20,3 +20,16 @@ it('rejects malformed output', function () {
     expect(implode(' ', $noQuote['errors']))->toContain('quote is required');
     expect($v->validate(['summary' => 's', 'findings' => []], ['Impact'], true)['errors'])->toContain('scores must be an array');
 });
+
+it('maps a criterion echoed with its description and checks each score against its range (ISSUE-35)', function () {
+    $v = new \App\Service\AiReview\ResponseValidator();
+    $rubric = [['name' => 'Market demand', 'max' => 100], ['name' => 'Plan clarity', 'max' => 100]];
+    $out = $v->validate(['summary' => 'Fine.', 'scores' => [
+        ['criterion' => 'Market demand: Is there a buyer for the produce?', 'score' => 70, 'rationale' => 'Buyers are named.'],
+        ['criterion' => 'Plan clarity', 'score' => 120, 'rationale' => ''],
+    ]], $rubric, true);
+    expect($out['errors'])->toBe([])
+        ->and($out['data']['scores'][0]['criterion'])->toBe('Market demand')
+        ->and($out['data']['scores'][0]['max'])->toBe(100.0)
+        ->and(implode(' ', $out['rubric_issues']))->toContain('between 0 and 100')->toContain('needs a rationale');
+});

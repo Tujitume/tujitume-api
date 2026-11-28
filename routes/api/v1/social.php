@@ -10,6 +10,7 @@ Route::get('messages/thread/{partnerId}', [MessageController::class, 'thread'])-
 Route::post('messages/protection-check', [MessageController::class, 'protection']);
 Route::apiResource('messages',MessageController::class);
 Route::post('messages/mark-read', [MessageController::class, 'markAsRead']);
+Route::post('messages/typing', [MessageController::class, 'typing'])->middleware('throttle:40,1'); // live "typing…"
 
 Route::get('likes', [LikeController::class, 'index']);
 Route::post('like-toggle', [LikeController::class, 'toggle']);

@@ -58,4 +58,11 @@ describe('Program analytics', function () {
             ->assertJsonPath('data.operations.disbursements.completed_amount_by_currency.0.currency', 'KES')
             ->assertJsonPath('data.operations.disbursements.completed_amount_by_currency.0.amount', 25000);
     });
+    it('accepts top=all for exports and refuses a bad top value', function () {
+        $this->actingAsOrgOwner()->getJson('/api/v1/programs/analytics?top=all')
+            ->assertOk()
+            ->assertJsonStructure(['data' => ['top_applications']]);
+        $this->actingAsOrgOwner()->getJson('/api/v1/programs/analytics?top=nope')
+            ->assertStatus(422);
+    });
 });

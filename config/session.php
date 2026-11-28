@@ -196,7 +196,8 @@ return [
     |
     */
 
-    'same_site' => 'none',
+    // Live: 'none' (the app and API are on different sites). A local http setup needs 'lax' (see .env SESSION_SAME_SITE).
+    'same_site' => env('SESSION_SAME_SITE', 'none'),
 
     /*
     |--------------------------------------------------------------------------

@@ -8,6 +8,8 @@ use App\Models\Programs\ProgramApplication;
 use App\Service\Misc\ErrorLogService;
 use App\Service\Program\ApplicantPreviews;
 use App\Support\ApiContract;
+use App\Support\CollectionList;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 
@@ -22,12 +24,14 @@ use Illuminate\Support\Facades\DB;
 class ProgramApplicationsOverviewController extends Controller
 {
     /** Waiting for a decision */
-    private const TO_REVIEW = ['pending', 'submitted', 'under_review', 'in_review'];
+
+    /** Quick ranges for a deadline, which can lie on either side of today */
+    private const PAST_AND_FUTURE = ['today', 'next7Days', 'next30Days', 'yesterday', 'last7Days', 'last30Days', 'thisMonth', 'lastMonth', 'thisYear'];
 
     /** Accepted in any form */
-    private const APPROVED = ['approved', 'awarded', 'completed'];
+    private const APPROVED = ['approved', 'awarded', 'in_monitoring', 'completed'];
 
-    public function index()
+    public function index(Request $request)
     {
         try {
             $user = Auth::user();
@@ -39,16 +43,22 @@ class ProgramApplicationsOverviewController extends Controller
             // Submitted applications of this program (drafts are not applications yet)
             $submitted = fn ($q) => $q->where('status', '!=', 'draft');
 
+            // ISSUE-38: every program of the organization, whoever on the team created it
             $programs = Program::query()
-                ->where('user_id', $ownerId)
+                ->ofOrganization($user)
                 ->select([
                     'id', 'program_title', 'program_type', 'total_rounds', 'status', 'visible',
                     'use_match_score', 'match_score_limit', 'application_start_date', 'application_deadline',
+                    'application_opens_at', 'application_closes_at', 'timezone',
                     'currency', 'total_program_amount', 'created_at',
                 ])
                 ->withCount([
                     'applications as applications_count' => $submitted,
-                    'applications as to_review_count' => fn ($q) => $q->whereIn('status', self::TO_REVIEW),
+                    // ISSUE-41: still waiting for a decision in its current round (not decided, not in a finalized round)
+                    'applications as to_review_count' => fn ($q) => $q
+                        ->whereIn('round_status', ['submitted', 'assigned', 'under_review', 'scored'])
+                        ->whereNotIn('status', ['draft', 'rejected', 'withdrawn', 'awarded', 'in_monitoring', 'completed'])
+                        ->whereNotIn('current_round_id', \App\Models\Programs\Rounds\ProgramRound::where('status', 'finalized')->select('id')),
                     'applications as approved_count' => fn ($q) => $q->whereIn('status', self::APPROVED),
                     'applications as rejected_count' => fn ($q) => $q->where('status', 'rejected'),
                     'applications as draft_count' => fn ($q) => $q->where('status', 'draft'),
@@ -65,7 +75,7 @@ class ProgramApplicationsOverviewController extends Controller
                     ->whereColumn('program_applications.match_score', '>=', 'programs.match_score_limit'),
                 ])
                 ->with(['rounds' => fn ($q) => $q
-                    ->select(['id', 'program_id', 'round_number', 'round_name', 'open_date', 'close_date', 'status', 'review_method', 'ai_review_paused_at'])
+                    ->select(['id', 'program_id', 'round_number', 'round_name', 'open_date', 'close_date', 'opens_at', 'closes_at', 'status', 'review_method', 'ai_review_paused_at'])
                     ->orderBy('round_number')])
                 ->latest()
                 ->get();
@@ -113,14 +123,19 @@ class ProgramApplicationsOverviewController extends Controller
                     'program_title' => $program->program_title,
                     'program_type' => $program->program_type,
                     'total_rounds' => (int) ($program->total_rounds ?: max(1, $program->rounds->count())),
-                    'status' => ApiContract::statusMeta('program', $program->status),
+                    'status' => ApiContract::statusMeta('program', self::effectiveStatus($program)),
                     'visible' => (bool) $program->visible,
                     'use_match_score' => (bool) $program->use_match_score,
                     'match_score_limit' => $min ?: null,
                     'currency' => $program->currency,
                     'total_program_amount' => $program->total_program_amount,
-                    'open_date' => $firstRound?->open_date ?? $program->application_start_date,
-                    'close_date' => $firstRound?->close_date ?? $program->application_deadline,
+                    // The current round's window (ISSUE-41): a multi-round program's deadline is the round it is on, as the
+                    // status and "Current round" are, not round 1's; the program's own dates when it has no round yet
+                    'open_date' => ($round ?? $firstRound)?->open_date ?? $program->application_start_date,
+                    'close_date' => ($round ?? $firstRound)?->close_date ?? $program->application_deadline,
+                    // Exact moments (ISO 8601 with offset) for the countdown
+                    'opens_at' => (($round ?? $firstRound)?->opensAt() ?? $program->opensAt())?->format(\App\Support\ProgramSchedule::JSON_FORMAT),
+                    'closes_at' => (($round ?? $firstRound)?->closesAt() ?? $program->closesAt())?->format(\App\Support\ProgramSchedule::JSON_FORMAT),
                     'applications_count' => (int) $program->applications_count,
                     'to_review_count' => (int) $program->to_review_count,
                     'approved_count' => (int) $program->approved_count,
@@ -142,45 +157,172 @@ class ProgramApplicationsOverviewController extends Controller
                         'ai_paused' => (bool) $round->ai_review_paused_at,
                         'open_date' => $round->open_date,
                         'close_date' => $round->close_date,
+                        'opens_at' => $round->opensAt()?->format(\App\Support\ProgramSchedule::JSON_FORMAT),
+                        'closes_at' => $round->closesAt()?->format(\App\Support\ProgramSchedule::JSON_FORMAT),
                         'applications_count' => (int) ($inRound[$round->id] ?? 0),
                     ] : null,
                     // AI review progress in the current round (null when the round is reviewed by people only)
-                    'ai_review' => $usesAi ? [
+                    // ISSUE-39: in a finalized round nothing is waiting or needs a look; what never completed did not run
+                    'ai_review' => $usesAi ? ($round->status === 'finalized' ? [
+                        'working' => 0, 'ready' => $aiCount(['ready']), 'needs_attention' => 0, 'failed' => 0, 'stale' => $aiCount(['stale']),
+                        'not_run' => $aiCount(['queued', 'extracting', 'analyzing', 'needs_attention', 'failed']),
+                    ] : [
                         'working' => $aiCount(['queued', 'extracting', 'analyzing']),
                         'ready' => $aiCount(['ready']),
                         'needs_attention' => $aiCount(['needs_attention']),
                         'failed' => $aiCount(['failed']),
                         'stale' => $aiCount(['stale']),
-                    ] : null,
+                        'not_run' => 0,
+                    ]) : null,
                 ];
             })->values();
 
             $scored = $rows->sum('scored_count');
             $weightedScore = $rows->sum(fn ($row) => ($row['avg_match_score'] ?? 0) * $row['scored_count']);
 
+            $totals = [
+                'programs' => $rows->count(),
+                'open_programs' => $rows->filter(fn ($row) => in_array($row['status']['value'], ['open', 'published'], true))->count(),
+                'programs_without_applications' => $rows->where('applications_count', 0)->count(),
+                'applications' => $rows->sum('applications_count'),
+                'to_review' => $rows->sum('to_review_count'),
+                'approved' => $rows->sum('approved_count'),
+                'rejected' => $rows->sum('rejected_count'),
+                'scored' => $scored,
+                'avg_match_score' => $scored ? round($weightedScore / $scored, 1) : null,
+                'above_min' => $rows->sum(fn ($row) => $row['above_min_count'] ?? 0),
+                'ai_working' => $rows->sum(fn ($row) => $row['ai_review']['working'] ?? 0),
+                'ai_needs_attention' => $rows->sum(fn ($row) => ($row['ai_review']['needs_attention'] ?? 0) + ($row['ai_review']['failed'] ?? 0)),
+                'ai_programs' => $rows->filter(fn ($row) => $row['ai_review'] !== null)->count(),
+            ];
+
+            if (self::listMode($request)) {
+                return $this->listResponse($request, $rows, $totals);
+            }
+
             return response()->json([
                 'message' => 'Applications overview fetched successfully.',
                 'programs' => $rows,
-                'totals' => [
-                    'programs' => $rows->count(),
-                    'open_programs' => $rows->filter(fn ($row) => in_array($row['status']['value'], ['open', 'published'], true))->count(),
-                    'programs_without_applications' => $rows->where('applications_count', 0)->count(),
-                    'applications' => $rows->sum('applications_count'),
-                    'to_review' => $rows->sum('to_review_count'),
-                    'approved' => $rows->sum('approved_count'),
-                    'rejected' => $rows->sum('rejected_count'),
-                    'scored' => $scored,
-                    'avg_match_score' => $scored ? round($weightedScore / $scored, 1) : null,
-                    'above_min' => $rows->sum(fn ($row) => $row['above_min_count'] ?? 0),
-                    'ai_working' => $rows->sum(fn ($row) => $row['ai_review']['working'] ?? 0),
-                    'ai_needs_attention' => $rows->sum(fn ($row) => ($row['ai_review']['needs_attention'] ?? 0) + ($row['ai_review']['failed'] ?? 0)),
-                    'ai_programs' => $rows->filter(fn ($row) => $row['ai_review'] !== null)->count(),
-                ],
+                'totals' => $totals,
             ]);
         } catch (\Throwable $e) {
             ErrorLogService::report($e, ['user_id' => Auth::id()]);
 
             return response()->json(['message' => 'Something went wrong, please try again later.'], 500);
         }
+    }
+
+    private static function listMode(Request $request): bool
+    {
+        return ApiContract::wantsPagination($request) || $request->boolean('export')
+            || $request->filled('search') || $request->filled('filters') || $request->filled('sort');
+    }
+
+    /** Where a program's reviewing stands: none (no applications), needs (some wait for a decision) or done. */
+    private static function reviewOf(array $row): string
+    {
+        return ! $row['applications_count'] ? 'none' : ($row['to_review_count'] ? 'needs' : 'done');
+    }
+
+    /** What the AI is doing in the current round now (null when people review it). */
+    private static function aiStateOf(array $row): ?string
+    {
+        $ai = $row['ai_review'];
+        if (! $ai) {
+            return null;
+        }
+        if ($row['current_round']['ai_paused'] ?? false) {
+            return 'paused';
+        }
+
+        return $ai['working'] ? 'working' : (($ai['needs_attention'] || $ai['failed']) ? 'attention' : ($ai['ready'] ? 'ready' : 'idle'));
+    }
+
+    /**
+     * The table's page: search, filters, sort, page and export over the summary rows (one per program, so they are
+     * few and already counted by the database). `totals` stays the whole account's, whatever the search.
+     */
+    private function listResponse(Request $request, $rows, array $totals)
+    {
+        // Described filters (the Applications page builds its panel, chips and URL state from `filter_schema`); the old
+        // keys and values are unchanged, so saved links keep working
+        $list = CollectionList::for($rows, $request)
+            ->search(fn ($r) => (string) $r['program_title'])
+            ->filter('id', fn ($r) => $r['id'])
+            ->options('review', fn ($r) => self::reviewOf($r), label: 'app:reviewColumn', values: ['needs', 'done', 'none'],
+                optionLabels: ['needs' => 'app:needsReview', 'done' => 'app:allReviewed', 'none' => 'app:noApplications'])
+            ->options('status', fn ($r) => strtolower((string) $r['status']['value']), label: 'app:status')
+            ->options('type', fn ($r) => $r['program_type'] === 'multi_round' ? 'multi' : 'single', label: 'app:type', values: ['single', 'multi'],
+                optionLabels: ['single' => 'app:singleRound', 'multi' => 'app:multiRound'])
+            ->options('method', fn ($r) => $r['current_round']['review_method'] ?? 'manual', label: 'app:reviewMethod', values: ['manual', 'ai_assisted', 'ai_only'],
+                optionLabels: ['manual' => 'app:methodManual', 'ai_assisted' => 'app:methodAiAssisted', 'ai_only' => 'app:methodAiOnly'])
+            ->options('ai', fn ($r) => in_array(self::aiStateOf($r), ['working', 'attention', 'paused'], true) ? self::aiStateOf($r) : null, label: 'app:aiStatus',
+                values: ['working', 'attention', 'paused'], optionLabels: ['working' => 'app:aiInProgress', 'attention' => 'app:aiNeedsLook', 'paused' => 'app:aiPaused'])
+            ->options('match', fn ($r) => $r['use_match_score'] ? 'on' : 'off', label: 'app:matchScore', values: ['on', 'off'],
+                optionLabels: ['on' => 'app:matchScoreOn', 'off' => 'app:matchScoreOff'])
+            ->options('currency', fn ($r) => $r['currency'] ? strtoupper((string) $r['currency']) : null, label: 'app:currency')
+            ->numberRange('applications', fn ($r) => $r['applications_count'], label: 'app:applicationsColumn')
+            ->numberRange('to_review', fn ($r) => $r['to_review_count'], label: 'app:exportToReview')
+            ->numberRange('score', fn ($r) => $r['avg_match_score'], label: 'app:exportAverageMatchScore')
+            ->numberRange('funding', fn ($r) => $r['total_program_amount'] !== null ? (float) $r['total_program_amount'] : null, label: 'app:funding')
+            ->numberRange('rounds', fn ($r) => $r['total_rounds'], label: 'app:rounds')
+            ->dateRange('deadline', fn ($r) => (string) $r['close_date'], label: 'app:deadlineColumn', presets: self::PAST_AND_FUTURE)
+            ->dateRange('last_applied', fn ($r) => (string) $r['last_applied_at'], label: 'app:listFilterLastApplication')
+            ->boolean('has_applications', fn ($r) => $r['applications_count'] > 0, label: 'app:listFilterHasApplications')
+            ->boolean('has_drafts', fn ($r) => $r['draft_count'] > 0, label: 'app:listFilterHasDrafts')
+            ->boolean('visible', fn ($r) => $r['visible'], label: 'app:visibleToApplicants')
+            ->sortable([
+                'title' => fn ($r) => (string) $r['program_title'],
+                'round' => fn ($r) => $r['current_round']['number'] ?? 0,
+                'applications' => fn ($r) => $r['applications_count'],
+                'to_review' => fn ($r) => $r['to_review_count'],
+                'match' => fn ($r) => $r['avg_match_score'] ?? -1,
+                'deadline' => fn ($r) => (string) $r['close_date'],
+            ]);
+
+        [$items, $page] = $list->fetch();
+
+        $data = [
+            'items' => $items,
+            'facets' => $list->facets(['review', 'status', 'type', 'method', 'ai', 'match']),
+            'filter_schema' => $list->filterSchema(),
+            'stats' => $totals,
+            'export_truncated' => $list->wantsExport() ? $list->exportTruncated() : false,
+        ];
+        if ($page) {
+            $data['pagination'] = ApiContract::pagination($page);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Applications overview fetched successfully.',
+            'data' => $data,
+            'programs' => $items,
+            'totals' => $totals,
+        ]);
+    }
+
+    /**
+     * ISSUE-41: one status per program from its real state, by the same moments its deadlines use: open while a round
+     * takes applications, under review once none does, then awarded (someone was awarded) or closed when every round
+     * is finalized. A draft, cancelled, awarded or completed program keeps its own status.
+     */
+    public static function effectiveStatus(Program $program): string
+    {
+        if (in_array($program->status, ['draft', 'cancelled', 'awarded', 'completed', 'closed'], true)) return $program->status;
+        $rounds = $program->rounds;
+        $now = now();
+        $taking = $rounds->contains(fn ($r) => $r->status === 'published'
+            && (! $r->opensAt() || $r->opensAt()->lte($now)) && (! $r->closesAt() || $r->closesAt()->gt($now)));
+        if ($taking) return 'open';
+
+        $planned = (int) ($program->total_rounds ?: max(1, $rounds->count()));
+        $allFinalized = $rounds->isNotEmpty() && $rounds->count() >= $planned && $rounds->every(fn ($r) => $r->status === 'finalized');
+        if ($allFinalized) {
+            return \App\Models\Programs\ProgramApplication::where('program_id', $program->id)->whereIn('status', ['awarded', 'in_monitoring', 'completed'])->exists()
+                ? 'awarded' : 'closed';
+        }
+
+        return 'under_review';
     }
 }

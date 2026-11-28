@@ -14,4 +14,6 @@ Route::prefix('/deal-room')->group(function (){
     Route::get('business/{businessId}/participants', [DealroomController::class, 'participants']);
     Route::get('milestone/{milestoneId}/communications', [DealroomController::class, 'communications']);
     Route::post('milestone/communications', [DealroomController::class, 'communications_store']);
+    // A signed link to a piece of milestone evidence (owner + investors only)
+    Route::get('milestone/{milestoneId}/file', [DealroomController::class, 'evidenceFile'])->whereNumber('milestoneId');
 });

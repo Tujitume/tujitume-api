@@ -39,7 +39,7 @@ class ProgramMonitoringAnalyticsService
                 ? round(($completedMilestones / $totalMilestones) * 100, 1) : 0,
             'funding_coverage' => $totalFunds > 0
                 ? round(($releasedFunds / $totalFunds) * 100, 1) : 0,
-            'approved_advances' => $app->status === 'awarded' ? 1 : 0,
+            'approved_advances' => in_array($app->status, ['awarded', 'in_monitoring', 'completed'], true) ? 1 : 0,
             'follow_adjustments' => $submissions->where('status', 'changes_requested')->count(),
         ];
 
@@ -98,7 +98,7 @@ class ProgramMonitoringAnalyticsService
             'on_hand_districts' => $siteVisits->where('status', 'completed')->count(),
             'past_comments' => $submissions->whereNotNull('reviewer_note')->count(),
             'awardees' => 1,
-            'approved_applicants' => $app->status === 'awarded' ? 1 : 0,
+            'approved_applicants' => in_array($app->status, ['awarded', 'in_monitoring', 'completed'], true) ? 1 : 0,
         ];
 
         $latestDocuments = MESubmissionFile::whereHas('submission', function ($q) use ($app) {
@@ -206,10 +206,7 @@ class ProgramMonitoringAnalyticsService
             'id' => $checkpoint->id,
             'checkpoint_name' => $checkpoint->checkpoint_name,
             'type' => $checkpoint->type,
-            'status' => [
-                'value' => $checkpoint->status,
-                'color' => config('status.me_checkpoint.' . $checkpoint->status, 'gray'),
-            ],
+            'status' => \App\Support\ApiContract::statusMeta('me_checkpoint', $checkpoint->status),
             'due_date' => $checkpoint->due_date?->toDateString(),
             'submitted_at' => $checkpoint->submission?->submitted_at?->toDateString(),
             'reviewer_note' => $checkpoint->submission?->reviewer_note,

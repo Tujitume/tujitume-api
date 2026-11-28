@@ -65,4 +65,24 @@ describe('Round endpoints', function () {
 
         $this->assertDatabaseMissing('program_rounds', ['id' => $roundId]);
     });
+
+    it('saves questions sent with a new round as the round\'s questions', function () {
+        $this->program->update(['total_rounds' => 3]);
+
+        $created = $this->actingAsOrgOwner()
+            ->postJson("/api/v1/programs/{$this->program->id}/rounds", [
+                'round_name' => 'Full plan',
+                'open_date' => '2026-09-01',
+                'close_date' => '2026-09-15',
+                'round_questions' => [
+                    ['question_text' => 'Upload your business plan.', 'question_type' => 'file_upload', 'is_required' => true],
+                    ['question_text' => 'What changed since round 1?', 'question_type' => 'long_text'],
+                ],
+            ]);
+
+        $created->assertCreated()->assertJsonPath('data.round_name', 'Full plan');
+        $roundId = $created->json('data.id');
+        $this->assertDatabaseHas('round_custom_questions', ['round_id' => $roundId, 'question_text' => 'Upload your business plan.', 'display_order' => 1]);
+        $this->assertDatabaseHas('round_custom_questions', ['round_id' => $roundId, 'question_text' => 'What changed since round 1?', 'display_order' => 2]);
+    });
 });

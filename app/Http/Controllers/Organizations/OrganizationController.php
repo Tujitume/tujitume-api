@@ -337,12 +337,31 @@ class OrganizationController extends Controller
         }
     }
     
+    /** What a member reads about their own organization (no wallet, payment or AI-consent fields) */
+    public const PROFILE_FIELDS = [
+        'id', 'name', 'display_name', 'legal_name', 'trading_name', 'organization_type', 'year_established', 'description',
+        'registration_number', 'registration_date', 'registration_country', 'legal_structure', 'sector', 'sub_sector',
+        'physical_address', 'social_media_url', 'email', 'phone', 'website', 'country', 'region', 'city', 'program_industry_id',
+        'focus_sectors', 'operating_countries', 'target_regions', 'financial_year_start_month', 'status',
+    ];
+
     /**
-     * Display the specified resource.
+     * GET /organizations/{organization}: the organization's profile, for its owner and its members (a Business Coach's
+     * own organization on their Profile tab and dashboard). Anyone else gets 403.
      */
-    public function show(string $id)
+    public function show(Request $request, Organization $organization)
     {
-        //
+        $user = $request->user();
+        $belongs = (int) $organization->owner_user_id === (int) $user->id
+            || (int) ($user->organization_id ?? 0) === (int) $organization->id
+            || OrganizationUserRole::query()->where('organization_id', $organization->id)->where('user_id', $user->id)
+                ->where('status', 'active')->exists();
+
+        if (! $belongs) {
+            return response()->json(['success' => false, 'message' => 'You do not have access to this organization.'], 403);
+        }
+
+        return response()->json(['success' => true, 'data' => $organization->only(self::PROFILE_FIELDS)]);
     }
 
     /**
@@ -377,6 +396,12 @@ class OrganizationController extends Controller
 
         if (! $isOrganizationMember) {
             return response()->json(['message' => 'You do not have access to this organization.'], 403);
+        }
+
+        // ?page / per_page / search / filters / sort / export: the Business Coaches page's server list;
+        // without them, every coach as before (the assignment pickers read this)
+        if (OrganizationReviewerService::wantsList($request)) {
+            return $reviewerService->respondList($organization, $request);
         }
 
         return response()->json([

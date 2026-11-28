@@ -38,7 +38,7 @@ Route::prefix('/business')->middleware(['business'])->group(function () {
     Route::get('confirmed_bids', [BidsController::class, 'confirmedBids']);
 
     Route::get('remove_bids/{id}', [BidsController::class, 'withdrawPendingInvestment']);
-    Route::get('remove_active_bids/{id}', [BidsController::class, 'remove_active_bids']);
+    Route::get('remove_active_bids/{id}', [BidsController::class, 'withdraw_investment']); // the investor withdraws an accepted investment (old notification bell)
 
     Route::get('askInvestorToVerify/{bid_id}', [AssetBidsController::class, 'askInvestorToVerify']);
     Route::get('requestOwnerToVerify/{bid_id}', [AssetBidsController::class, 'requestOwnerToVerify']);
@@ -46,10 +46,11 @@ Route::prefix('/business')->middleware(['business'])->group(function () {
     Route::get('assetEquip/download/{id}/{type}', [DownloadController::class, 'assetDownload'])->name('assetEquip/download');
 
     //Account Data & Subscription
-    Route::get('account', [AccountController::class, 'account_wallet'])->name('account');
+    Route::get('account', [AccountController::class, 'account_wallet']); // same endpoint as account.php's named 'account' route: a second name breaks route:cache on deploy
     Route::get('getCurrSubscription', [SubscriptionController::class, 'getSubscription']);
-    Route::get('cancelSubscription/{id}', [SubscriptionController::class, 'cancelSubscription']);
-    Route::get('renewSubscription/{stripe_sub_id}', [SubscriptionController::class, 'renewSubscription']);
+    // ISSUE-51: they change the subscription, so POST only (a link or prefetch can no longer cancel or renew it)
+    Route::post('cancelSubscription/{id}', [SubscriptionController::class, 'cancelSubscription']);
+    Route::post('renewSubscription/{stripe_sub_id}', [SubscriptionController::class, 'renewSubscription']);
     Route::get('fetchUser/{id}', [AuthController::class, 'fetchUser']);
     Route::get('bidInfo/{id}', [BidsController::class, 'bidInfo']);
     Route::get('withdraw_investment/{id}', [BidsController::class, 'withdraw_investment']);
@@ -74,3 +75,4 @@ Route::get('unlockBySubs/{id}/{sub_id}/{plan}', [BusinessController::class, 'unl
 
 // Entrepreneur dashboard cards (Businesses, Programs, Capital) in one snapshot
 Route::get('dashboard/entrepreneur/stats', [EntrepreneurDashboardStatsController::class, 'index']);
+Route::get('dashboard/service-provider/stats', [\App\Http\Controllers\Service\ServiceProviderDashboardStatsController::class, 'index']);

@@ -14,19 +14,32 @@ class EmailLink
 {
     public const GO_PATH = 'go';
 
-    /** Absolute URL for a link key, or null when there is nowhere to send the reader. */
-    public static function url(?string $linkKey): ?string
+    /**
+     * Absolute URL for a link key, or null when there is nowhere to send the reader. It opens on the
+     * recipient's own address: their organisation's workspace when they work inside one, else the main
+     * site (see RecipientUrl). Without a recipient it is the main site.
+     */
+    public static function url(?string $linkKey, \App\Models\Auth\User|int|string|array|null $recipient = null): ?string
     {
         $linkKey = trim((string) $linkKey);
         if ($linkKey === '') return null;
 
-        return rtrim((string) config('app.app_url'), '/') . '/' . self::GO_PATH . '?to=' . rawurlencode($linkKey);
+        // C6: a service provider's email never opens the Business Coach area
+        if (str_starts_with($linkKey, 'dashboard.reviewerGrantOrg') && $recipient !== null && ! is_array($recipient)) {
+            $type = $recipient instanceof \App\Models\Auth\User ? $recipient->user_type_id
+                : (is_numeric($recipient) ? \App\Models\Auth\User::whereKey((int) $recipient)->value('user_type_id') : null);
+            if ((int) $type === 3) $linkKey = \App\Models\Communication\Notifications::providerLink($linkKey);
+        }
+
+        return RecipientUrl::url(self::GO_PATH . '?to=' . rawurlencode($linkKey), $recipient);
     }
 
     /** The bookings page of whoever made a booking (investors, capital and program organisations each have their own). */
     public static function bookingsFor($userId): string
     {
         return match ((int) \App\Models\Auth\User::whereKey($userId)->value('user_type_id')) {
+            1 => 'dashboard.entrepreneur.bookings',
+            3 => 'dashboard.serviceProvider.myBookings',
             4 => 'dashboard.programOrg.bookings',
             5 => 'dashboard.capitalOrg.bookings',
             default => 'dashboard.investor.bookings',

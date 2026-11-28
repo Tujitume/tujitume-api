@@ -83,7 +83,16 @@ class ProgramApplication extends Model
         ];
     }
 
+    // ideal | strong | needs_revision for the match score (MatchTier), null without one
+    protected $appends = ['match_tier'];
+
+    public function getMatchTierAttribute(): ?string
+    {
+        return \App\Support\MatchTier::of($this->attributes['match_score'] ?? null);
+    }
+
     protected $casts = [
+        'completed_at' => 'datetime',
 	'social_impact_areas' => 'array',
 	'score_breakdown' => 'array',
         'revision_checklist' => 'array',

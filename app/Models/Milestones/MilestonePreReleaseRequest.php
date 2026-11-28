@@ -33,7 +33,9 @@ class MilestonePreReleaseRequest extends Model
 
     public function votingWindow()
     {
-        return $this->belongsTo(Vote::class, 'reference_id');
+        // The vote window points at this record (votes.reference_id + its type); it was read the other way round, so it
+        // was never found and every vote that checks it answered "Voting window is closed"
+        return $this->hasOne(Vote::class, 'reference_id')->where('type', 'pre_release')->latest('id');
     }
 
 }

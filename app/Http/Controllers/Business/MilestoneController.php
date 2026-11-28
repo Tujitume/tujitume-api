@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers\Business;
 
+
+use Illuminate\Support\Facades\DB;
 use App\Http\Controllers\Controller;
 use App\Models\Auth\User;
 use App\Models\Business\AcceptedBids;
@@ -124,7 +126,6 @@ class MilestoneController extends Controller
     {
         $uploadedFiles = [];
 
-        DB::beginTransaction();
         try {
             $validated = $request->validate([
                 'title'            => 'required|string|max:255',
@@ -136,59 +137,60 @@ class MilestoneController extends Controller
                 'funding_duration' => 'required|integer|min:1',
                 'time_type'        => 'nullable|string|in:Days,Weeks,Months',
             ]);
+        } catch (ValidationException $e) {
+            return response()->json(['message' => 'Validation failed.', 'errors' => $e->errors()], 422);
+        }
 
-            $listing = Listing::findOrFail($validated['business_id']);
+        $listing = Listing::find($validated['business_id']);
+        if (! $listing || (int) $listing->user_id !== (int) Auth::id()) {
+            return response()->json(['message' => 'You can only add milestones to your own business.'], 403);
+        }
 
-            if($listing->user_id !== Auth::id()){
-                return response()->json(['message' => 'Unauthorized!'], 401);
-            }
+        $noDays = match ($validated['time_type'] ?? 'Days') {
+            'Weeks'  => $validated['n_o_days'] * 7,
+            'Months' => $validated['n_o_days'] * 30,
+            default  => $validated['n_o_days'],
+        };
 
-            $noDays = match($validated['time_type'] ?? 'Days') {
-                'Weeks'  => $validated['n_o_days'] * 7,
-                'Months' => $validated['n_o_days'] * 30,
-                default  => $validated['n_o_days'],
-            };
+        $milestones = $listing->milestones()->orderBy('id')->get();
+        // The first milestone starts on the chosen date (today when none is given); each next one starts when the previous one's funding closes
+        $startDate = $milestones->isNotEmpty()
+            ? Carbon::parse($milestones->last()->deadline_date)
+            : Carbon::parse($validated['start_date'] ?? now()->toDateString());
+        $deadlineDate = $startDate->copy()->addDays($validated['funding_duration']);
 
-            $milestones  = $listing->milestones()->orderBy('id')->get();
-            $startDate   = $milestones->isNotEmpty()
-                ? Carbon::parse($milestones->last()->deadline_date)
-                : Carbon::parse($validated['start_date']);
-            $deadlineDate = $startDate->copy()->addDays($validated['funding_duration']);
+        $coveredAmount = $milestones->sum('amount') + $validated['amount'];
+        if ((int) $coveredAmount > (int) $listing->investment_needed) {
+            return response()->json(['message' => 'Amount exceeds the total investment needed.'], 422);
+        }
 
-            //Auto fill
-            $validated['start_date'] = $startDate->format('Y-m-d');
-            $validated['deadline_date'] = $validated['expected_end_date'] = $deadlineDate->format('Y-m-d');
-
-            $coveredAmount = $listing->milestones()->sum('amount') + $validated['amount'];
-            if ((int) $coveredAmount > (int) $listing->investment_needed) {
-                return response()->json(['message' => 'Amount exceeds the total investment needed.'], 422);
-            }
-
+        DB::beginTransaction();
+        try {
+            $document = null;
             if ($request->hasFile('file')) {
-                $validated['document']  =  $this->fileUpload->saveFile(
-                    $request->file('file'), 'files/milestones/' . $validated['business_id']
-                );
-                $uploadedFiles[] = $validated['document'];
+                $document = $this->fileUpload->saveFile($request->file('file'), 'files/milestones/' . $listing->id);
+                $uploadedFiles[] = $document;
             }
 
             Milestones::create([
-                ...$validated,
-                'user_id'            => Auth::id(),
-                'listing_id'         => $validated['business_id'],
-                'n_o_days'           => $noDays,
-                'share'              => round(($validated['amount'] / $listing->investment_needed) * ($listing->share ?? 0), 2),
-                'status'             => $milestones->isNotEmpty() ? 'to_do' : 'locked',
+                'title'             => $validated['title'],
+                'amount'            => $validated['amount'],
+                'funding_duration'  => $validated['funding_duration'],
+                'start_date'        => $startDate->format('Y-m-d'),
+                'deadline_date'     => $deadlineDate->format('Y-m-d'),
+                'expected_end_date' => $deadlineDate->format('Y-m-d'),
+                'document'          => $document,
+                'user_id'           => Auth::id(),
+                'listing_id'        => $listing->id,
+                'n_o_days'          => $noDays,
+                'share'             => round(($validated['amount'] / $listing->investment_needed) * ($listing->share ?? 0), 2),
+                'status'            => $milestones->isNotEmpty() ? 'to_do' : 'locked',
             ]);
 
             DB::commit();
             return response()->json(['message' => 'Milestone created successfully.'], 200);
-
-        } catch (ValidationException $e) {
-            return response()->json(['message' => 'Validation failed.', 'errors' => $e->errors()], 422);
-
         } catch (Exception $e) {
             DB::rollBack();
-
             foreach ($uploadedFiles as $file) {
                 if ($file && file_exists(public_path($file))) unlink(public_path($file));
             }

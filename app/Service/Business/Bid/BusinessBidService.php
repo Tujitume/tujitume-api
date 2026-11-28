@@ -30,28 +30,27 @@ class BusinessBidService
 
             $this->refundBidIfNeeded($bid);
 
+            // The deposit is on its way back: the bid goes now, together with its pending amount, so a retry can never
+            // refund it twice (this used to fail after the refund on a missing pending_collected() method)
             $milestone = $bid->milestone;
-            if ($milestone) {
-                $milestone->decrement('pending_collected', $bid->amount);
-            }
+            \Illuminate\Support\Facades\DB::transaction(function () use ($bid, $milestone) {
+                if ($milestone && (float) $milestone->pending_collected >= (float) $bid->amount) {
+                    $milestone->decrement('pending_collected', $bid->amount);
+                }
+                $bid->delete();
+            });
 
             $listing->refresh();
-
-            $totalPending  = $milestone->pending_collected();
-            $totalAccepted = $milestone->funding_collected();
-
-            if (($totalPending + $totalAccepted) < $milestone->amount) {
-
-                $listing->update(['threshold_met' => 0]);
-                $text = 'Business '.$listing->name.' is yet to meet the threshold due to bid rejection';
-
-                $investors = $listing->bids()->pluck('investor_id');
-
-                foreach ($investors as $invId) {
-                    $this->notification->create($invId, $bid->business_id, $text, '/', 'business');
+            if ($milestone) {
+                $milestone->refresh();
+                if (((float) $milestone->pending_collected + (float) $milestone->funding_collected) < (float) $milestone->amount) {
+                    $listing->update(['threshold_met' => 0]);
+                    $text = 'Business '.$listing->name.' is yet to meet the threshold due to bid rejection';
+                    foreach ($listing->bids()->pluck('investor_id')->unique() as $invId) {
+                        $this->notification->create($invId, $bid->owner_id, $text, 'my-investments', 'business');
+                    }
+                    $this->notification->create($bid->owner_id, null, $text, 'investment-bids', 'business');
                 }
-
-                $this->notification->create($bid->owner_id, $bid->business_id, $text, '/', 'business');
             }
 
             $this->emailService->send(
@@ -63,13 +62,11 @@ class BusinessBidService
 
             $this->notification->create(
                 $bid->investor_id,
-                $bid->business_id,
-                'Sorry your bid to '.$listing->name.' has been rejected, please try again properly!',
-                '/',
+                $bid->owner_id,
+                'Your bid to '.$listing->name.' was not accepted. Any deposit you paid has been refunded to your wallet.',
+                'my-investments',
                 'business'
             );
-
-            $bid->delete();
         }
 
         return response()->json(['message' => 'Rejected!'], 200);
@@ -121,7 +118,11 @@ class BusinessBidService
                 'type' => $bid->type,
                 'method' => $bid->method,
                 'amount' => $bidAmount,
-                'representation' => $bid->representation,
+                // the bid's equity is split with its money when part of it spills into the next milestone (both rows used
+                // to carry the whole share, so the equity counted twice)
+                'representation' => $spillAmount && $nextMs && (float) $bid->amount > 0
+                    ? round((float) $bid->representation * $bidAmount / (float) $bid->amount, 2)
+                    : $bid->representation,
                 'serial' => $bid->serial,
                 'legal_doc' => $bid->legal_doc,
                 'optional_doc' => $bid->optional_doc,
@@ -130,19 +131,16 @@ class BusinessBidService
                 'status' => $status
             ]);
 
-            if ($listing->owner->id === Auth::id()) {
-                $accepted->update([
-                    'status' => 'confirmed',
-                    'paid_in_full' => true
-                ]);
-            }
+            // (An accepted bid stays awaiting_payment / under_verification until the investor pays the 75% or the
+            // asset is verified; it used to be confirmed and "paid in full" here on every accept.)
 
             if ($spillAmount && $nextMs) {
 
                 $accepted->replicate()
                     ->fill([
                         'amount' => $spillAmount,
-                        'ms_id' => $nextMs->id
+                        'ms_id' => $nextMs->id,
+                        'representation' => round((float) $bid->representation - (float) $accepted->representation, 2),
                     ])->save();
 
                 if ($bid->type === 'Monetary') {
@@ -153,7 +151,6 @@ class BusinessBidService
             if ($bid->type === 'Monetary') {
 
                 $listing->increment('amount_collected', $bid->amount);
-                $listing->increment('invest_count');
 
                 $activeMs->increment('funding_collected', $bidAmount);
             }
@@ -180,12 +177,40 @@ class BusinessBidService
                 'business'
             );
 
-            $activeMs->decrement('pending_collected', $bidAmount);
+            // The whole bid was counted as pending on the milestone it was placed on (status_bids): it leaves there in
+            // full. Taking only the in-milestone part off the milestone funded now left money pending on the old one and
+            // a negative pending on the next.
+            $pendingMs = $bid->ms_id ? $milestones->firstWhere('id', $bid->ms_id) : $activeMs;
+            ($pendingMs ?? $activeMs)->decrement('pending_collected', min((float) $bid->amount, (float) (($pendingMs ?? $activeMs)->pending_collected)));
 
             $bid->delete();
+
+            $this->refreshThreshold($listing);
+            $listing->refreshInvestorCount(); // distinct investors (this was +1 per accepted bid)
         }
 
         return response()->json(['message' => 'Accepted!'], 200);
+    }
+
+    /**
+     * threshold_met is about the milestone now raising money, not the business: once a milestone's money is all
+     * accepted, the next milestone has to meet its own target before its bids can be accepted. (It was set once, on the
+     * first milestone, and never cleared, so every later bid was "ready to accept" straight away and the deal room
+     * said "Target met".) Accepted assets still being verified count as committed.
+     */
+    private function refreshThreshold($listing): void
+    {
+        // Committed money (accepted rows + bids still pending, wherever they were placed) against the targets of every
+        // milestone up to the first one not yet covered by accepted money
+        $milestones = $listing->milestones()->orderBy('id')->get();
+        $accepted = AcceptedBids::where('business_id', $listing->id)->get(['ms_id', 'amount']);
+        $target = 0.0; $next = null;
+        foreach ($milestones as $m) {
+            $target += (float) $m->amount;
+            if ((float) $accepted->where('ms_id', $m->id)->sum('amount') < (float) $m->amount) { $next = $m; break; }
+        }
+        $committed = (float) $accepted->sum('amount') + (float) $milestones->sum('pending_collected');
+        $listing->update(['threshold_met' => !$next || $committed >= $target ? 1 : 0]);
     }
 
     // Withdraw investment methods
@@ -193,7 +218,27 @@ class BusinessBidService
     public function handleWithdrawRefund($bid)
     {
         if ($bid->method === 'lipr') {
-            throw new \Exception('Lipr refund not available right now.');
+            // Paid by M-Pesa into the platform wallet: refund the part paid so far (25% before the remaining 75% is
+            // paid, all of it after), less the same 2% kept on card refunds, to the investor's LIPR wallet
+            $investor = \App\Models\Auth\User::find($bid->investor_id);
+            $platformWallet = \App\Models\Misc\Setting::where('key', 'platform_lipr_wallet')->value('value');
+            if (!$investor?->lipr_wallet) {
+                throw new \Exception('Set up your wallet first, so your investment can be refunded to it.', 422);
+            }
+            $paidShare = strtolower((string) $bid->status) === 'confirmed' ? 1.0 : 0.25;
+            // A business's money (bids included) is in KSh, as the business form and checkout show it
+            $refundKes = (int) round((float) $bid->amount * $paidShare * 0.98);
+            if (!$platformWallet || $refundKes <= 0) {
+                throw new \Exception('The refund could not be worked out. Please contact support.', 422);
+            }
+            $refund = app(\App\Service\LiprMpesa\LiprW2W::class)->send($refundKes, $investor->lipr_wallet, $platformWallet, null, [
+                'narration' => 'Investment refund', 'listing_id' => $bid->id,
+            ]);
+            if (empty($refund['success'])) {
+                throw new \Exception('The refund could not be sent right now; your investment is unchanged. Please try again.', 502);
+            }
+            (new \App\Service\Misc\TransactionRecord())->create($investor->id, 'refund', 'lipr', $refundKes, $refund['reference'] ?? null, $investor->id);
+            return;
         }
 
         if ($bid->status === 'awaiting_payment') {
@@ -273,7 +318,25 @@ class BusinessBidService
         }
 
         if ($bid->method === 'lipr') {
-            throw new \Exception('Lipr refund not supported yet');
+            // The owner turned the bid down: the investor's whole M-Pesa deposit goes back to their LIPR wallet
+            $payment = \App\Models\Finance\LiprPayment::where('reference_id', $bid->lipr_transaction_id)->first();
+            $refundKes = (int) round((float) ($payment->amount ?? 0));
+            $investor = \App\Models\Auth\User::find($bid->investor_id);
+            $platformWallet = \App\Models\Misc\Setting::where('key', 'platform_lipr_wallet')->value('value');
+            if ($refundKes <= 0 || !$platformWallet) {
+                throw new \Exception('The deposit refund could not be worked out. Please contact support.', 422);
+            }
+            if (!$investor?->lipr_wallet) {
+                throw new \Exception('The investor has no wallet to refund the deposit to yet.', 422);
+            }
+            $refund = app(\App\Service\LiprMpesa\LiprW2W::class)->send($refundKes, $investor->lipr_wallet, $platformWallet, null, [
+                'narration' => 'Bid deposit refund', 'listing_id' => $bid->id,
+            ]);
+            if (empty($refund['success'])) {
+                throw new \Exception('The deposit refund could not be sent right now; the bid is unchanged. Please try again.', 502);
+            }
+            (new \App\Service\Misc\TransactionRecord())->create($investor->id, 'refund', 'lipr', $refundKes, $refund['reference'] ?? null, $investor->id);
+            return;
         }
     }
 

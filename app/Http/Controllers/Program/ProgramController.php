@@ -25,6 +25,8 @@ use App\Service\Misc\ErrorLogService;
 use App\Service\Notification\NotificationService;
 use App\Service\Organization\TeamMemberNotifier;
 use App\Service\Program\ApplicantPreviews;
+use App\Service\Program\OwnerProgramList;
+use App\Support\ProgramSchedule;
 use App\Support\ApiContract;
 use Hash;
 use Illuminate\Http\Request;
@@ -82,28 +84,37 @@ class ProgramController extends Controller
                 if($user->user_type_id == 4){  //Program
                     $user = $this->get_role();
 
-                    if (in_array($user->role, ['editor', 'viewer', 'admin', 'super_admin'])) {
-                        $query = Program::withCount(['liked', 'applications'])->where('user_id',$user->program_owner_id)
-                            ->latest();
+                    // An internal Business Coach (internal_reviewer) may view the organization's programs too (OrganizationPermission: view, review)
+                    if (in_array($user->role, ['editor', 'viewer', 'admin', 'super_admin', 'internal_reviewer'])) {
+                        $query = Program::withCount(['liked', 'applications'])->ofOrganization($user); // ISSUE-38: every program of the organization
                         $watchlistProgramIds = Watchlist::where('user_id', $user->program_owner_id)->pluck('org_id')->toArray();
                     }
                     else{
                         $query = Program::with('wallet')->withCount(['liked', 'applications'])
-                            ->where('user_id',$user->id)
-                            ->latest();
+                            ->where('user_id',$user->id);
                         $watchlistProgramIds = Watchlist::where('user_id', $user->id)->pluck('org_id')->toArray();
                     }
 
-                    [$programs, $page] = ApiContract::fetch($query, request());
+                    // The person's like and the owner (read for owner_website, and sent as before) in two queries, not two per program
+                    $query->with('owner')
+                        ->withExists(['liked as liked_by_me' => fn ($q) => $q->where('user_id', $user_id)]);
+
+                    $list = OwnerProgramList::for($query, request());
+                    [$programs, $page] = $list->fetch();
                     $this->attachApplicantPreviews($programs);
 
                     foreach ($programs as $program){
                         $program->pitch_count = $program->applications_count ?? 0;
                         $program->in_my_watchlist = in_array($program->id, $watchlistProgramIds);
-                        $program->liked = $program->liked()->where('user_id', $user_id)->exists();
+                        $program->liked = (bool) $program->liked_by_me;
                         $program->owner_website = $program->owner->website ?? null;
+                        $program->makeHidden('liked_by_me');
 
                         $program->status = ApiContract::statusMeta('program', $program->status);
+                    }
+
+                    if ($list->listMode()) {
+                        return $list->respond('Programs fetched successfully.', $programs, $page);
                     }
 
                     return ApiContract::listResponse('Programs fetched successfully.', $programs, $page, ['programs']);
@@ -146,7 +157,12 @@ class ProgramController extends Controller
     {
         try{
             $user_id = Auth::id();
-            [$programs, $page] = ApiContract::fetch(Program::withCount(['liked', 'applications']), request());
+            // Discover Programs asks for a page / search / filters / sort / export: the server list (same listed programs)
+            if (\App\Support\ListShapes::wanted(request())) {
+                return (new \App\Service\Program\ProgramDiscoverList($user_id))->respond(request());
+            }
+            // Applicants only ever see programs that are published or open and visible: drafts never leave the server
+            [$programs, $page] = ApiContract::fetch(Program::listedForApplicants()->withCount(['liked', 'applications']), request());
             Program::annotateApplicationState($programs);
             foreach ($programs as $program){
                 $program->pitch_count = $program->applications_count ?? 0;
@@ -172,6 +188,10 @@ class ProgramController extends Controller
         DB::beginTransaction();
 
         try{
+            // Opening and closing moments (with their time) are read in the owner's zone; their dates fill the date fields
+            $timezone = ProgramSchedule::forRequest($request);
+            $moments = ProgramSchedule::readMoments($request, self::PROGRAM_MOMENTS, $timezone);
+
             $validated = $request->validate([
                 'program_title' => 'required|string|max:255',
                 'program_description' => 'nullable|string|max:500',
@@ -186,12 +206,15 @@ class ProgramController extends Controller
                 'max_awardees' => 'nullable|integer|min:1',
                 'currency' => 'nullable|string|max:3',
                 'application_start_date' => 'required|date|after_or_equal:today',
-                'application_deadline' => 'required|date|after:application_start_date',
+                // With times, a program may open and close on the same day (the moments are compared below)
+                'application_deadline' => 'required|date|' . (isset($moments['application_closes_at']) ? 'after_or_equal' : 'after') . ':application_start_date',
+                'application_opens_at' => 'nullable|date',
+                'application_closes_at' => 'nullable|date',
+                'timezone' => 'nullable|string|max:64',
                 'require_kyc_verification_to_apply' => 'nullable|boolean',
                 'use_match_score' => 'nullable|boolean',
                 'match_score_limit' => 'nullable|integer|min:1|max:100',
                 
-                'custom_fields' => 'nullable|array|max:'.config('program_fields.max_active_fields'),
                 'application_round' => 'nullable|array',
                 'application_round.round_name' => 'nullable|string|max:100',
                 'application_round.open_date' => 'nullable|date',
@@ -211,7 +234,11 @@ class ProgramController extends Controller
                 'application_round.knockout_questions' => 'nullable|array',
                 'status' => 'nullable|in:draft,published,open,closed,under_review,awarded,cancelled,completed',
                 'visible' => 'nullable|boolean',
+                'cover_image' => array_merge(['nullable'], \App\Service\Program\ProgramMedia::COVER_RULES),
+                'intro_video_url' => array_merge(['nullable'], \App\Service\Program\ProgramMedia::videoRules()),
             ]);
+            // The cover is a file: it is saved after the program exists (below), never written as the column value
+            unset($validated['cover_image']);
 
             $orgUser = User::with('organization')->find(Auth::id());
             if(!$orgUser->organization){
@@ -250,17 +277,18 @@ class ProgramController extends Controller
             $validated['max_awardees'] = $validated['max_awardees'] ?? (int) floor($validated['total_program_amount'] / max($validated['funding_per_business'], 1));
             $validated['program_type'] = $validated['program_type'] ?? 'single_round';
 
-            $programAttributes = Arr::except($validated, ['application_round', 'custom_fields']);
+            $validated = $this->withMoments($validated, $moments, $timezone, null);
+
+            $programAttributes = Arr::except($validated, ['application_round']);
             $program = Program::create($programAttributes);
-            foreach ($validated['custom_fields'] ?? [] as $definition) {
-                app(\App\Service\Program\CustomFields\CustomFieldService::class)->create($program, $definition);
-            }
             $roundConfig = $validated['application_round'] ?? [];
-            $firstRound = $program->rounds()->create([
-                'round_name' => $roundConfig['round_name'] ?? 'Application Round',
+            // The first round is the application window: without its own dates it opens and closes with the program
+            $roundWindow = isset($roundConfig['open_date']) || isset($roundConfig['close_date'])
+                ? ['open_date' => $roundConfig['open_date'] ?? $program->application_start_date, 'close_date' => $roundConfig['close_date'] ?? $program->application_deadline]
+                : ['opens_at' => $program->application_opens_at, 'closes_at' => $program->application_closes_at];
+            $firstRound = $program->rounds()->create($roundWindow + [
+                'round_name' => $roundConfig['round_name'] ?? 'Round 1',
                 'round_number' => 1,
-                'open_date' => $roundConfig['open_date'] ?? $program->application_start_date,
-                'close_date' => $roundConfig['close_date'] ?? $program->application_deadline,
                 'review_period_end' => $roundConfig['review_period_end'] ?? null,
                 'announcement_date' => $roundConfig['announcement_date'] ?? null,
                 'rubric_mode' => $roundConfig['rubric_mode'] ?? 'weighted',
@@ -283,6 +311,10 @@ class ProgramController extends Controller
             $wallet['program_id'] = $program->id;
 
             ProgramWallet::create($wallet);
+
+            if ($request->hasFile('cover_image')) {
+                app(\App\Service\Program\ProgramMedia::class)->storeCover($program, $request->file('cover_image'));
+            }
 
             DB::commit();
 
@@ -324,7 +356,7 @@ class ProgramController extends Controller
             // 3. Replicate base program
             $newProgram = $program->replicate([
                 'program_title', 'status', 'available_amount', 'application_start_date', 'application_deadline',
-                'public_id', 'created_at', 'updated_at'
+                'application_opens_at', 'application_closes_at', 'public_id', 'created_at', 'updated_at'
             ]);
 
             // 4. Reset important fields
@@ -336,26 +368,11 @@ class ProgramController extends Controller
             $newProgram->application_deadline = null;
             $newProgram->push();
 
-            // Field definitions are copied (answers never are); info values are copied because they describe the program
-            foreach (\App\Service\Program\CustomFields\CustomFieldValueService::available() ? $program->customFields()->where('is_archived', false)->get() : [] as $field) {
-                $copy = $field->replicate();
-                $copy->program_id = $newProgram->id;
-                $copy->save();
-                if ($field->audience === 'info') {
-                    foreach ($field->values()->where('entity_type', 'program')->get() as $value) {
-                        $v = $value->replicate();
-                        $v->field_id = $copy->id;
-                        $v->entity_id = $newProgram->id;
-                        $v->save();
-                    }
-                }
-            }
-
             // 5. Duplicate rounds + questions.
             foreach ($program->rounds as $round) {
 
                 // A copy starts fresh: every round is a draft and none of its setup steps count as confirmed
-                $excluded = ['program_id', 'open_date', 'close_date', 'status', 'created_at', 'updated_at'];
+                $excluded = ['program_id', 'open_date', 'close_date', 'opens_at', 'closes_at', 'status', 'created_at', 'updated_at'];
                 if (\Illuminate\Support\Facades\Schema::hasColumn('program_rounds', 'confirmed_steps')) {
                     $excluded[] = 'confirmed_steps';
                 }
@@ -490,15 +507,23 @@ class ProgramController extends Controller
 
         // The start date is only checked when it is being CHANGED. Editing another field of a program whose applications
         // already opened sends the same (past) start date back; that must not fail with "after or equal to today".
+        // Moments sent with their time are read in the owner's zone and fill the date fields they belong to
+        $timezone = ProgramSchedule::forRequest($request);
+        $moments = ProgramSchedule::readMoments($request, self::PROGRAM_MOMENTS, $timezone);
         $storedStart = $program->application_start_date;
+        $storedOpens = $program->opensAt();
         $sentStart = $request->input('application_start_date');
-        $startUnchanged = $storedStart && $sentStart && strtotime((string) $sentStart) !== false
-            && \Illuminate\Support\Carbon::parse($sentStart)->isSameDay($storedStart);
+        $startUnchanged = isset($moments['application_opens_at'])
+            ? $storedOpens && $moments['application_opens_at']->format('Y-m-d H:i') === $storedOpens->format('Y-m-d H:i')
+            : $storedStart && $sentStart && strtotime((string) $sentStart) !== false
+                && \Illuminate\Support\Carbon::parse($sentStart)->isSameDay($storedStart);
         $startRule = $startUnchanged ? 'sometimes|required|date' : 'sometimes|required|date|after_or_equal:today';
-        // A deadline sent on its own is compared with the saved start date (not with a missing field)
+        // A deadline sent on its own is compared with the saved start date (not with a missing field).
+        // With times, the same day is allowed: the moments themselves are compared below.
+        $after = isset($moments['application_closes_at']) ? 'after_or_equal' : 'after';
         $deadlineRule = $request->has('application_start_date') || ! $storedStart
-            ? 'sometimes|required|date|after:application_start_date'
-            : 'sometimes|required|date|after:'.$storedStart->toDateString();
+            ? 'sometimes|required|date|'.$after.':application_start_date'
+            : 'sometimes|required|date|'.$after.':'.$storedStart->toDateString();
 
         DB::beginTransaction();
         try {
@@ -516,22 +541,36 @@ class ProgramController extends Controller
                 'currency' => 'sometimes|nullable|string|max:3',
                 'application_start_date' => $startRule,
                 'application_deadline' => $deadlineRule,
+                'application_opens_at' => 'sometimes|nullable|date',
+                'application_closes_at' => 'sometimes|nullable|date',
+                'timezone' => 'sometimes|nullable|string|max:64',
                 'require_kyc_verification_to_apply' => 'sometimes|nullable|boolean',
                 'use_match_score' => 'sometimes|required|boolean',
                 'match_score_limit' => 'sometimes|nullable|integer|min:1|max:100',
                 'status' => 'sometimes|required|in:draft,published,open,closed,under_review,awarded,cancelled,completed',
                 'visible' => 'sometimes|nullable|boolean',
+                'cover_image' => array_merge(['sometimes', 'nullable'], \App\Service\Program\ProgramMedia::COVER_RULES),
+                'remove_cover_image' => 'sometimes|boolean',
+                'intro_video_url' => array_merge(['sometimes', 'nullable'], \App\Service\Program\ProgramMedia::videoRules()),
             ]);
+            // The cover is a file (or a request to remove it), saved through ProgramMedia below, not as a column value
+            unset($validated['cover_image'], $validated['remove_cover_image']);
+            if (array_key_exists('intro_video_url', $validated)) {
+                $validated['intro_video_url'] = trim((string) $validated['intro_video_url']) ?: null;
+            }
 
             // Once applications have opened the start date is history: it cannot be moved, and saying so beats silently ignoring it
-            if (array_key_exists('application_start_date', $validated) && ! $startUnchanged && $storedStart && $storedStart->lte(now()->endOfDay()) && $program->status !== 'draft') {
+            $opened = $storedOpens ? $storedOpens->lte(now()) : ($storedStart && $storedStart->lte(now()->endOfDay()));
+            if (array_key_exists('application_start_date', $validated) && ! $startUnchanged && $storedStart && $opened && $program->status !== 'draft') {
                 throw ValidationException::withMessages([
                     'application_start_date' => ['The start date can no longer be changed because applications have already opened.'],
                 ]);
             }
             if ($startUnchanged) {
                 unset($validated['application_start_date']);
+                unset($moments['application_opens_at']);
             }
+            $validated = $this->withMoments($validated, $moments, $timezone, $program);
 
             if (array_key_exists('use_match_score', $validated)) {
                 $validated['use_match_score'] = $request->boolean('use_match_score');
@@ -560,6 +599,11 @@ class ProgramController extends Controller
             }
 
             $program->update($validated);
+            if ($request->hasFile('cover_image')) {
+                app(\App\Service\Program\ProgramMedia::class)->storeCover($program, $request->file('cover_image'));
+            } elseif ($request->boolean('remove_cover_image')) {
+                app(\App\Service\Program\ProgramMedia::class)->removeCover($program);
+            }
             if (array_key_exists('use_match_score', $validated)) {
                 app(\App\Service\Program\RoundMatchScore::class)->recalculateProgram($program->fresh());
             }
@@ -573,7 +617,7 @@ class ProgramController extends Controller
             }
 
             if ( ($validated['status'] ?? null) === 'finalized' && $program->getOriginal('status') !== 'finalized') {
-                $awardedCount = $program->applications()->where('status', 'awarded')->count();
+                $awardedCount = $program->applications()->whereIn('status', ['awarded', 'in_monitoring', 'completed'])->count();
                 $this->programNotification->send('program.finalized', [$program->user], [
                     'program_title' => $program->program_title, 'awarded_count' => $awardedCount, 'program_id' => $program->id,
                 ]);
@@ -633,7 +677,8 @@ class ProgramController extends Controller
             }
 
             // Delete rounds (cascade will handle round_reviewers, round_custom_questions, etc.)
-            $program->rounds()->delete();
+            // One by one so each removed round is in the organization's audit log (a query delete skips model events)
+            $program->rounds()->get()->each->delete();
 
             // Delete program
             $program->delete();
@@ -678,8 +723,9 @@ class ProgramController extends Controller
                 ->withCount('liked')
                 ->find($id);
 
-            //  Handle not found
-            if (!$program) {
+            //  Handle not found. Anyone outside the owner's team only sees a program that is published or open and
+            //  visible; a draft (or closed one) answers exactly like a missing program, so it never leaks.
+            if (!$program || (!\App\Service\Program\ProgramAccess::owns($program) && !$program->isListedForApplicants())) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Program not found'
@@ -708,9 +754,6 @@ class ProgramController extends Controller
                     $round1->setAttribute('readiness', $configuration->readiness($round1));
                 }
             }
-
-            // Custom fields an applicant sees (never the scoring, weights or targets) and the program's public info values
-            app(\App\Service\Program\CustomFields\CustomFieldValueService::class)->attachPublicFields($program);
 
             return ApiContract::itemResponse(
                 'Program fetched successfully.',
@@ -774,11 +817,22 @@ class ProgramController extends Controller
             ]);
 
             $user = User::findOrFail($request->id);
-
-            // Only people in your own organization can be changed here
             $me = Auth::user();
+
+            // Only the owner and super admins manage the team, and only people in their own organization
             if (! $me || ! $me->organization_id || (int) $me->organization_id !== (int) $user->organization_id) {
                 return response()->json(['message' => 'You can only update members of your own organization.'], 403);
+            }
+            if (! \App\Service\Organization\OrganizationPermission::isAdmin($me)) {
+                return \App\Service\Organization\OrganizationPermission::denied('Only the organization owner or a super admin can change team members.');
+            }
+            // Nobody changes their own role, and the owner's access is never changed here
+            $ownerId = \App\Models\Organizations\Organization::whereKey($user->organization_id)->value('owner_user_id');
+            if ((int) $user->id === (int) $me->id || (int) $user->id === (int) $ownerId) {
+                return response()->json(['message' => "The organization owner's and your own role can't be changed here."], 422);
+            }
+            if (! in_array((int) $request->role_id, [10001, 10002, 10003, 10004], true)) {
+                return response()->json(['message' => 'Choose a team role.', 'errors' => ['role_id' => ['Choose a team role.']]], 422);
             }
 
             // Only the name can be edited here (never type, email, organization or other account fields)
@@ -868,11 +922,36 @@ class ProgramController extends Controller
         }
     }
 
+    /**
+     * Why the signed-in person may not remove this account from the team, or null when they may: only the owner and
+     * super admins, only people in their own organization, never themselves or the owner.
+     */
+    private function teamRemovalRefusal(?User $user)
+    {
+        $me = Auth::user();
+        if (! $user || ! $me || ! $me->organization_id || (int) $user->organization_id !== (int) $me->organization_id) {
+            return response()->json(['message' => 'Team member not found in your organization.'], 404);
+        }
+        if (! \App\Service\Organization\OrganizationPermission::isAdmin($me)) {
+            return \App\Service\Organization\OrganizationPermission::denied('Only the organization owner or a super admin can remove team members.');
+        }
+        $ownerId = \App\Models\Organizations\Organization::whereKey($user->organization_id)->value('owner_user_id');
+        if ((int) $user->id === (int) $me->id || (int) $user->id === (int) $ownerId) {
+            return response()->json(['message' => "You can't remove yourself or the organization owner."], 422);
+        }
+
+        return null;
+    }
+
     public function delete_roleUser(Request $request)
     {
         DB::beginTransaction();
         try{
             $user = User::find($request->id);
+            if ($refusal = $this->teamRemovalRefusal($user)) {
+                DB::rollBack();
+                return $refusal;
+            }
             $roleName = $user->organizationRole?->role?->name ?? 'Team member';
             $memberSnapshot = $user->replicate(['password']);
             User::where('id',$request->id)->delete();
@@ -914,7 +993,8 @@ class ProgramController extends Controller
             $user?->organizationRole?->delete();
             $user?->delete();
 
-            return redirect()->away('https://beta.tujitume.com?registerModal=open');
+            // The invitation is gone with the account, so this person is a guest now: the main site's sign-up
+            return redirect()->away(\App\Service\Notification\RecipientUrl::url('?registerModal=open', null));
         }
         catch (\Exception $e) {
             ErrorLogService::report($e, [
@@ -1110,14 +1190,39 @@ class ProgramController extends Controller
     }
 
     // H E L P E R S
+
+    /** Program moment fields => the date field each one fills. */
+    private const PROGRAM_MOMENTS = ['application_opens_at' => 'application_start_date', 'application_closes_at' => 'application_deadline'];
+
+    /**
+     * Puts the parsed moments (UTC) in place of the raw ones, records the zone they were set in, and refuses a
+     * closing moment that is not after the opening one.
+     */
+    private function withMoments(array $validated, array $moments, string $timezone, ?Program $program): array
+    {
+        unset($validated['application_opens_at'], $validated['application_closes_at'], $validated['timezone']);
+        if ($moments === []) {
+            return $validated;
+        }
+
+        $opens = $moments['application_opens_at'] ?? $program?->opensAt();
+        $closes = $moments['application_closes_at'] ?? $program?->closesAt();
+        if ($opens && $closes && $closes->lte($opens)) {
+            throw ValidationException::withMessages([
+                'application_closes_at' => ['Applications must close after they open.'],
+            ]);
+        }
+
+        return array_merge($validated, $moments, ['timezone' => $timezone]);
+    }
     public function CreateApplicationRound($roundData, $questions, $program){
         // CREATE FIRST ROUND AUTOMATICALLY
         $round = ProgramRound::create([
             'program_id' => $program->id,
             'round_name' => $roundData['round_name'] ?? 'Public Application Round',
             'round_number' => 1,
-            'open_date' => $program->application_start_date,
-            'close_date' => $program->application_deadline,
+            'opens_at' => $program->application_opens_at,
+            'closes_at' => $program->application_closes_at,
             'review_period_end' => $roundData['review_period_end'] ?? null,
             'announcement_date' => $roundData['announcement_date'] ?? null,
 

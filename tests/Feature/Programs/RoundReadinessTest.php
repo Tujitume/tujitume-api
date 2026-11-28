@@ -26,7 +26,7 @@ class RoundReadinessTest extends ProgramTestCase
         $this->assertFalse($r['can_publish']);
         $this->assertContains('setup', array_column($r['missing'], 'step'));
         $this->assertContains('questions', array_column($r['missing'], 'step'));
-        $this->assertSame(4, $r['steps_total']);
+        $this->assertSame(5, $r['steps_total']);
     }
 
     public function test_a_published_round_whose_open_date_is_in_the_future_is_scheduled(): void
@@ -58,13 +58,12 @@ class RoundReadinessTest extends ProgramTestCase
     {
         $this->round->update([
             'status' => 'draft', 'round_name' => 'Application', 'open_date' => now()->addDays(3)->toDateString(), 'close_date' => now()->addDays(30)->toDateString(),
-            'scoring_criteria' => [], 'required_documents' => [], 'assignment_type' => 'owner_only',
-            'confirmed_steps' => ['setup', 'questions', 'reviewers', 'notifications'],
+            'rubric_mode' => 'weighted', 'scoring_criteria' => [['name' => 'Impact', 'weight' => 60], ['name' => 'Team', 'weight' => 40]],
+            'required_documents' => [], 'assignment_type' => 'owner_only',
+            'confirmed_steps' => ['setup', 'questions', 'reviewers', 'scoring', 'notifications'],
         ]);
         RoundCustomQuestion::create(['round_id' => $this->round->id, 'question_text' => 'Tell us about your business', 'question_type' => 'short_answer', 'is_required' => true, 'display_order' => 1]);
-        foreach (['round.advanced', 'round.not_selected'] as $event) {
-            \App\Models\ProgramEmailTemplate::create(['program_id' => $this->program->id, 'event' => $event, 'subject' => 'x', 'body_html' => '<p>x</p>']);
-        }
+        // No emails written: every applicant email is optional and goes out as the system default
 
         $r = $this->readiness();
 

@@ -14,8 +14,29 @@ class KycService
     public function typeFor(User $user): string
     {
         return match ((int) $user->user_type_id) {
-            1 => 'entrepreneur', 3 => 'service_provider', 4 => 'organization', default => abort(403, 'KYC is only available to business owners, service providers, and organization users.'),
+            // An individual investor is verified as a person, with the same identity check as an entrepreneur
+            1, 2 => 'entrepreneur', 3 => 'service_provider', 4 => 'organization',
+            // A capital provider is verified as an organization (KYB), by its owner or a super admin
+            5 => $this->capitalMayManage($user) ? 'organization' : abort(403, 'Your capital organization’s KYC is managed by its owner or a super admin.'),
+            default => abort(403, 'KYC is only available to business owners, investors, service providers, organizations and capital providers.'),
         };
+    }
+
+    /** Where a person opens their own verification form (same places as the pending "Finish verifying" item) */
+    public static function formLink(User $user): string
+    {
+        return match ((int) $user->user_type_id) {
+            1 => 'dashboard.entrepreneur.settings.verify', 2 => 'dashboard.investor.settings?tab=verification',
+            3 => 'dashboard.serviceProvider.kyc', 4 => 'dashboard.grantOrg.settings', 5 => 'dashboard.capitalOrg.settings?tab=verification',
+            default => 'dashboard.reviewerGrantOrg.settings',
+        };
+    }
+
+    private function capitalMayManage(User $user): bool
+    {
+        $profile = $user->capital_profile()->with('role')->first();
+
+        return ! $profile || $profile->role_id === null || ($profile->active && $profile->role?->name === 'super_admin');
     }
 
     public function organizationFor(User $user): ?int
@@ -308,6 +329,9 @@ class KycService
 
     private function prefill(User $user, string $type): array
     {
+        if ($type === 'entrepreneur' && (int) $user->user_type_id === 2) {
+            return ['legal_name' => trim($user->first_name.' '.$user->last_name), 'nationality' => $user->country, 'county_region' => $user->city];
+        }
         if ($type === 'entrepreneur') {
             $listing = $user->listings()->first();
 
@@ -315,6 +339,11 @@ class KycService
         }
         if ($type === 'service_provider') {
             return ['legal_name' => trim($user->first_name.' '.$user->last_name), 'phone' => $user->phone, 'email' => $user->email];
+        }
+        if ((int) $user->user_type_id === 5) {
+            $profile = $user->capital_profile;
+
+            return ['legal_name' => $profile?->org_name ?: ($user->display_name ?: trim($user->first_name.' '.$user->last_name)), 'registration_country' => $user->country, 'county_region' => $user->city, 'legal_structure' => $profile?->org_type, 'representative_full_legal_name' => trim($user->first_name.' '.$user->last_name), 'representative_phone' => $user->phone, 'representative_email' => $user->email];
         }
         $o = $user->organization;
 

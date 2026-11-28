@@ -54,7 +54,7 @@ class ReviewerPaymentTest extends TestCase
 
         // Create program
         $this->program = Program::factory()
-            ->for($this->programOwner, 'user')
+            ->for($this->programOwner, 'owner')
             ->for($this->organization)
             ->create();
 
@@ -76,7 +76,7 @@ class ReviewerPaymentTest extends TestCase
             ->for($this->organization)
             ->for($this->internalReviewer, 'reviewer')
             ->for($this->program)
-            ->for($this->round)
+            ->for($this->round, 'round')
             ->create([
                 'order_type' => 'round_review',
             'fee_amount' => 150.00,
@@ -117,7 +117,7 @@ class ReviewerPaymentTest extends TestCase
             ->for($this->organization)
             ->for($this->internalReviewer, 'reviewer')
             ->for($this->program)
-            ->for($this->round)
+            ->for($this->round, 'round')
             ->create([
                 'order_type' => 'round_review',
                 'fee_amount' => 150.00,
@@ -142,7 +142,7 @@ class ReviewerPaymentTest extends TestCase
             ->for($this->organization)
             ->for($this->internalReviewer, 'reviewer')
             ->for($this->program)
-            ->for($this->round)
+            ->for($this->round, 'round')
             ->create([
                 'work_status' => 'in_progress',
                 'payment_status' => 'unpaid',
@@ -173,7 +173,7 @@ class ReviewerPaymentTest extends TestCase
             ->for($this->organization)
             ->for($this->internalReviewer, 'reviewer')
             ->for($this->program)
-            ->for($this->round)
+            ->for($this->round, 'round')
             ->create([
                 'work_status' => 'approved',
                 'payment_status' => 'unpaid',
@@ -197,7 +197,7 @@ class ReviewerPaymentTest extends TestCase
             ->for($this->organization)
             ->for($this->internalReviewer, 'reviewer')
             ->for($this->program)
-            ->for($this->round)
+            ->for($this->round, 'round')
             ->create([
                 'work_status' => 'delivered',
                 'payment_status' => 'unpaid',
@@ -228,7 +228,7 @@ class ReviewerPaymentTest extends TestCase
             ->for($this->organization)
             ->for($this->internalReviewer, 'reviewer')
             ->for($this->program)
-            ->for($this->round)
+            ->for($this->round, 'round')
             ->create([
                 'work_status' => 'delivered',
                 'payment_status' => 'unpaid',
@@ -256,7 +256,7 @@ class ReviewerPaymentTest extends TestCase
             ->for($this->organization)
             ->for($this->internalReviewer, 'reviewer')
             ->for($this->program)
-            ->for($this->round)
+            ->for($this->round, 'round')
             ->create([
                 'payment_status' => 'pending',
             ]);
@@ -278,7 +278,7 @@ class ReviewerPaymentTest extends TestCase
             ->for($this->organization)
             ->for($this->internalReviewer, 'reviewer')
             ->for($this->program)
-            ->for($this->round)
+            ->for($this->round, 'round')
             ->create([
                 'payment_status' => 'leg1_processing',
             ]);
@@ -301,7 +301,7 @@ class ReviewerPaymentTest extends TestCase
             ->for($this->organization)
             ->for($this->internalReviewer, 'reviewer')
             ->for($this->program)
-            ->for($this->round)
+            ->for($this->round, 'round')
             ->create();
 
         $response = $this->actingAs($anotherUser)
@@ -328,7 +328,7 @@ class ReviewerPaymentTest extends TestCase
                 ->for($this->organization)
                 ->for($this->internalReviewer, 'reviewer')
                 ->for($this->program)
-                ->for($this->round)
+                ->for($this->round, 'round')
                 ->create(['payment_status' => $status]);
 
             $response = $this->actingAs($this->internalReviewer)
@@ -386,7 +386,7 @@ class ReviewerPaymentTest extends TestCase
             ->for($this->organization)
             ->for($this->internalReviewer, 'reviewer')
             ->for($this->program)
-            ->for($this->round)
+            ->for($this->round, 'round')
             ->create([
                 'work_status' => 'delivered',
                 'payment_status' => 'unpaid',
@@ -416,7 +416,7 @@ class ReviewerPaymentTest extends TestCase
                 ->for($this->organization)
                 ->for($this->internalReviewer, 'reviewer')
                 ->for($this->program)
-                ->for($this->round)
+                ->for($this->round, 'round')
                 ->create(['payment_status' => $status]);
 
             $response = $this->actingAs($this->internalReviewer)
@@ -447,7 +447,7 @@ class ReviewerPaymentTest extends TestCase
                 ->for($this->organization)
                 ->for($this->internalReviewer, 'reviewer')
                 ->for($this->program)
-                ->for($this->round)
+                ->for($this->round, 'round')
                 ->create(['work_status' => $status]);
 
             $response = $this->actingAs($this->internalReviewer)
@@ -474,7 +474,7 @@ class ReviewerPaymentTest extends TestCase
             ->for($this->organization)
             ->for($this->internalReviewer, 'reviewer')
             ->for($this->program)
-            ->for($this->round)
+            ->for($this->round, 'round')
             ->create();
 
         $response = $this->actingAs($otherReviewer)
@@ -504,14 +504,14 @@ class ReviewerPaymentTest extends TestCase
             ->for($this->organization)
             ->for($reviewer1, 'reviewer')
             ->for($this->program)
-            ->for($this->round)
+            ->for($this->round, 'round')
             ->create(['fee_amount' => 150.00]);
 
         $order2 = ReviewerOrder::factory()
             ->for($this->organization)
             ->for($reviewer2, 'reviewer')
             ->for($this->program)
-            ->for($this->round)
+            ->for($this->round, 'round')
             ->create(['fee_amount' => 200.00]);
 
         $response = $this->actingAs($this->programOwner)
@@ -540,7 +540,7 @@ class ReviewerPaymentTest extends TestCase
             ->for($this->organization)
             ->for($this->internalReviewer, 'reviewer')
             ->for($this->program)
-            ->for($this->round)
+            ->for($this->round, 'round')
             ->create([
             'fee_amount' => 150.00,
                 'fee_kes' => 19500,

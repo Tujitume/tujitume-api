@@ -85,4 +85,25 @@ describe('Round flow, end to end', function () {
         $this->actingAsOrgOwner()->getJson("/api/v1/programs/rounds/{$this->round->id}/applications/{$this->application->id}")
             ->assertOk()->assertJsonPath('application.round_status.value', 'advanced');
     });
+
+    it('round 2 stops taking answers and submissions at its closing time, like round 1', function () {
+        $round2 = ProgramRound::factory()->create([
+            'program_id' => $this->program->id, 'round_number' => 2, 'round_name' => 'Round two', 'status' => 'published',
+            'open_date' => now()->subDays(5), 'close_date' => now()->addMonth(), 'advancement_mode' => 'manual',
+        ]);
+        $round2->setWindowMoment('opens', now()->subDays(5))->setWindowMoment('closes', now()->subMinute())->save();
+        $question = RoundCustomQuestion::create(['round_id' => $round2->id, 'question_text' => 'R2 question', 'question_type' => 'short_answer', 'is_required' => false, 'display_order' => 1]);
+        $this->application->update(['current_round_id' => $round2->id, 'round_status' => 'draft']);
+        $closed = fn ($round) => $round->fresh()->closedReason();
+        expect($closed($round2))->toContain('Round two has closed');
+
+        $this->actingAsApplicant()->postJson("/api/v1/programs/applications/{$this->application->id}/current-round/submit", [])
+            ->assertStatus(422)->assertJsonFragment(['message' => $closed($round2)]);
+        $this->actingAsApplicant()->postJson("/api/v1/programs/applications/{$this->application->id}/rounds/{$round2->id}/answer", ['question_id' => $question->id, 'response' => 'Late'])
+            ->assertStatus(422)->assertJsonFragment(['message' => $closed($round2)]);
+
+        // still open a minute before closing
+        $round2->setWindowMoment('closes', now()->addMinutes(5))->save();
+        $this->actingAsApplicant()->postJson("/api/v1/programs/applications/{$this->application->id}/current-round/submit", [])->assertOk();
+    });
 });

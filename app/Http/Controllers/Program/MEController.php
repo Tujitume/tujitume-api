@@ -296,9 +296,10 @@ class MEController extends Controller
             $order = $visit?->reviewerOrder;
             if ($visit && !in_array($order?->work_status, ['delivered', 'approved'], true)) {
                 $business = $checkpoint->application->business;
+                // A visit sent back for changes already holds the officer's answers: keep them on the fields that stay
                 $visit->update([
-                    'kpi_targets' => $checkpoint->kpis_to_track,
-                    'data_collection_fields' => array_merge($checkpoint->submission_fields ?? [], $checkpoint->evidence_required ?? []),
+                    'kpi_targets' => $this->keepAnswers($checkpoint->kpis_to_track, $visit->kpi_targets, 'actual'),
+                    'data_collection_fields' => $this->keepAnswers(array_merge($checkpoint->submission_fields ?? [], $checkpoint->evidence_required ?? []), $visit->data_collection_fields, 'value'),
                     'objective' => $checkpoint->requirement,
                     'location' => $visit->location ?: $business?->location,
                     'gps_lat' => $visit->gps_lat ?? $business?->lat,
@@ -317,6 +318,27 @@ class MEController extends Controller
             ErrorLogService::report($e, ['input' => request()->except(['password', 'token'])]);
             return response()->json(['message' => 'Something went wrong, please try again later.'], 500);
         }
+    }
+
+    /**
+     * The checkpoint's fresh copy of a visit's fields or KPIs, with the officer's earlier answer ($answerKey) carried
+     * over to each item that is still there (matched by its label, or its KPI name).
+     */
+    private function keepAnswers(?array $items, ?array $previous, string $answerKey): ?array
+    {
+        if ($items === null || empty($previous)) return $items;
+        $name = fn ($item) => is_array($item) ? mb_strtolower(trim((string) ($item['label'] ?? $item['kpi'] ?? $item['name'] ?? ''))) : '';
+        $answers = [];
+        foreach ($previous as $item) {
+            if ($name($item) !== '' && is_array($item) && array_key_exists($answerKey, $item) && $item[$answerKey] !== null && $item[$answerKey] !== '') {
+                $answers[$name($item)] = $item[$answerKey];
+            }
+        }
+        if (!$answers) return $items;
+
+        return array_map(fn ($item) => is_array($item) && array_key_exists($name($item), $answers) && !array_key_exists($answerKey, $item)
+            ? $item + [$answerKey => $answers[$name($item)]]
+            : $item, $items);
     }
 
     // DELETE /program/me/checkpoints/{checkpoint}
@@ -359,6 +381,7 @@ class MEController extends Controller
         }
 
         DB::beginTransaction();
+        $replacedPaths = [];
         try {
             $validated = $request->validate([
                 'written_report'            => 'nullable|string',
@@ -367,9 +390,29 @@ class MEController extends Controller
                 'custom_field_values'       => 'nullable|array',
                 'files'                     => 'nullable|array',
                 'files.*.file'              => 'required_with:files|file|max:20480',
-                'files.*.file_type'         => 'required_with:files|in:document,photo_video,beneficiary_list,other',
+                // photo and video are separate now; photo_video stays accepted for older clients
+                'files.*.file_type'         => 'required_with:files|in:' . implode(',', MESubmissionFile::FILE_TYPES),
                 'files.*.original_filename' => 'nullable|string',
+                // Resubmitting after changes were requested: the new file takes the place of this earlier one
+                'files.*.replace_file_id'   => 'nullable|integer',
             ]);
+
+            // Only files of this checkpoint's own submission can be replaced, and only while changes are requested
+            $previous = MESubmission::where('checkpoint_id', $checkpoint->id)->where('app_id', $checkpoint->app_id)->first();
+            $replaceIds = collect($request->input('files', []))
+                ->filter(fn ($fileData, $index) => is_array($fileData) && !empty($fileData['replace_file_id']) && $request->file("files.{$index}.file"))
+                ->map(fn ($fileData) => (int) $fileData['replace_file_id'])
+                ->unique()
+                ->values();
+            if ($replaceIds->isNotEmpty()) {
+                if (!$previous || $previous->status !== 'changes_requested') {
+                    throw ValidationException::withMessages(['files' => ['Files can only be replaced while changes are requested']]);
+                }
+                $owned = MESubmissionFile::where('submission_id', $previous->id)->whereIn('id', $replaceIds)->pluck('id');
+                if ($owned->count() !== $replaceIds->count()) {
+                    throw ValidationException::withMessages(['files' => ['A file to replace does not belong to this submission']]);
+                }
+            }
 
             // Create or update submission
             $submission = MESubmission::updateOrCreate(
@@ -417,14 +460,25 @@ class MEController extends Controller
                 }
             }
 
+            // The replaced files go once their new ones are stored (the storage copies after the commit)
+            if ($replaceIds->isNotEmpty()) {
+                $replaced = MESubmissionFile::where('submission_id', $submission->id)->whereIn('id', $replaceIds)->get();
+                $replacedPaths = $replaced->pluck('file_path')->filter()->all();
+                MESubmissionFile::whereIn('id', $replaced->pluck('id'))->delete();
+            }
+
             // Update checkpoint status
             $checkpoint->update(['status' => 'submitted']);
 
             DB::commit();
 
+            foreach ($replacedPaths as $path) {
+                try { Storage::disk('s3')->delete($path); } catch (\Throwable $e) { /* the database row is already gone */ }
+            }
+
             // The program owner is the one who verifies it, so they hear when the work is handed in
             $program = $application->program;
-            $this->programNotification->send('checkpoint.submitted', [$program->owner], [
+            $this->programNotification->send('checkpoint.submitted', \App\Service\Program\ProgramTeam::members($program)->all(), [
                 'program_id' => $program->id,
                 'program_title' => $program->program_title,
                 'app_id' => $application->id,
@@ -486,6 +540,8 @@ class MEController extends Controller
             ]);
 
             $submission->checkpoint->update(['status' => 'verified']);
+            // The last verified checkpoint completes a funded application whose milestones are all finished
+            \App\Service\Program\ApplicationCompletion::refresh(\App\Models\Programs\ProgramApplication::find($submission->checkpoint->app_id));
 
             DB::commit();
 

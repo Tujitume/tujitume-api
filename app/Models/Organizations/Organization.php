@@ -34,9 +34,13 @@ class Organization extends Model
         'physical_address',
         'social_media_url',
         'ai_data_ack_at', 'ai_data_ack_by', 'ai_data_ack_provider',
+        // A 7-day trial account's organization (demo request approved in the admin); deleted when the trial ends
+        'is_trial', 'trial_expires_at',
     ];
 
     protected $casts = [
+        'is_trial' => 'boolean',
+        'trial_expires_at' => 'datetime',
         'focus_sectors' => 'array',
         'operating_countries' => 'array',
         'target_regions' => 'array',

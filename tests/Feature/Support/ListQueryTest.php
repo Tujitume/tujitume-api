@@ -74,3 +74,11 @@ it('counts filter options with the other filters applied', function () {
     $byValue = collect($facets['type'])->pluck('count', 'value')->all();
     expect($byValue)->toEqual([1 => 1, 2 => 1]); // the type filter does not hide the other types' counts
 });
+
+it('exports every match with no cap: past MAX_PER_PAGE and across read chunks, even with no sort', function () {
+    User::factory()->count(520)->create(['user_type_id' => 4]);
+    $list = ListQuery::for(User::query(), Request::create('/x', 'GET', ['export' => 1, 'filters' => ['type' => [4]]]))->filter('type', 'user_type_id');
+    [$rows, $page] = $list->fetch();
+    expect($rows)->toHaveCount(520)->and($rows->pluck('id')->unique())->toHaveCount(520)
+        ->and($page)->toBeNull()->and($list->exportTruncated())->toBeFalse();
+});

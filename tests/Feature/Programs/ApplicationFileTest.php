@@ -42,3 +42,22 @@ it('does not serve an answer that belongs to another application, or a missing i
     $other = \App\Models\Programs\ProgramApplication::factory()->create(['program_id' => $this->program->id, 'current_round_id' => $this->round->id]);
     $this->actingAsOrgOwner()->get("/api/v1/programs/applications/{$other->id}/answers/{$this->answer->id}/file")->assertStatus(404);
 });
+
+it('streams a round document to the owner and an assigned coach only, never through another application', function () {
+    $docPath = 'files/programApps/1/rounds/1/registration.pdf';
+    Storage::disk('s3')->put($docPath, '%PDF-1.4 certificate');
+    $doc = \App\Models\Programs\Rounds\RoundRequiredDocument::create([
+        'application_id' => $this->application->id, 'round_id' => $this->round->id, 'document_type' => 'Registration certificate', 'file_path' => $docPath,
+    ]);
+    $url = "/api/v1/programs/applications/{$this->application->id}/documents/{$doc->id}/file";
+
+    expect($this->actingAsOrgOwner()->get($url)->assertOk()->streamedContent())->toBe('%PDF-1.4 certificate');
+    $this->actingAsReviewer()->get($url)->assertStatus(403);
+    $this->assignReviewer();
+    $this->actingAsReviewer()->get($url)->assertOk();
+    $this->actingAs($this->otherOrgUser(), 'sanctum')->get($url)->assertStatus(403);
+    $this->actingAsApplicant()->get($url)->assertStatus(403);
+
+    $other = \App\Models\Programs\ProgramApplication::factory()->create(['program_id' => $this->program->id, 'current_round_id' => $this->round->id]);
+    $this->actingAsOrgOwner()->get("/api/v1/programs/applications/{$other->id}/documents/{$doc->id}/file")->assertStatus(404);
+});

@@ -419,6 +419,13 @@ class ProgramMilestoneController extends Controller
      */
     public function updateTemplate(Request $request, $milestoneId)
     {
+        // ISSUE-25: suppliers are not a field of the milestone; a PATCH carrying them used to answer 200 and save nothing
+        if ($request->hasAny(['supplier_id', 'payment_route', 'assignment_type', 'quoted_amount'])) {
+            return response()->json([
+                'message' => 'Suppliers are attached with POST programs/milestones/{milestone}/assign-suppliers (supplier_id, payment_route, quoted_amount), not by editing the milestone.',
+            ], 422);
+        }
+
 
         try{
             $userId = auth()->id();
@@ -688,7 +695,8 @@ class ProgramMilestoneController extends Controller
                     if (!empty($required)) {
                         $agreedCount = MilestonePreAgreement::where('milestone_id', $template->id)
                             ->whereIn('verification_type', $required)
-                            ->where('status', 'agreed')->count();
+                            // DECISION-8: an agreement rejected twice is settled too (its check is audited instead)
+                            ->whereIn('status', ['agreed', 'final_rejected'])->count();
 
                         if ($agreedCount !== count($required)) {
                             DB::rollBack();
@@ -713,10 +721,13 @@ class ProgramMilestoneController extends Controller
                 ]);
             }
 
-            // Update application status
-            $application->update([
-                'funding_setup_status' => 'completed'
-            ]);
+            // Update application status. The award itself happens before any milestone exists, so the awarded amount
+            // is the activated plan's total, set here (analytics and the program totals sum it)
+            $application->forceFill([
+                'funding_setup_status' => 'completed',
+                'awarded_amount' => $totalAmount,
+                'awarded_at' => $application->awarded_at ?? now(),
+            ])->save();
 
             DB::commit();
 
@@ -779,9 +790,10 @@ class ProgramMilestoneController extends Controller
             }
 
             // Delete associated budget & suppliers
-            $milestone->budgetItems()->delete();
+            // One by one so each removed line and supplier is in the organization's audit log
+            $milestone->budgetItems()->get()->each->delete();
 
-            $milestone->suppliers()->delete();
+            $milestone->suppliers()->get()->each->delete();
 
             // Delete milestone
             $milestone->delete();
@@ -884,7 +896,7 @@ class ProgramMilestoneController extends Controller
             if ($status === 'awaiting_owner_review') {
                 $this->sendProgramNotification(
                     'funding_plan.submitted',
-                    [$application->program->owner],
+                    \App\Service\Program\ProgramTeam::members($application->program)->all(),
                     $notificationData
                 );
             } else {

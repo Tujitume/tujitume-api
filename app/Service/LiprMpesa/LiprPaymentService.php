@@ -13,7 +13,7 @@ class LiprPaymentService
         private LiprAuthService $liprAuth,
     ) {
         $this->basePath    = config('services.lipr.base_path');
-        $this->callbackUrl = rtrim(config('app.api_url'), '/') . '/lipr-callback';
+        $this->callbackUrl = \App\Service\LiprMpesa\LiprCallback::url('/lipr-callback');
     }
 
     // ─── Payment Type Methods ───────────────────────────────────────────
@@ -22,8 +22,8 @@ class LiprPaymentService
     {
         $fields = [
             "requestId" => 'stk-' . now()->format('YmdHis') . '-' . uniqid(),
-            "resultUrl" => rtrim(config('app.api_url'), '/') . '/lipr-callback',
-            "timeoutUrl" => rtrim(config('app.api_url'), '/') . '/lipr-callback/timeout',
+            "resultUrl" => \App\Service\LiprMpesa\LiprCallback::url('/lipr-callback'),
+            "timeoutUrl" => \App\Service\LiprMpesa\LiprCallback::url('/lipr-callback/timeout'),
             "metadata" => [ "listingId" => $milestoneId ],
 
             "wallet" => $walletAccount,
@@ -47,8 +47,8 @@ class LiprPaymentService
 
         $fields = [
             "requestId" => 'stk-' . now()->format('YmdHis') . '-' . uniqid(),
-            "resultUrl" => rtrim(config('app.api_url'), '/') . '/lipr-callback/transfer-to-supplier', //leg 2 callback for direct disburse
-            "timeoutUrl" => rtrim(config('app.api_url'), '/') . '/lipr-callback/timeout',
+            "resultUrl" => \App\Service\LiprMpesa\LiprCallback::url('/lipr-callback/transfer-to-supplier'), //leg 2 callback for direct disburse
+            "timeoutUrl" => \App\Service\LiprMpesa\LiprCallback::url('/lipr-callback/timeout'),
             "metadata" => ["listingId" => $milestoneId],
 
             "wallet" => $walletAccount,
@@ -73,12 +73,12 @@ class LiprPaymentService
             "timeoutUrl" => $this->callbackUrl . '/timeout',
             "wallet" => $walletAccount,
             "narration" => 'Mobile Money Transfer',
-            "customerAccountNumber" => $this->sanitizePhone($paybillNumber),
+            // ISSUE-22 (owner): the supplier's own paybill: businessNumber is the paybill, account is their account reference
             "recipients" => [
                 [
                     "amount" => $amountKes,
-                    "account" => $this->sanitizePhone($paybillNumber),
-                    "businessNumber" => "888880"
+                    "account" => trim($paybillAccount),
+                    "businessNumber" => trim($paybillNumber),
                 ]
             ]
         ];
@@ -130,8 +130,8 @@ class LiprPaymentService
     {
         $fields = [
             "requestId" => 'stk-' . now()->format('YmdHis') . '-' . uniqid(),
-            "resultUrl" => rtrim(config('app.api_url'), '/') . '/lipr-callback/transfer-to-supplier', //leg 2 callback for direct disburse
-            "timeoutUrl" => rtrim(config('app.api_url'), '/') . '/lipr-callback/timeout',
+            "resultUrl" => \App\Service\LiprMpesa\LiprCallback::url('/lipr-callback/transfer-to-supplier'), //leg 2 callback for direct disburse
+            "timeoutUrl" => \App\Service\LiprMpesa\LiprCallback::url('/lipr-callback/timeout'),
             "metadata" => ["listingId" => $milestoneId],
 
             "recipients" => [
@@ -204,9 +204,25 @@ class LiprPaymentService
         );
     }
 
+    /**
+     * The provider's refusal as one plain sentence (ISSUE-22 e): never the raw JSON. LIPR answers in several shapes
+     * (data[0].reason, error, errors, message, or a JSON string inside them).
+     */
     public function getError(array $response): string
     {
-        return $response['data'][0]['reason'] ?? $response['error'] ?? $response['errors'] ?? json_encode($response) ?? 'Unknown error from payment provider';
+        $raw = $response['data'][0]['reason'] ?? $response['error'] ?? $response['errors'] ?? $response['message'] ?? null;
+        if (is_string($raw) && str_starts_with(ltrim($raw), '{')) {
+            $decoded = json_decode($raw, true);
+            if (is_array($decoded)) $raw = $decoded['message'] ?? $decoded['error'] ?? $decoded['reason'] ?? null;
+        }
+        if (is_array($raw)) {
+            $raw = implode(' ', array_filter(array_map(fn ($v) => is_string($v) ? $v : (is_array($v) ? implode(' ', array_filter($v, 'is_string')) : null), $raw)));
+        }
+        $raw = is_string($raw) ? trim($raw) : '';
+
+        return $raw !== ''
+            ? 'The payment provider refused the transfer: ' . rtrim($raw, '.') . '.'
+            : 'The payment provider refused the transfer. Please try again, or contact support if it keeps happening.';
     }
 
     public function getStatusCode(array $response): int

@@ -12,6 +12,9 @@ use App\Models\Communication\Schedule;
 use App\Models\Programs\ProgramApplication;
 use App\Models\Services\ServiceBooking;
 use App\Service\Misc\ErrorLogService;
+use App\Support\ApiContract;
+use App\Support\CollectionList;
+use App\Support\UserDateFormatter;
 use Carbon\Carbon;
 use Hash;
 use Illuminate\Http\Request;
@@ -42,6 +45,8 @@ class ScheduleMeetingController extends Controller
                 'client_ids.*' => 'integer|distinct|exists:users,id',
                 'date'        => 'required|date', // format: Y-m-d
                 'time'        => 'required|date_format:H:i', // 24-hour format like 14:30
+                // The zone the date and time were chosen in (the client sends the person's Settings > Timezone)
+                'timezone'    => 'nullable|string|timezone:all',
                 'title'       => 'required|string|max:255',
                 'description' => 'nullable|string|max:1000',
                 'link'        => 'required|url|max:200',
@@ -56,6 +61,10 @@ class ScheduleMeetingController extends Controller
                 return response()->json(['message' => 'Choose at least one person other than yourself to invite.'], 422);
             }
 
+            // The date and time are the host's clock in their zone; starts_at is that exact moment (UTC) for everyone else
+            $zone = UserDateFormatter::zone($request->input('timezone') ?: $this->zoneOf($host));
+            $startsAt = Carbon::parse($request->date . ' ' . $request->time, $zone)->utc();
+
             // Every row of one meeting is created together, so they share the same created_at (that is how they are grouped)
             $createdAt = now();
             $hostName = trim($host->first_name.' '.$host->last_name);
@@ -69,6 +78,8 @@ class ScheduleMeetingController extends Controller
                     'client_name'  => trim($client->first_name.' '.$client->last_name),
                     'date'         => $request->date,
                     'time'         => $request->time,
+                    'timezone'     => $zone,
+                    'starts_at'    => $startsAt,
                     'title'        => $request->title,
                     'description'  => $request->description,
                     'link'         => $request->link,
@@ -80,7 +91,7 @@ class ScheduleMeetingController extends Controller
                 $meetings->push($meeting);
 
                 // Tell each person in the app and by email (best effort)
-                $when = $this->meetingWhen($meeting);
+                $when = $this->meetingWhen($meeting, $client);
                 try {
                     $this->notification->create($client->id, $host->id,
                         "New meeting invitation\n{$hostName} invited you to \"{$meeting->title}\" on {$when}. Accept or decline it in Meetings.",
@@ -140,67 +151,26 @@ class ScheduleMeetingController extends Controller
             ->get();
     }
 
-    public function meetings()
+    public function meetings(Request $request)
     {
         try{
             $user = Auth::user();
             $user_id = Auth::id();
             $type = $user->user_type_id;
 
-            if($type == 2 || $type == 3){
+            if($type == 2 || $type == 3 || $type == 5){ // 5: a capital team member works on the capital owner's calendar
                 $user = $type == 2 ? $this->get_role() : $this->get_role2();
                 if (in_array($user->role, ['editor', 'viewer', 'admin'])) {
                     $user_id = $type == 2 ? $user->program_owner_id : $user->capital_owner_id;
                 }
             }
 
-            $rows = Meeting::where('host_id',$user_id)->orWhere('client_id',$user_id)->latest()->get();
+            $meetings = $this->meetingRows((int) $user_id);
 
-            // The host sees one meeting with everyone invited; an invitee sees their own invitation and who else is in it
-            $seen = [];
-            $meetings = collect();
-
-            foreach ($rows as $meeting) {
-                $isHost = (int) $meeting->host_id === (int) $user_id;
-                $group = $this->groupOf($meeting);
-
-                $key = $meeting->host_id . '|' . $meeting->getRawOriginal('created_at') . '|' . $meeting->title;
-                if ($isHost) {
-                    if (isset($seen[$key])) {
-                        continue;
-                    }
-                    $seen[$key] = true;
-                }
-
-                $attendees = $group->map(fn (Meeting $row) => [
-                    'user_id' => $row->client_id,
-                    'name' => $row->client_name,
-                    'response' => $this->responseOf($row),
-                    'is_me' => (int) $row->client_id === (int) $user_id,
-                ])->values();
-
-                if (! $isHost) {
-                    // The host first, then everyone else invited
-                    $attendees->prepend(['user_id' => $meeting->host_id, 'name' => $meeting->host_name, 'response' => 'host', 'is_me' => false]);
-                }
-
-                $entry = $meeting->toArray();
-                $entry['is_host'] = $isHost;
-                $entry['attendees'] = $attendees->all();
-                $entry['my_response'] = $isHost ? null : $this->responseOf($meeting);
-
-                if ($isHost) {
-                    $responses = $group->map(fn (Meeting $row) => $this->responseOf($row));
-                    $entry['client_name'] = $group->pluck('client_name')->filter()->implode(', ');
-                    $entry['status'] = $responses->every(fn ($r) => $r === 'cancelled') ? 'cancelled' : 'active';
-                    $entry['summary'] = collect(['accepted', 'pending', 'declined'])
-                        ->map(fn ($r) => $responses->filter(fn ($x) => $x === $r)->count() ? $responses->filter(fn ($x) => $x === $r)->count() . ' ' . $r : null)
-                        ->filter()->implode(', ');
-                } else {
-                    $entry['status'] = $this->responseOf($meeting);
-                }
-
-                $meetings->push($entry);
+            // ?page / per_page / search / filters / sort / export: the meetings table (the calendar still reads the whole list)
+            if (ApiContract::wantsPagination($request) || $request->boolean('export')
+                || $request->filled('search') || $request->filled('filters') || $request->filled('sort')) {
+                return $this->meetingList($meetings, $request);
             }
 
             return response()->json(['meetings' => $meetings->values()], 200, [], JSON_UNESCAPED_SLASHES);
@@ -216,14 +186,182 @@ class ScheduleMeetingController extends Controller
         }
     }
 
-    /** "Monday, 12 October 2026 at 12:30" for a meeting, whatever format the date is stored or shown in */
-    private function meetingWhen(Meeting $meeting): string
+    /** The key that ties together the rows of one meeting (one row per invited person) */
+    private function groupKey(Meeting $meeting): string
+    {
+        return implode('|', [$meeting->host_id, $meeting->title, $meeting->link, $meeting->getRawOriginal('date'), $meeting->getRawOriginal('time'), $meeting->getRawOriginal('created_at')]);
+    }
+
+    /**
+     * Every meeting the person hosts or is invited to, as the page shows it.
+     * The host sees one meeting with everyone invited; an invitee sees their own invitation and who else is in it.
+     * The rows of every meeting are read in one query (not one per meeting).
+     */
+    private function meetingRows(int $user_id)
+    {
+        $rows = Meeting::where('host_id', $user_id)->orWhere('client_id', $user_id)->latest()->get();
+
+        $groups = $rows->isEmpty() ? collect() : Meeting::whereIn('host_id', $rows->pluck('host_id')->unique()->values())
+            ->whereIn('created_at', $rows->map(fn (Meeting $m) => $m->getRawOriginal('created_at'))->unique()->values())
+            ->get()
+            ->groupBy(fn (Meeting $m) => $this->groupKey($m));
+
+        $seen = [];
+        $meetings = collect();
+
+        foreach ($rows as $meeting) {
+            $isHost = (int) $meeting->host_id === (int) $user_id;
+            $key = $this->groupKey($meeting);
+            $group = $groups->get($key, collect([$meeting]));
+
+            if ($isHost) {
+                if (isset($seen[$key])) {
+                    continue;
+                }
+                $seen[$key] = true;
+            }
+
+            $attendees = $group->map(fn (Meeting $row) => [
+                'user_id' => $row->client_id,
+                'name' => $row->client_name,
+                'response' => $this->responseOf($row),
+                'is_me' => (int) $row->client_id === (int) $user_id,
+            ])->values();
+
+            if (! $isHost) {
+                // The host first, then everyone else invited
+                $attendees->prepend(['user_id' => $meeting->host_id, 'name' => $meeting->host_name, 'response' => 'host', 'is_me' => false]);
+            }
+
+            $entry = $meeting->toArray();
+            $entry['is_host'] = $isHost;
+            $entry['attendees'] = $attendees->all();
+            $entry['my_response'] = $isHost ? null : $this->responseOf($meeting);
+
+            if ($isHost) {
+                $responses = $group->map(fn (Meeting $row) => $this->responseOf($row));
+                $entry['client_name'] = $group->pluck('client_name')->filter()->implode(', ');
+                $entry['status'] = $responses->every(fn ($r) => $r === 'cancelled') ? 'cancelled' : 'active';
+                $entry['summary'] = collect(['accepted', 'pending', 'declined'])
+                    ->map(fn ($r) => $responses->filter(fn ($x) => $x === $r)->count() ? $responses->filter(fn ($x) => $x === $r)->count() . ' ' . $r : null)
+                    ->filter()->implode(', ');
+            } else {
+                $entry['status'] = $this->responseOf($meeting);
+            }
+
+            // For the table: when it starts (sortable), who it is with, and upcoming / past / cancelled
+            $at = $this->startsAt($meeting);
+            $entry['starts_at'] = $at?->toIso8601String();
+            $entry['with_name'] = $isHost ? $this->withNames($group) : $meeting->host_name;
+            // when it was scheduled (UTC, the stored moment), for the "Scheduled on" filter
+            $entry['scheduled_at'] = $meeting->created_at ? Carbon::parse($meeting->getRawOriginal('created_at'))->toDateString() : null;
+            $entry['bucket'] = $entry['status'] === 'cancelled' || in_array($entry['my_response'], ['cancelled', 'declined'], true)
+                ? 'cancelled'
+                : ($at && $at->isFuture() ? 'upcoming' : 'past');
+
+            $meetings->push($entry);
+        }
+
+        return $meetings;
+    }
+
+    /** The exact moment a meeting starts (UTC): starts_at, or its date and time read in its own zone (older rows) */
+    private function startsAt(Meeting $meeting): ?Carbon
     {
         try {
-            $date = $meeting->getRawOriginal('date') ?? $meeting->date;
-            $time = $meeting->getRawOriginal('time') ?? $meeting->time;
+            $stored = $meeting->getRawOriginal('starts_at');
+            if ($stored) {
+                return Carbon::parse($stored, 'UTC');
+            }
+            $zone = UserDateFormatter::zone($meeting->getRawOriginal('timezone'));
 
-            return Carbon::parse(substr((string) $date, 0, 10) . ' ' . substr((string) $time, 0, 5))->format('l, j F Y \a\t H:i');
+            return Carbon::parse(substr((string) $meeting->getRawOriginal('date'), 0, 10) . ' ' . substr((string) $meeting->getRawOriginal('time'), 0, 5), $zone)->utc();
+        } catch (\Throwable $e) {
+            return null;
+        }
+    }
+
+    /** A person's Settings > Timezone (Africa/Nairobi when never set) */
+    private function zoneOf(?User $user): string
+    {
+        $zone = $user ? \App\Models\Auth\UserSetting::query()->where('user_id', $user->id)->value('timezone') : null;
+
+        return UserDateFormatter::zone($zone);
+    }
+
+    /** "Amina Otieno, Brian Kim" or "Amina Otieno +2 more" for the people a host invited */
+    private function withNames($group): string
+    {
+        $names = $group->pluck('client_name')->filter()->values();
+
+        return $names->count() > 2 ? $names[0] . ' +' . ($names->count() - 1) . ' more' : $names->implode(', ');
+    }
+
+    /** The meetings table: search, the upcoming / past / cancelled filter, sort, page and export (CollectionList). */
+    private function meetingList($meetings, Request $request)
+    {
+        // ?bucket=upcoming|past|cancelled: the buttons above the table narrow the rows (and the filter counts); the panel's
+        // filters stay free for the person (filters[bucket][] still works for older screens)
+        $rows = in_array($request->query('bucket'), ['upcoming', 'past', 'cancelled'], true)
+            ? $meetings->where('bucket', $request->query('bucket'))->values()
+            : $meetings;
+        $list = CollectionList::for($rows, $request)
+            ->search(fn ($m) => implode(' ', [$m['title'] ?? '', $m['description'] ?? '', $m['with_name'] ?? '', $m['date'] ?? '', $m['status'] ?? '']))
+            ->filter('id', fn ($m) => $m['id'])
+            ->filter('bucket', fn ($m) => $m['bucket'])
+            // Described filters: the meetings panel, chips and URL state come from `filter_schema`
+            ->options('role', fn ($m) => ! empty($m['is_host']) ? 'host' : 'invited', label: 'app:listFilterMyRole', fallback: 'My role',
+                values: ['host', 'invited'], optionLabels: ['host' => 'app:listFilterHostedByMe', 'invited' => 'app:invited'])
+            ->options('response', fn ($m) => empty($m['is_host']) ? ($m['my_response'] ?? null) : null, label: 'app:listFilterMyAnswer', fallback: 'My answer',
+                values: ['pending', 'accepted', 'declined', 'cancelled'],
+                optionLabels: ['pending' => 'app:pending2', 'accepted' => 'app:accepted', 'declined' => 'app:declined', 'cancelled' => 'app:cancelled'])
+            ->dateRange('date', fn ($m) => (string) ($m['starts_at'] ?? ''), label: 'app:listFilterMeetingDate', fallback: 'Meeting date',
+                presets: ['today', 'next7Days', 'next30Days', 'yesterday', 'last7Days', 'last30Days', 'thisMonth', 'lastMonth', 'thisYear'])
+            ->dateRange('created', fn ($m) => (string) ($m['scheduled_at'] ?? ''), label: 'app:listFilterScheduledOn', fallback: 'Scheduled on')
+            ->boolean('video', fn ($m) => trim((string) ($m['link'] ?? '')) !== '', label: 'shared:meetings.table.videoCall', fallback: 'Video call')
+            ->sortable([
+                'at' => fn ($m) => (string) ($m['starts_at'] ?? ''),
+                'title' => fn ($m) => (string) ($m['title'] ?? ''),
+                'with' => fn ($m) => (string) ($m['with_name'] ?? ''),
+            ], default: '-at');
+        [$items, $page] = $list->fetch();
+
+        $counts = $meetings->countBy('bucket');
+        $data = [
+            'items' => $items->values(),
+            'facets' => $list->facets(['bucket']),
+            'filter_schema' => $list->filterSchema(),
+            // the filter buttons count every meeting (they do not change with the search)
+            'stats' => [
+                'all' => $meetings->count(),
+                'upcoming' => (int) ($counts['upcoming'] ?? 0),
+                'past' => (int) ($counts['past'] ?? 0),
+                'cancelled' => (int) ($counts['cancelled'] ?? 0),
+            ],
+        ];
+        if ($page) {
+            $data['pagination'] = ApiContract::pagination($page);
+        }
+        if ($list->wantsExport()) {
+            $data['export_truncated'] = $list->exportTruncated();
+        }
+
+        return response()->json(['success' => true, 'message' => 'Meetings retrieved', 'data' => $data], 200, [], JSON_UNESCAPED_SLASHES);
+    }
+
+    /**
+     * "Monday, 12 October 2026 at 12:30 EAT": when a meeting starts, in the reader's own time zone (Settings > Timezone),
+     * so a 07:00 Nairobi meeting reads "at 23:00 EST" (the day before) for someone in New York.
+     */
+    private function meetingWhen(Meeting $meeting, ?User $reader = null): string
+    {
+        try {
+            $at = $this->startsAt($meeting);
+            if (! $at) {
+                return trim($meeting->date . ' ' . $meeting->time);
+            }
+
+            return $at->copy()->setTimezone($this->zoneOf($reader))->format('l, j F Y \a\t H:i T');
         } catch (\Throwable $e) {
             return trim($meeting->date . ' ' . $meeting->time);
         }
@@ -253,7 +391,7 @@ class ScheduleMeetingController extends Controller
                 'body' => $body,
                 'recipientName' => $recipient->first_name ?: ($recipient->display_name ?: 'there'),
                 'meeting_title' => $meeting->title,
-                'when' => $this->meetingWhen($meeting),
+                'when' => $this->meetingWhen($meeting, $recipient),
                 'otherName' => $actorName,
                 'description' => $meeting->description,
                 'kind' => $kind,
@@ -370,7 +508,7 @@ class ScheduleMeetingController extends Controller
                     $myName = trim($me->first_name . ' ' . $me->last_name);
                     try {
                         $this->notification->create($other->id, $me->id,
-                            "Meeting cancelled\n{$myName} cancelled \"{$row->title}\" on " . $this->meetingWhen($row) . '.',
+                            "Meeting cancelled\n{$myName} cancelled \"{$row->title}\" on " . $this->meetingWhen($row, $other) . '.',
                             'meeting', 'meeting');
                     } catch (\Throwable $e) {
                         ErrorLogService::report($e, ['meeting_id' => $row->id]);
@@ -443,7 +581,7 @@ class ScheduleMeetingController extends Controller
             $verb = $response === 'accepted' ? 'accepted' : 'declined';
             try {
                 $this->notification->create($host->id, $me->id,
-                    "Meeting {$verb}\n{$myName} {$verb} \"{$meeting->title}\" on " . $this->meetingWhen($meeting) . '.',
+                    "Meeting {$verb}\n{$myName} {$verb} \"{$meeting->title}\" on " . $this->meetingWhen($meeting, $host) . '.',
                     'meeting', 'meeting');
             } catch (\Throwable $e) {
                 ErrorLogService::report($e, ['meeting_id' => $meeting->id]);
@@ -486,20 +624,20 @@ class ScheduleMeetingController extends Controller
                 $client_ids = ProgramApplication::where('program_owner_id', $user_id)->pluck('user_id')
                     ->unique()->toArray();
             }
-            else if($type == 3) //Capital
+            else if($type == 5) //Capital provider
             {
                 $user = $this->get_role2();
-                if (in_array($user->role, ['editor', 'viewer', 'admin'])) {
+                if (in_array($user->role, ['editor', 'viewer', 'admin', 'super_admin'])) {
                     $user_id = $user->capital_owner_id;
                 }
-                $client_ids = StartupPitches::where('capital_owner_id', $user_id)->pluck('user_id')
+                $client_ids = StartupPitches::where('capital_owner_id', $user_id)->notRejected()->pluck('user_id')
                     ->unique()->toArray();
             }
             else if($type == 4) //Business
             {
                 $ids = ProgramApplication::where('user_id', $user_id)->pluck('program_owner_id')
                     ->unique();
-                $ids2 = StartupPitches::where('user_id', $user_id)->pluck('capital_owner_id')
+                $ids2 = StartupPitches::where('user_id', $user_id)->notRejected()->pluck('capital_owner_id')
                     ->unique();
                 $ids3 = ServiceBooking::where('booker_id', $user_id)->pluck('service_owner_id')
                     ->unique();
@@ -508,7 +646,7 @@ class ScheduleMeetingController extends Controller
                 $client_ids = $ids->merge($ids2)->merge($ids3)->merge($ids4)->unique()
                     ->values()->toArray();
             }
-            else if($type == 5) //Service
+            else if($type == 3) //Service provider: the people who booked their services
             {
                 $ids = ServiceBooking::where('service_owner_id', $user_id)->pluck('booker_id')
                     ->unique();
@@ -578,7 +716,7 @@ class ScheduleMeetingController extends Controller
             $user_id = Auth::id();
             $type = $user->user_type_id;
 
-            if($type == 2 || $type == 3){
+            if($type == 2 || $type == 3 || $type == 5){ // 5: a capital team member works on the capital owner's calendar
                 $user = $type == 2 ? $this->get_role() : $this->get_role2();
                 if (in_array($user->role, ['editor', 'viewer', 'admin'])) {
                     $user_id = $type == 2 ? $user->program_owner_id : $user->capital_owner_id;
@@ -620,7 +758,11 @@ class ScheduleMeetingController extends Controller
     public function delete_schedule($id)
     {
         try{
-            $schedules = Schedule::where('id',$id)->delete();
+            // Only your own availability
+            $deleted = Schedule::where('id', $id)->where('user_id', Auth::id())->delete();
+            if (! $deleted) {
+                return response()->json(['message' => 'Schedule not found.'], 404);
+            }
             return response()->json(['message' => 'Deleted!'], 200);
         }
         catch (\Exception $e) {

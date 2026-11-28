@@ -74,7 +74,7 @@ class ReviewerPaymentService
                 }
                 if ($lockedOrder->order_type === 'site_visit'
                     && (!$lockedOrder->siteVisit || (int) $lockedOrder->siteVisit->reviewer_id !== (int) $lockedOrder->reviewer_id)) {
-                    return ['error' => 'This site visit order is not linked to the assigned reviewer.'];
+                    return ['error' => 'This site visit order is not linked to the assigned Business Coach.'];
                 }
                 if ($amount <= 0) {
                     return ['error' => "{$name} has no fee to pay."];
@@ -90,14 +90,20 @@ class ReviewerPaymentService
                         ];
                     }
                 }
-                if (! $reviewer?->lipr_wallet || !$reviewer->lipr_wallet) {
-                    return ['error' => "{$name} has no LIPR wallet set up yet, so they cannot be paid. Ask them to set one up."];
+                if (! $reviewer?->lipr_wallet) {
+                    // DECISION-2: the coach reviewed without payouts; now they are reminded to set them up
+                    return ['error' => "{$name} has no LIPR wallet set up yet, so they cannot be paid. We have reminded them to set one up.", 'remind' => $reviewer];
                 }
-                if (! $owner?->lipr_wallet) {
-                    return ['error' => 'The program owner has no LIPR wallet linked, so this reviewer cannot be paid yet.'];
+                // DECISION-4/5 (owner, 27 Nov): charged to the program wallet, sent from the organization's main LIPR account
+                $mainAccount = \App\Service\Program\OrganizationMainWallet::account($program);
+                if (! $mainAccount) {
+                    return ['error' => \App\Service\Program\OrganizationMainWallet::MISSING];
                 }
-                if (! $wallet || (float) $wallet->balance < $amount) {
-                    return ['error' => 'The program wallet balance is too low to pay ' . $name . '. Top it up and try again.'];
+                if (! $wallet) {
+                    return ['error' => 'This program has no wallet yet, so ' . $name . ' cannot be paid from it.'];
+                }
+                if ((float) $wallet->balance < $amount) {
+                    return ['error' => 'The program wallet balance (KES ' . number_format((float) $wallet->balance, 2) . ') is too low to pay ' . $name . ' KES ' . number_format($amount, 2) . '. Top it up and try again.'];
                 }
 
                 $lockedOrder->update(['payment_status' => 'pending']);
@@ -106,11 +112,24 @@ class ReviewerPaymentService
                     'order' => $lockedOrder,
                     'amount' => $amount,
                     'reviewer_wallet' => trim((string) $reviewer->lipr_wallet),
-                    'owner_wallet' => trim((string) $owner->lipr_wallet),
+                    'owner_wallet' => $mainAccount, // the payer: the organization's main account (DECISION-5)
                 ];
             });
 
             if (isset($payment['error'])) {
+                if (! empty($payment['remind'])) {
+                    try {
+                        (new \App\Service\Notification\ProgramNotificationService())->send('reviewer.payout_setup_needed', [$payment['remind']], [
+                            'program_title' => $order->round?->program?->program_title ?? $order->program?->program_title ?? null,
+                            'program_id' => $order->round?->program_id ?? $order->program_id ?? null,
+                            'email_title' => 'Set up payouts to be paid',
+                            'email_message' => 'Your payment for this program is ready, but you have no M-Pesa (LIPR) wallet set up. Open Settings and set up payouts so the program can pay you.',
+                            'action_label' => 'Set up payouts',
+                        ]);
+                    } catch (\Throwable $e) {
+                        Log::warning('Payout reminder failed', ['order_id' => $order->id, 'error' => $e->getMessage()]);
+                    }
+                }
                 return ['ok' => false, 'message' => $payment['error']];
             }
 

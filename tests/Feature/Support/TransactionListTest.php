@@ -113,3 +113,13 @@ it('says which currency each row is in and keeps the totals per currency', funct
 it('tells the page which account it is looking at', function () {
     expect(call($this, ['page' => 1])->json('data.account_id'))->toBe($this->me->id);
 });
+
+it('does not count an investor paying into escrow as the business owner\'s money in', function () {
+    tx(['user_id' => $this->other->id, 'recipient_id' => $this->me->id, 'type' => 'investment', 'direction' => 'debit', 'net_amount' => 79949, 'gross_amount' => 79949, 'reference_id' => 'REF-INV']);
+    tx(['user_id' => $this->other->id, 'recipient_id' => $this->me->id, 'type' => 'investment_awaiting', 'direction' => 'debit', 'net_amount' => 159898, 'gross_amount' => 159898, 'reference_id' => 'REF-INV75']);
+
+    expect(call($this, ['page' => 1, 'per_page' => 50, 'search' => 'REF-INV'])->json('data.items'))->toHaveCount(0);
+    // the investor still sees both payments as money out
+    $theirs = $this->actingAs($this->other, 'sanctum')->getJson('/api/v1/transactions?'.http_build_query(['page' => 1, 'per_page' => 50, 'search' => 'REF-INV']))->json('data.items');
+    expect($theirs)->toHaveCount(2)->and(collect($theirs)->pluck('direction')->unique()->all())->toBe(['debit']);
+});

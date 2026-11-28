@@ -64,8 +64,8 @@
 
         <aside class="stack sidebar">
             <section class="card"><h2>Key dates</h2>
-                @if($program->application_start_date)<p><strong>Program opens:</strong> {{ \Illuminate\Support\Carbon::parse($program->application_start_date)->format('j M Y') }}</p>@endif
-                @if($program->application_deadline)<p><strong>Application deadline:</strong> {{ \Illuminate\Support\Carbon::parse($program->application_deadline)->format('j M Y') }}</p>@endif
+                @if($program->opensAt())<p><strong>Program opens:</strong> {{ \App\Support\ProgramSchedule::describe($program->opensAt(), $program->scheduleTimezone()) }}</p>@endif
+                @if($program->closesAt())<p><strong>Application deadline:</strong> {{ \App\Support\ProgramSchedule::describe($program->closesAt(), $program->scheduleTimezone()) }}</p>@endif
                 @if($firstRound?->review_period_end)<p><strong>Review ends:</strong> {{ \Illuminate\Support\Carbon::parse($firstRound->review_period_end)->format('j M Y') }}</p>@endif
                 @if($firstRound?->announcement_date)<p><strong>Announcement:</strong> {{ \Illuminate\Support\Carbon::parse($firstRound->announcement_date)->format('j M Y') }}</p>@endif
             </section>

@@ -104,6 +104,8 @@ class RoundHelperService
             'round_status' => $round->status,
             'open_date' => $round->open_date,
             'close_date' => $round->close_date,
+            'opens_at' => $round->opensAt()?->format(\App\Support\ProgramSchedule::JSON_FORMAT),
+            'closes_at' => $round->closesAt()?->format(\App\Support\ProgramSchedule::JSON_FORMAT),
 
             'is_current' => $isCurrent,
             'is_past' => (bool) $isPast,

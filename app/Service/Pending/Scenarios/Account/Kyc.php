@@ -22,15 +22,19 @@ class Kyc extends Scenario
     {
         // A team member's identity checks belong to the organization owner
         if ($this->type === 4 && (int) $this->user->id !== $this->ownerId) return [];
+        // ... and a capital team member's to the capital owner
+        if ($this->type === 5 && \App\Service\Capital\CapitalAccess::ownerId($this->user) !== (int) $this->user->id) return [];
+        // A 7-day demo tries everything without verifying; the real workspace verifies after "Get full access"
+        if ($this->user->organization_id && \App\Models\Organizations\Organization::whereKey($this->user->organization_id)->where('is_trial', true)->exists()) return [];
 
         $row = DB::table('kyc_verifications')->where('user_id', $this->user->id)->latest('id')->first();
         $status = $row->status ?? null;
-        if ($row === null && ! in_array($this->type, [1, 3, 4, 5], true)) return [];
+        if ($row === null && ! in_array($this->type, [1, 2, 3, 4, 5], true)) return [];
         if (! in_array($status, [null, 'draft', 'rejected'], true)) return [];
 
         $link = match ($this->type) {
             1 => 'dashboard.entrepreneur.settings.verify', 3 => 'dashboard.serviceProvider.kyc', 4 => 'dashboard.grantOrg.settings',
-            2 => 'dashboard.investor.settings', 5 => 'dashboard.capitalOrg.settings', default => 'dashboard.reviewerGrantOrg.settings',
+            2 => 'dashboard.investor.settings?tab=verification', 5 => 'dashboard.capitalOrg.settings?tab=verification', default => 'dashboard.reviewerGrantOrg.settings',
         };
         $rejected = $status === 'rejected';
 

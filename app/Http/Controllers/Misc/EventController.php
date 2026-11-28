@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Misc;
 use App\Http\Controllers\Controller;
 use App\Models\Misc\Event;
 use App\Service\Misc\ErrorLogService;
+use App\Service\Shared\EventList;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\File;
@@ -15,9 +16,14 @@ class EventController extends Controller
     /**
      * Display a listing of the resource.
      */
-    public function index()
+    public function index(Request $request)
     {
         try {
+            // ?page / per_page / search / filters / sort / export: the "My events" table (see App\Service\Shared\EventList)
+            if (EventList::wanted($request)) {
+                return (new EventList((int) Auth::id()))->respond($request);
+            }
+
             $user = Auth::user();
             $events = $user->events;
 

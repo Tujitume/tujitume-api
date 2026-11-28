@@ -12,6 +12,7 @@ use App\Service\Balance\CurrencyConverter;
 use App\Service\LiprMpesa\ProgramDisbursementService;
 use App\Service\LiprMpesa\LiprAuthService;
 use App\Service\LiprMpesa\LiprW2W;
+use App\Models\Services\ServiceBookingMilestone;
 use App\Service\Misc\ErrorLogService;
 use App\Service\Notification\ProgramNotificationService;
 use Illuminate\Http\Request;
@@ -39,6 +40,57 @@ class MpesaCallbackController extends Controller
     }
 
 
+
+    /**
+     * DECISION-9: LIPR's result for a project manager audit fee transfer (AuditFee: metadata listingId "mv-<verification>"
+     * or "sa-<service booking milestone>"). A transfer the app counted as sent that LIPR then failed is marked
+     * release_failed (payout) so it shows and can be followed up; a successful one changes nothing.
+     */
+    public function callbackForAuditFee(Request $request)
+    {
+        $data = $this->extractCallbackData($request, 'LIPR AUDIT FEE CALLBACK');
+        $listing = (string) (($request->input('metadata.listingId')) ?? ($request->input('metadata.listing_id')) ?? '');
+        $failed = ! in_array(strtolower((string) $data['status']), ['successful', 'success', 'completed'], true);
+
+        // mv = program check, sa = service booking, ca = capital milestone, pma = business audit. A failed hold or refund
+        // transfer is never "released", so only a payout is moved back (the PM can then retry it).
+        if ($failed && preg_match('/^(mv|sa|ca|pma)-(\d+)$/', $listing, $m)
+            && \App\Service\Audits\AuditFee::payoutFailed($m[1], (int) $m[2], $data['referenceId'] ?: null)) {
+            Log::warning('LIPR AUDIT FEE CALLBACK: payout failed', ['listing' => $listing, 'reference' => $data['referenceId']]);
+        }
+
+        return response()->json(['message' => 'Callback received'], 200);
+    }
+
+    /** A wallet transfer with no flow of its own (an unlock fee share, a bulk payout): its result is recorded and logged. */
+    public function callbackForTransfer(Request $request, CurrencyConverter $convert)
+    {
+        try {
+            $d = $this->extractCallbackData($request, 'LIPR TRANSFER CALLBACK');
+            $this->recordLiprPayment($d['referenceId'], $d['transactionId'], strtolower($d['status'] ?? ''), $d['amount'], $convert->KesToUsd() * (float) $d['amount']);
+            if (strtolower($d['status'] ?? '') !== 'successful') {
+                Log::warning('LIPR transfer did not go through', ['reference' => $d['referenceId'], 'status' => $d['status'] ?? null]);
+                // An organization wallet withdrawal to a Super Admin's My Wallet: the money goes back to the organization
+                if (strtolower($d['status'] ?? '') === 'failed') {
+                    \App\Service\Program\OrganizationWithdrawal::failed($d['referenceId'], (string) ($request->input('metadata.listingId') ?? $request->input('metadata.listing_id') ?? ''));
+                }
+            }
+
+            return response()->json(['message' => 'Callback received'], 200);
+        } catch (\Exception $e) {
+            ErrorLogService::report($e, ['input' => request()->except(['password', 'token'])]);
+
+            return response()->json(['message' => 'Something went wrong, please try again later.'], 500);
+        }
+    }
+
+    /** LIPR's timeout notice (ISSUE-45): logged only; the result callback or the status poll settles the payment. */
+    public function timeout(Request $request)
+    {
+        Log::warning('LIPR TIMEOUT CALLBACK', ['payload' => $request->except(['sig'])]);
+
+        return response()->json(['message' => 'Callback received'], 200);
+    }
 
     public function callback(Request $request, CurrencyConverter $convert)
     {
@@ -91,7 +143,8 @@ class MpesaCallbackController extends Controller
             $kesToUsd = $convert->KesToUsd();
             $amountUsd = $kesToUsd * $amount;
 
-            $existingPayment = LiprPayment::where('reference_id', $referenceId)->exists();
+            // The checkout wrote a pending row for this reference; only a payment LIPR already settled is a repeat callback
+            $existingPayment = LiprPayment::where('reference_id', $referenceId)->whereRaw('LOWER(status) <> ?', ['pending'])->exists();
             if ($existingPayment) {
                 return response()->json(['message' => 'Callback already received'], 200);
             }
@@ -225,7 +278,8 @@ class MpesaCallbackController extends Controller
             $kesToUsd = $convert->KesToUsd();
             $amountUsd = $kesToUsd * $amount;
 
-            $existingPayment = LiprPayment::where('reference_id', $referenceId)->exists();
+            // The checkout wrote a pending row for this reference; only a payment LIPR already settled is a repeat callback
+            $existingPayment = LiprPayment::where('reference_id', $referenceId)->whereRaw('LOWER(status) <> ?', ['pending'])->exists();
             if ($existingPayment) {
                 return response()->json(['message' => 'Callback already received'], 200);
             }
@@ -263,7 +317,10 @@ class MpesaCallbackController extends Controller
                            $application->program->owner
                        ], [
                            'program_title' => $application->program->program_title,
-                           'amount'      => $application->total_amount_requested,
+                           'amount'      => number_format((float) $application->total_amount_requested),
+                           'currency'    => $application->program->currency ?: 'KES',
+                           'business_name' => $application->business?->name ?? $application->startup_name,
+                           'application_id' => $application->id,
                        ]);
 
             return response()->json(['message' => 'Callback received'], 200);
@@ -284,19 +341,23 @@ class MpesaCallbackController extends Controller
             $amount = $callbackData['amount'];
             $listing_id = $callbackData['listingId'];
 
-
-            // Record payment
+            // Record payment (paid by the program's owner)
+            $payer = ProgramMilestone::with('application:id,program_owner_id')->find($listing_id)?->application?->program_owner_id;
             $this->recordLiprPayment(
                 $referenceId,
                 $transactionId,
                 $status,
                 $amount,
-                $convert->KesToUsd() * $amount
+                $convert->KesToUsd() * $amount,
+                $payer ? (int) $payer : null,
+                'program_milestone'
             );
 
             $milestone   = ProgramMilestone::findOrFail($listing_id);
 
             if ($milestone->fund_released || $milestone->fund_release_status === 'released') {
+                // A repeated callback still opens the next milestone if a paid one left it locked (safe to repeat)
+                $milestone->unlockNextWhenFinished($milestone->application?->program_owner_id);
                 Log::info('LIPR PROGRAM SUPPLIER CALLBACK: Already processed', ['reference_id' => $referenceId]);
                 return response()->json(['message' => 'Callback received'], 200);
             }
@@ -315,6 +376,10 @@ class MpesaCallbackController extends Controller
                         'status' => 'completed',
                         'fund_released'       => true,  // ← now truly released
                     ]);
+                    // No final approval step: the next milestone opens now, or the plan would stay stuck on it
+                    $milestone->unlockNextWhenFinished($pitch->program_owner_id ?? null);
+                        // The application may now be in monitoring, or completed
+                        \App\Service\Program\ApplicationCompletion::refresh($milestone->application ?? null);
 
                     // Update disbursement
                     $disbursement?->update([
@@ -328,11 +393,8 @@ class MpesaCallbackController extends Controller
 
                 });
 
-                // Notify
-                $this->programNotification->send('disbursement.completed', [
-                    $pitch->user,
-                    $pitch->program->owner,
-                ], [
+                // Notify the applicant and the program team
+                $this->programNotification->send('disbursement.completed', [$pitch->user, ...\App\Service\Program\ProgramTeam::members($pitch->program)->all()], [
                     'amount'        => $milestone->amount,
                     'supplier_name' => $supplier?->supplierDirectory->legal_name,
                     'application_id'    => $milestone->app_id,
@@ -359,14 +421,22 @@ class MpesaCallbackController extends Controller
 
 
             } else {
-                // Supplier transfer failed
-                $milestone->update(['fund_release_status' => 'approved']); // ← revert back to approved so it can be retried
+                // The transfer failed: back to approved so it can be released again, and the balance credited when it was
+                // sent is taken back (the supplier's, or the applicant's on a direct payout)
+                // (only once: a repeated failure callback finds the disbursement already failed)
+                $firstFailure = $milestone->fund_release_status === 'processing' && $disbursement && $disbursement->status !== 'failed';
+                $milestone->update(['fund_release_status' => 'approved', 'status' => 'approved']);
                 $disbursement?->update(['status' => 'failed']);
+                if ($firstFailure) {
+                    try {
+                        $this->balance->updateBalanceMinus((int) ($supplierUser?->id ?? $pitch->user_id), (float) $amount, 'lipr');
+                    } catch (\Throwable $e) {
+                        ErrorLogService::report($e, ['milestone_id' => $milestone->id, 'reason' => 'could not take back the credit of a failed payout']);
+                    }
+                }
 
-                // Notify owner
-                $this->programNotification->send('disbursement.failed', [
-                    $pitch->program->owner,
-                ], [
+                // Notify the program team
+                $this->programNotification->send('disbursement.failed', \App\Service\Program\ProgramTeam::members($pitch->program)->all(), [
                     'amount'        => $amount,
                     'supplier_name' => $supplier?->supplierDirectory->legal_name,
                     'reason'        => 'Supplier transfer failed',
@@ -437,7 +507,7 @@ class MpesaCallbackController extends Controller
                 $this->transaction->create(
                     $owner->id,
                     'reviewer_payment_sent',
-                    'stripe',
+                    'lipr', // C9: paid through LIPR (M-Pesa), not Stripe
                     $amount,
                     $referenceId,
                     $reviewer->id
@@ -446,7 +516,7 @@ class MpesaCallbackController extends Controller
                 $this->transaction->create(
                     $reviewer->id,
                     'reviewer_payment_received',
-                    'stripe',
+                    'lipr', // C9: paid through LIPR (M-Pesa), not Stripe
                     $amount,
                     $referenceId,
                     $owner->id
@@ -510,6 +580,64 @@ class MpesaCallbackController extends Controller
         return null;
     }
 
+    /**
+     * Lipr's answer to a service milestone release (ServiceBookingFlow::approve sends from Tujitume's wallet to the
+     * provider's). Success credits the provider's balance; a failure puts the milestone back to waiting for approval,
+     * so the customer can approve it again. Repeated callbacks change nothing.
+     */
+    public function callbackForServiceMilestone(Request $request, CurrencyConverter $convert)
+    {
+        try {
+            $data = $this->extractCallbackData($request, 'LIPR SERVICE MILESTONE CALLBACK');
+            $status = strtolower((string) ($data['status'] ?? ''));
+            $milestone = $data['listingId'] ? ServiceBookingMilestone::with('booking')->find($data['listingId']) : null;
+            if (! $milestone || $milestone->release_status !== 'processing') {
+                return response()->json(['message' => 'Callback received'], 200);
+            }
+
+            if ($status === 'successful') {
+                DB::transaction(function () use ($milestone) {
+                    $milestone->update(['release_status' => 'completed']);
+                    if ($milestone->booking) {
+                        $this->balance->updateBalance((int) $milestone->booking->service_owner_id, (float) $milestone->amount, 'lipr');
+                    }
+                });
+                // ISSUE-46: the provider hears when the money has arrived
+                if ($milestone->booking) {
+                    $this->notification->create((int) $milestone->booking->service_owner_id, null,
+                        'KES '.number_format((float) $milestone->amount, 2)." for {$milestone->title} has reached your wallet.",
+                        'dashboard.serviceProvider.serviceBookings', 'service');
+                }
+            } elseif (in_array($status, ['failed', 'cancelled', 'canceled', 'reversed', 'declined', 'expired'], true)) {
+                $milestone->update(['released' => 0, 'release_status' => 'failed', 'released_at' => null]);
+                // The release recorded at approval never reached the provider: it is not money in for them (a new approval
+                // records its own), so their transactions and earnings do not count it twice
+                if ($milestone->release_reference) {
+                    \App\Models\Finance\Transactions::where('type', 'service_milestone')->where('reference_id', $milestone->release_reference)
+                        ->update(['status' => 'failed']);
+                }
+                if ($milestone->booking?->status === 'completed') {
+                    $milestone->booking->update(['status' => 'in_progress', 'stage' => 'Payment release failed']);
+                }
+                $this->notification->create((int) $milestone->booking?->booker_id, null,
+                    "The payment for {$milestone->title} could not be sent to the provider. Nothing was paid; please approve it again.",
+                    \App\Service\Services\ServiceBookingFlow::customerLinkKey($milestone->booking), 'service');
+                // ISSUE-55: the provider sees a failed release too (it used to look approved and paid to them)
+                if ($milestone->booking) {
+                    $this->notification->create((int) $milestone->booking->service_owner_id, null,
+                        "The payment for {$milestone->title} did not go through. The customer has been asked to approve it again.",
+                        'dashboard.serviceProvider.serviceBookings', 'service');
+                }
+            }
+
+            return response()->json(['message' => 'Callback received'], 200);
+        } catch (\Exception $e) {
+            ErrorLogService::report($e, ['input' => request()->except(['password', 'token'])]);
+
+            return response()->json(['message' => 'Something went wrong, please try again later.'], 500);
+        }
+    }
+
     private function extractCallbackData(Request $request, string $logMessage): array
     {
         Log::info($logMessage, [
@@ -534,15 +662,28 @@ class MpesaCallbackController extends Controller
         ];
     }
 
-    private function recordLiprPayment($referenceId, $transactionId, $status, $amount, $amountUsd): LiprPayment
+    private function recordLiprPayment($referenceId, $transactionId, $status, $amount, $amountUsd, ?int $payerId = null, string $purpose = 'transfer'): LiprPayment
     {
-        return LiprPayment::create([
-            'reference_id' => $referenceId,
+        // The checkout already wrote a pending row for this reference (who paid, for what): update it, keeping those.
+        // A wallet transfer has no such row: it is created here, for the payer when known (user_id cannot be empty; it
+        // used to fail, so the transfer callbacks never settled anything)
+        $payment = LiprPayment::firstOrNew(['reference_id' => $referenceId]);
+        // A repeated callback for a payment already used (credited / released) must not make it usable again
+        if ($payment->exists && strtolower((string) $payment->status) === 'completed') {
+            return $payment;
+        }
+        if (! $payment->exists) {
+            $payment->user_id ??= $payerId ?? 0;
+            $payment->purpose ??= $purpose;
+        }
+        $payment->fill([
             'transaction_id' => $transactionId,
             'status' => $status,
             'amount' => $amount,
             'amount_usd' => $amountUsd,
-        ]);
+        ])->save();
+
+        return $payment;
     }
 
 

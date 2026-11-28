@@ -104,13 +104,28 @@ Route::middleware('throttle:public')->group(function () {
 
 Route::get('JitumeSubscribeEmail/{email}', [SupportController::class, 'newsletterSubscribe']);
 Route::post('submitReport', [SupportController::class, 'reportListing']);
-Route::post('contact/request-demo', [SupportController::class, 'requestDemo']);
+// Landing-page "Get in touch" form → admin review (Demo Requests in the admin) → 7-day demo account / proposal email
+Route::post('contact/request-demo', [\App\Http\Controllers\Misc\DemoRequestController::class, 'store'])->middleware('throttle:10,1');
+// The one-time sign-up link to /auth/create/program: who it is for
+Route::get('program-invites/{token}', [\App\Http\Controllers\Misc\DemoRequestController::class, 'invite'])->middleware('throttle:30,1');
+// Admin › Demo Requests › Open demo account: the one-time code from that link becomes a 2-hour sign-in to the demo
+Route::post('auth/admin-view', [\App\Http\Controllers\Misc\DemoRequestController::class, 'adminView'])->middleware('throttle:10,1');
+// A 7-day demo account: its end, and its "Get full access" button
+Route::middleware('auth:sanctum')->group(function () {
+    Route::get('trial/status', [\App\Http\Controllers\Misc\DemoRequestController::class, 'trialStatus']);
+    Route::post('trial/request-full-access', [\App\Http\Controllers\Misc\DemoRequestController::class, 'requestFullAccess'])->middleware('throttle:5,1');
+});
 
 Route::get('CancelAssetBid/{id}/{action}', [AssetBidsController::class, 'CancelAssetBid']);
 Route::get('CancelEquipmentRelease/{id}/{action}', [AssetBidsController::class, 'CancelAssetRelease']);
 Route::get('CancelServiceBooking/{id}/{action}', [BookingController::class, 'CancelServiceBooking']);
+// The cancel button of older booking emails: opens the booking (cancelling needs the signed-in customer)
+Route::get('CancelBookingConfirm/{id}/{action}', [BookingController::class, 'CancelServiceBooking']);
 
 Route::get('program/get_program/{id}', [ProgramController::class, 'get_program']);
+
+// Public images through the API (CORS), for drawing logos and profile pictures in PDF exports
+Route::get('media/image', [\App\Http\Controllers\Misc\MediaController::class, 'image'])->middleware('throttle:600,1');
 Route::get('capital/get_capital/{id}', [CapitalController::class, 'get_capital']);
 
 Route::get('agreeToMileS/{s_id}/{booker_id}', [ServiceMilestoneController::class, 'agreeToProgressWithServiceMilestone']);
@@ -118,4 +133,3 @@ Route::get('agreeToProgressWithMilestone/{bidId}', [BidsController::class, 'agre
 Route::get('agreeToNextmile/{bidId}', [BidsController::class, 'agreeToNextmile'])->name('agreeToNextmile');
 Route::get('reviewMilestoneS/{s_id}/{booker_id}', [ServiceMilestoneController::class, 'reviewMilestone']);
 
-Route::get('/error-logs', [MiscController::class, 'errorLogs']);

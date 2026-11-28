@@ -22,7 +22,7 @@ class PublicProgramPreviewController extends Controller
             ])
                 ->withCount('liked')
                 ->where('public_id', $publicId)
-                ->where('status', 'published')
+                ->listedForApplicants()
                 ->first();
 
             //  Handle not found
@@ -47,9 +47,6 @@ class PublicProgramPreviewController extends Controller
                     ->exists();
             }
 
-            // The program's own application fields, so a guest answers them too (never the scoring)
-            app(\App\Service\Program\CustomFields\CustomFieldValueService::class)->attachPublicFields($program);
-
             return ApiContract::itemResponse(
                 'Program fetched successfully.',
                 'program',
@@ -72,7 +69,7 @@ class PublicProgramPreviewController extends Controller
     {
         $program = Program::query()
             ->where('public_id', $publicId)
-            ->where('status', 'published')
+            ->listedForApplicants()
             ->first();
 
         abort_unless($program, 404);
@@ -99,10 +96,10 @@ class PublicProgramPreviewController extends Controller
             ->toString();
         $ogDescription = $shareMessage !== '' ? Str::limit($shareMessage, 300, '') : $description;
         $previewUrl = $shareMessage !== '' ? $url . ($version !== '' ? '&' : '?') . 'share_message=' . rawurlencode($shareMessage) : $url;
-        $image = $program->organization_logo ?: 'https://tujitume.com/pwa-light-512x512.png';
+        // The program's cover is the best picture for a shared link; the organization's logo, then Tujitume's, otherwise
+        $image = $program->cover_image_url ?: ($program->organization_logo ?: 'https://tujitume.com/pwa-light-512x512.png');
         $firstRound = $program->rounds->first();
-        $isOpen = in_array($program->status, ['published', 'open'], true)
-            && (! $program->application_deadline || \Illuminate\Support\Carbon::parse($program->application_deadline)->endOfDay()->isFuture());
+        $isOpen = in_array($program->status, ['published', 'open'], true) && ! $program->hasClosed();
 
         return response()->view('program-preview', compact('program', 'url', 'previewUrl', 'title', 'description', 'ogDescription', 'image', 'firstRound', 'isOpen'))
             ->header('Cache-Control', 'public, max-age=300');

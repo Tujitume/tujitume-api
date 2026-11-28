@@ -179,7 +179,13 @@ class AdminController extends Controller
                 ?: ($user->display_name ?: 'there');
 
             // What verification unlocks, and where to go next, depends on who was verified
-            [$intro, $next, $linkKey, $linkLabel] = match ($kyc->verification_type) {
+            [$intro, $next, $linkKey, $linkLabel] = match (true) {
+                (int) $user->user_type_id === 2 => [
+                    'Your identity has been confirmed.',
+                    'You can now invest in businesses on Tujitume. Your business matches show the ones that fit what you look for.',
+                    'dashboard.investor.suggestionListing', 'View Business Matches',
+                ],
+                default => match ($kyc->verification_type) {
                 'entrepreneur' => [
                     'Your identity has been confirmed.',
                     'The next step is to list your first business on Tujitume, so it is ready when you want to apply for funding.',
@@ -195,6 +201,7 @@ class AdminController extends Controller
                     'You can now publish programs and fund applicants on Tujitume.',
                     'dashboard.programOrg.programsDiscover', 'View My Programs',
                 ],
+                },
             };
 
             $details = match ($kyc->verification_type) {
@@ -209,11 +216,11 @@ class AdminController extends Controller
                 [
                     'name' => $name,
                     'legalName' => $details?->legal_name ?: $name,
-                    'verificationType' => ucfirst(str_replace('_', ' ', $kyc->verification_type)),
+                    'verificationType' => (int) $user->user_type_id === 2 ? 'Investor' : ucfirst(str_replace('_', ' ', $kyc->verification_type)),
                     'verifiedAt' => now()->format('j M Y'),
                     'intro' => $intro,
                     'next' => $next,
-                    'action_url' => EmailLink::url($linkKey),
+                    'action_url' => EmailLink::url($linkKey, $user),
                     'action_label' => $linkLabel,
                 ],
                 $user->email
@@ -238,6 +245,34 @@ class AdminController extends Controller
             'reviewed_at' => now(),
             'rejection_reason' => $validated['rejection_reason'],
         ]);
+
+        // The person is told why, in the app and by email, with a link back to their own form to fix it and resubmit
+        $user = $kyc->user;
+        if ($user) {
+            $link = \App\Services\Kyc\KycService::formLink($user);
+            $this->notification->create(
+                $user->id,
+                null,
+                'Your verification needs changes: '.$validated['rejection_reason'],
+                $link,
+                'kyc'
+            );
+
+            if ($user->email) {
+                $name = trim(($user->first_name ?? '').' '.($user->last_name ?? '')) ?: ($user->display_name ?: 'there');
+                $this->emailService->send(
+                    'Your Tujitume verification needs changes',
+                    'kyc.rejected',
+                    [
+                        'name' => $name,
+                        'reason' => $validated['rejection_reason'],
+                        'action_url' => \App\Service\Notification\EmailLink::url($link, $user),
+                        'action_label' => 'Update My Verification',
+                    ],
+                    $user->email
+                );
+            }
+        }
 
         return back()->with('success', 'KYC record rejected and the reason saved.');
     }

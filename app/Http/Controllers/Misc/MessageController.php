@@ -32,18 +32,79 @@ class MessageController extends Controller
     private function broadcastChat(array $payload, $toId): void
     {
         try {
-            event(new ChatNotification($payload, $toId));
+            // Who wrote it, so the other person's open conversation refreshes at once
+            if (Auth::check()) {
+                $payload['from_id'] = $this->actingId(Auth::user());
+            }
+            event(new ChatNotification($payload, (int) $toId));
         } catch (Throwable $e) {
             Log::warning('Chat broadcast failed: ' . $e->getMessage());
         }
     }
 
     /**
-     * A page of one conversation, newest first. `before` is the id of the oldest
-     * message the client already has.
+     * The id a person reads and writes messages under (the same one in store, index, thread and mark-read).
+     * A capital organization's editors and admins share their owner's inbox: they write as the owner, every message keeps
+     * who really wrote it in sent_by_id, and they read the owner's conversations. Everyone else, including a program
+     * organization's team members (each has their own dialog since 2026-11-14), acts as themselves.
      */
-    private function threadPage(int $authId, int $partnerId, ?int $before, int $limit): array
+    /** The inbox a person reads: their own, or their capital owner's for editors/admins (used by routes/channels.php) */
+    public static function inboxOwnerId(User $user): int
     {
+        return (new self())->actingId($user);
+    }
+
+    /**
+     * POST /messages/typing {to_id}: tell the other person, live, that you are writing to them. The app sends it at most
+     * every few seconds while you type; nothing is stored.
+     */
+    public function typing(Request $request)
+    {
+        $data = $request->validate(['to_id' => 'required|integer|exists:users,id']);
+        $user = Auth::user();
+        $from = $this->actingId($user);
+        if ((int) $data['to_id'] === $from) {
+            return response()->json(['ok' => false], 422);
+        }
+        try {
+            event(new \App\Events\ChatSignal('Typing', (int) $data['to_id'], [
+                'from_id' => $from,
+                'name' => trim(($user->first_name ?? '').' '.($user->last_name ?? '')),
+            ]));
+        } catch (Throwable $e) {
+            Log::warning('Typing broadcast failed: '.$e->getMessage());
+        }
+
+        return response()->json(['ok' => true]);
+    }
+
+    private function actingId(User $user): int
+    {
+        if ((int) $user->user_type_id === 5) { // capital provider (team members share the owner's inbox)
+            $role = $user->capital_profile?->role?->name;
+            if (in_array($role, ['editor', 'admin', 'super_admin'], true)) {
+                return (int) ($user->capital_profile?->capital_owner_id ?: $user->id);
+            }
+        }
+
+        return (int) $user->id;
+    }
+
+    /** A team member who shares the owner's inbox cannot hold a conversation with that inbox itself */
+    private function sharesInboxWith(User $user, int $actingId, int $partnerId): bool
+    {
+        return $actingId !== (int) $user->id && $partnerId === $actingId;
+    }
+
+    private const SHARED_INBOX_MESSAGE = 'You share this inbox with your organization owner, so you cannot open a chat with them here.';
+
+    /**
+     * A page of one conversation, newest first. `before` is the id of the oldest
+     * message the client already has. `$viewerId` is the person reading (for "is_me"); `$authId` the inbox they read.
+     */
+    private function threadPage(int $authId, int $partnerId, ?int $before, int $limit, ?int $viewerId = null): array
+    {
+        $viewerId ??= $authId;
         $rows = Messages::where(function ($q) use ($authId, $partnerId) {
             $q->where(function ($q) use ($authId, $partnerId) {
                 $q->where('from_id', $authId)->where('to_id', $partnerId);
@@ -63,7 +124,7 @@ class MessageController extends Controller
             ->get(['id', 'first_name', 'last_name', 'display_name', 'image'])
             ->keyBy('id');
 
-        $messages = $rows->take($limit)->map(function ($msg) use ($authId, $authors) {
+        $messages = $rows->take($limit)->map(function ($msg) use ($authId, $viewerId, $authors) {
             $msg->sender = $msg->from_id === $authId ? 'me' : '';
 
             $author = $authors->get($msg->sent_by_id);
@@ -71,7 +132,7 @@ class MessageController extends Controller
                 'id'    => $author->id,
                 'name'  => $author->display_name ?: trim($author->first_name . ' ' . $author->last_name),
                 'image' => $author->image,
-                'is_me' => (int) $author->id === $authId,
+                'is_me' => (int) $author->id === $viewerId,
             ] : null;
 
             return $msg;
@@ -91,12 +152,19 @@ class MessageController extends Controller
                 'limit'  => 'nullable|integer|min:1|max:50',
             ]);
 
+            $user = Auth::user();
+            $actingId = $this->actingId($user);
+            if ($this->sharesInboxWith($user, $actingId, (int) $partnerId)) {
+                return response()->json(['message' => self::SHARED_INBOX_MESSAGE], 422);
+            }
+
             return response()->json(
                 $this->threadPage(
-                    (int) Auth::id(),
+                    $actingId,
                     (int) $partnerId,
                     isset($validated['before']) ? (int) $validated['before'] : null,
-                    (int) ($validated['limit'] ?? self::PAGE_SIZE)
+                    (int) ($validated['limit'] ?? self::PAGE_SIZE),
+                    (int) $user->id
                 ),
                 200
             );
@@ -135,7 +203,9 @@ class MessageController extends Controller
     public function index()
     {
         try{
-            $authId = Auth::id();
+            $viewerId = (int) Auth::id();
+            // A capital editor/admin reads the owner's shared inbox (see actingId)
+            $authId = $this->actingId(Auth::user());
 
             // Step 1: Get all unique chat partners (anyone who sent or received messages with me)
             $partnerIds = Messages::where(function ($q) use ($authId) {
@@ -148,11 +218,11 @@ class MessageController extends Controller
 
             // Step 2: One entry per chat partner: profile, unread count and only the
             // latest page of messages. Older messages load through thread().
-            $results = $partnerIds->map(function ($partnerId) use ($authId) {
+            $results = $partnerIds->map(function ($partnerId) use ($authId, $viewerId) {
                 $partner = User::find($partnerId);
                 if (! $partner) return null;
 
-                $page = $this->threadPage($authId, $partnerId, null, self::PAGE_SIZE);
+                $page = $this->threadPage($authId, (int) $partnerId, null, self::PAGE_SIZE, $viewerId);
 
                 return [
                     'id'           => $partner->id,
@@ -205,16 +275,16 @@ class MessageController extends Controller
             // A program team member (Editor, Admin) writes as THEMSELVES, and a message to them reaches them: each person is their own dialog,
             // not one dialog under the owner's name. (Capital organizations below still write as their owner.)
 
-            //Capital Editor
-            if($user->user_type_id == 3) { //Capital From
-                $role = $user->capital_profile?->role?->name;
-                if( $role && ($role == 'editor' || $role == 'admin') ){
-                    $from_id = $user->capital_profile?->capital_owner_id ?? $user->id;
+            //Capital Editor / Admin: writes from the owner's shared inbox (index and thread read the same id)
+            if((int) $user->user_type_id === 5) { //Capital From
+                $from_id = $this->actingId($user);
+                if ($this->sharesInboxWith($user, $from_id, (int) $to_id)) {
+                    return response()->json(['message' => self::SHARED_INBOX_MESSAGE], 422);
                 }
             }
-            else if ($userTo->user_type_id == 3) { //Capital To
+            else if ((int) $userTo->user_type_id === 5) { //Capital To
                 $role = $userTo->capital_profile?->role?->name;
-                if ($role && ($role == 'editor' || $role == 'admin')) {
+                if (in_array($role, ['editor', 'admin', 'super_admin'], true)) {
                     $to_id = $userTo->capital_profile?->capital_owner_id ?? $userTo->id;
                 }
             }
@@ -278,7 +348,7 @@ class MessageController extends Controller
                                 'sender'       => $senderName,
                                 'msg'          => $validated['msg'],
                                 // Opens the chat with this sender ("@" marks an id the app obfuscates)
-                                'action_url'   => EmailLink::url("dashboard.{$root}.messages?chat=@{$from_id}"),
+                                'action_url'   => EmailLink::url("dashboard.{$root}.messages?chat=@{$from_id}", $receiver),
                                 'action_label' => 'View Message',
                                 // From an organisation member the email wears the organisation's look and name
                                 'brand'        => EmailBrand::forUser($sender),
@@ -317,13 +387,22 @@ class MessageController extends Controller
                 'partner_id' => 'required|integer|exists:users,id',
             ]);
 
-            $authId = Auth::id();
+            $authId = $this->actingId(Auth::user());
             $partnerId = $validated['partner_id'];
 
-            Messages::where('from_id', $partnerId)
+            $read = Messages::where('from_id', $partnerId)
                 ->where('to_id', $authId)
                 ->where('is_new', 1)
                 ->update(['is_new' => 0]);
+
+            // The writer sees "Read" at once
+            if ($read > 0) {
+                try {
+                    event(new \App\Events\ChatSignal('Read', (int) $partnerId, ['by_id' => $authId]));
+                } catch (Throwable $e) {
+                    Log::warning('Read broadcast failed: '.$e->getMessage());
+                }
+            }
 
             return response()->json(['message' => 'Messages marked as read'], 200);
         } catch (\Exception $e) {
@@ -465,16 +544,16 @@ class MessageController extends Controller
 
                 $profile = $user->capital_profile;
                 $role    = $profile?->role?->name;
-                return ($role === 'editor' || $role === 'admin') ? ($profile?->capital_owner_id ?? $user->id) : $user->id;
+                return in_array($role, ['editor', 'admin', 'super_admin'], true) ? ($profile?->capital_owner_id ?? $user->id) : $user->id;
             };
 
             if ($authUser->user_type_id === 4) $fromId = $resolveOwnerId($authUser, 'program');
-            if ($authUser->user_type_id === 3) $fromId = $resolveOwnerId($authUser, 'capital');
+            if ((int) $authUser->user_type_id === 5) $fromId = $resolveOwnerId($authUser, 'capital');
 
             if ($request->filled('to_id')) {
                 $userTo = User::findOrFail($toId);
                 if ($userTo->user_type_id === 4) $toId = $resolveOwnerId($userTo, 'program');
-                if ($userTo->user_type_id === 3) $toId = $resolveOwnerId($userTo, 'capital');
+                if ((int) $userTo->user_type_id === 5) $toId = $resolveOwnerId($userTo, 'capital');
             }
 
             ServiceMessages::create([

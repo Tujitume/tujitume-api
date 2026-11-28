@@ -9,6 +9,7 @@ use App\Models\Business\Conversation;
 use App\Models\Business\Listing;
 use App\Models\Business\Review;
 use App\Service\Misc\ErrorLogService;
+use App\Service\Subscription\SubscriptionHolder;
 use Carbon\Carbon;
 use Exception;
 use Illuminate\Http\Request;
@@ -62,8 +63,8 @@ class SubscriptionController extends Controller
 
         try {
             $session = $this->Client->checkout->sessions->create([
-                'success_url'          => 'https://tujitume.com/stripeSubscribeSuccess?session_id={CHECKOUT_SESSION_ID}',
-                'cancel_url'           => 'https://tujitume.com/canceled',
+                'success_url'          => \App\Service\Notification\RecipientUrl::url('stripeSubscribeSuccess?session_id={CHECKOUT_SESSION_ID}', (int) $inv_id ?: null),
+                'cancel_url'           => \App\Service\Notification\RecipientUrl::url('canceled', (int) $inv_id ?: null),
                 'mode'                 => 'subscription',
                 'line_items'           => [[
                     'price'    => $priceMap[$priceKey],
@@ -149,7 +150,7 @@ class SubscriptionController extends Controller
                 default                               => 'Your ' . ucwords($plan) . ' plan expires in 30 days.',
             };
 
-            return redirect(config('app.app_url'));
+            return redirect(\App\Service\Notification\RecipientUrl::url('', $investorId));
 
         } catch (Exception $e) {
             ErrorLogService::report($e, ['input' => $request->except(['password', 'token'])]);
@@ -161,11 +162,24 @@ class SubscriptionController extends Controller
 
     public function getSubscription()
     {
-        $subscribed = BusinessSubscriptions::where('investor_id', Auth::id())
+        // People inside an organisation share its subscription (kept on the owner); only admins manage it
+        $user = Auth::user();
+        $holderId = SubscriptionHolder::idFor($user);
+        $shared = [
+            'organisation' => SubscriptionHolder::isOrganisation($user),
+            'can_manage'   => SubscriptionHolder::canManage($user),
+        ];
+
+        $subscribed = BusinessSubscriptions::where('investor_id', $holderId)
             ->where('active', 1)->latest()->first();
 
         if (!$subscribed) {
-            return response()->json(['subscription' => false, 'message' => 'Subscription not found.'], 404);
+            return response()->json(['subscription' => false, 'message' => 'Subscription not found.'] + $shared, 404);
+        }
+
+        // Paid by M-Pesa (no Stripe subscription): its dates are ours. It never renews by itself
+        if (!$subscribed->stripe_sub_id) {
+            return response()->json(['subscription' => true, 'data' => $this->liprSubscriptionView($subscribed) + $shared], 200);
         }
         try {
             $stripeSub = $this->Client->subscriptions->retrieve($subscribed->stripe_sub_id, []);
@@ -225,11 +239,11 @@ class SubscriptionController extends Controller
                     'expire'           => $daysLeft,
                     'end_date'         => $periodEnd->toDateString(),
                     'expire_at'        => $periodEnd->toDateTimeString(),
-                ],
+                ] + $shared,
             ], 200);
 
         } catch (Exception $e) {
-            $subscribed->delete();
+            // Stripe could not be reached or does not know it: say so, but never delete the person's subscription
             ErrorLogService::report($e, ['stripe_sub_id' => $subscribed->stripe_sub_id]);
             return response()->json(['subscription' => false, 'message' => 'Something went wrong, please try again later.'], 500);
         }
@@ -237,9 +251,14 @@ class SubscriptionController extends Controller
 
     public function renewSubscription($stripe_sub_id)
     {
+        // ISSUE-51: only the subscription the person manages, as for cancel (it used to renew any Stripe id it was given)
+        $subs = $this->managedStripeSubscription($stripe_sub_id);
+        if (! $subs) {
+            return response()->json(['message' => 'Subscription not found.'], 404);
+        }
         try {
             $this->Client->subscriptions->update(
-                $stripe_sub_id,
+                $subs->stripe_sub_id,
                 ['cancel_at_period_end' => false]
             );
             return response()->json(['subscription' => true, 'message' => 'Subscription Renewed.'], 200);
@@ -253,10 +272,58 @@ class SubscriptionController extends Controller
         }
     }
 
+    /** The subscription as the page reads it, for one paid by M-Pesa (fixed dates, no auto renewal). */
+    private function liprSubscriptionView(BusinessSubscriptions $subscribed): array
+    {
+        $now = Carbon::now();
+        $end = $subscribed->expire_date ? Carbon::parse($subscribed->expire_date) : $now;
+        $start = $subscribed->start_date ? Carbon::parse($subscribed->start_date) : null;
+        $expired = $now->greaterThan($end);
+        if ($expired) $subscribed->update(['active' => 0]);
+
+        return [
+            'subscribed'       => 1,
+            'sub_id'           => $subscribed->id,
+            'stripe_sub_id'    => null,
+            'plan'             => $subscribed->plan,
+            'amount'           => $subscribed->trial ? 0 : (float) $subscribed->amount,
+            // Plans are priced in US dollars (config/subscriptions.php); M-Pesa charged the shilling equivalent
+            'currency'         => 'USD',
+            'token_left'       => $subscribed->token_remaining,
+            'status'           => $expired ? 'expired' : ($subscribed->trial ? 'trialing' : 'active'),
+            'is_active'        => ! $expired,
+            'is_expired'       => $expired,
+            'fully_expired'    => $expired,
+            'auto_renew'       => false,
+            'trial'            => (bool) $subscribed->trial && ! $expired,
+            'trial_start'      => $subscribed->trial ? $start?->toDateTimeString() : null,
+            'trial_end'        => $subscribed->trial ? $end->toDateTimeString() : null,
+            'cancel_scheduled' => false,
+            'canceled_at'      => null,
+            'expire'           => max(0, (int) $now->diffInDays($end, false)),
+            'end_date'         => $end->toDateString(),
+            'expire_at'        => $end->toDateTimeString(),
+            'method'           => 'lipr',
+        ];
+    }
+
+    /** The Stripe subscription the signed-in person manages (their own, or their organisation's as an admin), or null. */
+    private function managedStripeSubscription($stripeSubId): ?BusinessSubscriptions
+    {
+        $user = Auth::user();
+        if (! $stripeSubId || ! SubscriptionHolder::canManage($user)) {
+            return null;
+        }
+
+        return BusinessSubscriptions::where('stripe_sub_id', $stripeSubId)->where('investor_id', SubscriptionHolder::idFor($user))->first();
+    }
+
     public function cancelSubscription($id)
     {
-        $investor_id = Auth::id();
-        $subs = BusinessSubscriptions::where('stripe_sub_id',$id)->first();
+        $subs = $this->managedStripeSubscription($id);
+        if (! $subs) {
+            return response()->json(['message' => 'Subscription not found.'], 404);
+        }
         try{
             //$cancel = $this->Client->subscriptions->cancel($subs->stripe_sub_id,[]); //Fully Cancel
             $cancel = $this->Client->subscriptions->update(

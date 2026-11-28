@@ -14,6 +14,10 @@ class MilestoneNonCompliance extends Model
 
     protected $casts = [
         'ipm_started_at' => 'datetime',
+        'pid_started_at' => 'datetime',
+        'response_deadline' => 'datetime',
+        'resolved_at' => 'datetime',
+        'sanctioned' => 'boolean',
     ];
 
     public function milestone()

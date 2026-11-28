@@ -12,6 +12,9 @@ use App\Service\Notification\EmailBrand;
 use App\Service\Notification\EmailService;
 use App\Service\Notification\NotificationService;
 use App\Service\Notification\ProgramNotificationService;
+use App\Support\ApiContract;
+use App\Support\ListQuery;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -20,8 +23,15 @@ use Illuminate\Validation\ValidationException;
 class SupplierDirectoryController extends Controller
 {
     /**
-     * List all suppliers for authenticated user
+     * The signed-in person's supplier directory.
      * GET /program/supplier-directory
+     *
+     * The shared list language (App\Support\ListQuery): search, filters[status|category|payment|onboarding|id][],
+     * filters[added]=from~to, sort (name, contact, payment, added), page / per_page for one page, export=1 for every
+     * matching row. Without page / per_page / export the whole directory comes back (the supplier pickers need it).
+     * `data` is always the rows (what existing callers read); a page also carries `pagination` and Laravel's
+     * current_page / last_page / per_page / total.
+     * The old ?is_active= and ?supplier_type= filters still work.
      */
     public function index(Request $request)
     {
@@ -32,36 +42,135 @@ class SupplierDirectoryController extends Controller
                 $q->where('user_id', $userId)->orWhere('added_by', $userId);
             });
 
-            // Filter by active status
             if ($request->has('is_active')) {
                 $query->where('is_active', $request->boolean('is_active'));
             }
-
-            // Filter by supplier type
             if ($request->has('supplier_type')) {
                 $query->where('supplier_type', $request->supplier_type);
             }
 
-            // Search by name, email, or phone
-            if ($request->has('search')) {
-                $search = $request->search;
-                $query->where(function($q) use ($search) {
-                    $q->where('legal_name', 'like', '%' . $search . '%')
-                        ->orWhere('email', 'like', '%' . $search . '%')
-                        ->orWhere('phone', 'like', '%' . $search . '%');
-                });
+            $list = ListQuery::for($query, $request)
+                ->search(['legal_name', 'contact_person', 'email', 'phone', 'supplier_type'])
+                ->filter('id', 'id')
+                // Described filters: the program side's panel, chips and URL state come from `filter_schema`
+                ->options('status', function (Builder $q, array $values) {
+                    $active = in_array('active', $values, true);
+                    $inactive = in_array('inactive', $values, true);
+                    if ($active !== $inactive) {
+                        $q->where('is_active', $active);
+                    }
+                }, label: 'grant:supplierDirectory.colStatus', fallback: 'Status', values: ['active', 'inactive'],
+                    optionLabels: ['active' => 'grant:supplierDirectory.statusActive', 'inactive' => 'grant:supplierDirectory.statusInactive'],
+                    countBy: fn (Builder $q) => $this->twoWay($q, fn (Builder $y) => $y->where('is_active', true), 'active', 'inactive'))
+                ->options('category', 'supplier_type', label: 'grant:supplierDirectory.supplierType', fallback: 'Supplier type')
+                ->options('payment', 'payment_method', label: 'grant:supplierDirectory.colPayment', fallback: 'Payment', values: array_keys(self::PAYMENT_LABEL_KEYS),
+                    optionLabels: array_map(fn ($k) => 'grant:supplierDirectory.'.$k, self::PAYMENT_LABEL_KEYS))
+                ->options('onboarding', function (Builder $q, array $values) {
+                    $onboarded = in_array('onboarded', $values, true);
+                    $invited = in_array('invited', $values, true);
+                    if ($onboarded && ! $invited) {
+                        $this->onboarded($q);
+                    } elseif ($invited && ! $onboarded) {
+                        $q->whereNot(fn (Builder $n) => $this->onboarded($n));
+                    }
+                }, label: 'grant:supplierDirectory.onboarding', fallback: 'On Tujitume', values: ['onboarded', 'invited'],
+                    optionLabels: ['onboarded' => 'grant:supplierDirectory.onboarded', 'invited' => 'grant:supplierDirectory.invited'],
+                    countBy: fn (Builder $q) => $this->twoWay($q, fn (Builder $y) => $this->onboarded($y), 'onboarded', 'invited'))
+                ->numberRange('milestones', DB::raw('(select count(*) from milestone_suppliers where milestone_suppliers.supplier_id = supplier_directories.id)'),
+                    label: 'app:listFilterMilestonesAssigned', fallback: 'Milestones assigned')
+                ->boolean('payout_ready', fn (Builder $q, bool $yes) => $yes ? $this->payoutReady($q) : $q->whereNot(fn (Builder $n) => $this->payoutReady($n)),
+                    label: 'app:listFilterPayoutReady', fallback: 'Payment details complete')
+                ->dateRange('added', 'created_at', label: 'app:added')
+                ->sortable(['name' => 'legal_name', 'contact' => 'contact_person', 'payment' => 'payment_method', 'added' => 'created_at'], default: 'name');
+
+            [$suppliers, $page] = $list->fetch();
+            $this->attachOnboardingStatus($suppliers);
+
+            $facets = $list->facets(['category', 'payment']);
+            $facets['status'] = $this->twoWay($list->query('status', sorted: false)->reorder(), fn (Builder $q) => $q->where('is_active', true), 'active', 'inactive');
+            $facets['onboarding'] = $this->twoWay($list->query('onboarding', sorted: false)->reorder(), fn (Builder $q) => $this->onboarded($q), 'onboarded', 'invited');
+
+            // The cards describe the whole directory, whatever the search or filters
+            $all = fn () => (clone $query)->reorder();
+            $total = $all()->count();
+            $categories = $all()->whereNotNull('supplier_type')->where('supplier_type', '!=', '')
+                ->select('supplier_type', DB::raw('count(*) as count'))->groupBy('supplier_type')->orderByDesc('count')->get();
+            $stats = [
+                'total' => $total,
+                'active' => $all()->where('is_active', true)->count(),
+                'onboarded' => $all()->tap(fn ($q) => $this->onboarded($q))->count(),
+                'wallet' => $all()->where('payment_method', 'mpesa_lipr')->count(),
+                'wallet_ready' => $all()->where('payment_method', 'mpesa_lipr')->whereNotNull('lipr_wallet')->where('lipr_wallet', '!=', '')->count(),
+                'categories' => $categories->count(),
+                'top_categories' => $categories->take(2)->map(fn ($c) => ['name' => $c->supplier_type, 'count' => (int) $c->count])->values(),
+            ];
+
+            $body = [
+                'data' => $suppliers->values(),
+                'facets' => $facets,
+                'filter_schema' => $list->filterSchema(),
+                'stats' => $stats,
+                'export_truncated' => false,
+            ];
+            if ($page) {
+                $body['pagination'] = ApiContract::pagination($page);
+                $body += [
+                    'current_page' => $page->currentPage(),
+                    'last_page' => $page->lastPage(),
+                    'per_page' => $page->perPage(),
+                    'total' => $page->total(),
+                    'from' => $page->firstItem(),
+                    'to' => $page->lastItem(),
+                ];
             }
 
-            // Order by name
-            $suppliers = $query->orderBy('legal_name')->paginate(20);
-            $this->attachOnboardingStatus($suppliers->getCollection());
-
-            return response()->json($suppliers, 200);
+            return response()->json($body, 200);
 
         } catch (\Exception $e) {
             ErrorLogService::report($e);
             return response()->json(['message' => 'Something went wrong'], 500);
         }
+    }
+
+    /** The program side's label key (grant:supplierDirectory.*) for each payment method, in the order the form lists them. */
+    private const PAYMENT_LABEL_KEYS = [
+        'mpesa_lipr' => 'methodLiprWallet', 'mpesa_paybill' => 'methodMpesaPaybill', 'mpesa_till' => 'methodMpesaTill',
+        'mpesa_mobile' => 'methodMpesaMobile', 'bank_transfer' => 'methodBankTransfer', 'other' => 'methodOther',
+    ];
+
+    /** The details the supplier's payment method needs are filled in (the account money would go to); "other" needs none. */
+    private function payoutReady(Builder $q): void
+    {
+        $filled = fn (Builder $w, string $column) => $w->whereNotNull('supplier_directories.'.$column)->where('supplier_directories.'.$column, '!=', '');
+        $q->where(function (Builder $any) use ($filled) {
+            $any->where(fn (Builder $w) => $filled($w->where('supplier_directories.payment_method', 'mpesa_lipr'), 'lipr_wallet'))
+                ->orWhere(fn (Builder $w) => $filled($w->where('supplier_directories.payment_method', 'mpesa_mobile'), 'lipr_mobile_number'))
+                ->orWhere(fn (Builder $w) => $filled($filled($w->where('supplier_directories.payment_method', 'mpesa_paybill'), 'mpesa_paybill_number'), 'mpesa_paybill_account'))
+                ->orWhere(fn (Builder $w) => $filled($w->where('supplier_directories.payment_method', 'mpesa_till'), 'mpesa_till_number'))
+                ->orWhere(fn (Builder $w) => $filled($filled($w->where('supplier_directories.payment_method', 'bank_transfer'), 'bank_name'), 'bank_account_number'))
+                ->orWhere('supplier_directories.payment_method', 'other');
+        });
+    }
+
+    /** A supplier is on Tujitume when it is linked to an account, or an account has its email. */
+    private function onboarded(Builder $q): void
+    {
+        $q->where(function (Builder $w) {
+            $w->whereNotNull('supplier_directories.user_id')
+                ->orWhereExists(fn ($u) => $u->from('users')->whereRaw('LOWER(users.email) = LOWER(supplier_directories.email)'));
+        });
+    }
+
+    /** [{value, count}] for a yes/no filter, counted on $q (search and the other filters applied). */
+    private function twoWay(Builder $q, \Closure $yes, string $yesValue, string $noValue): array
+    {
+        $all = (clone $q)->count();
+        $count = (clone $q)->tap($yes)->count();
+
+        return array_values(array_filter([
+            ['value' => $yesValue, 'count' => $count],
+            ['value' => $noValue, 'count' => $all - $count],
+        ], fn ($o) => $o['count'] > 0));
     }
 
     /**
@@ -73,10 +182,15 @@ class SupplierDirectoryController extends Controller
         $userId = auth()->id();
 
         try {
-            $supplier = SupplierDirectory::where('user_id', $userId)
+            // The owner's suppliers, as the directory lists them: the ones they added, or their own supplier record
+            $supplier = SupplierDirectory::where('id', $supplierId)
+                ->where(function ($q) use ($userId) {
+                    $q->where('user_id', $userId)->orWhere('added_by', $userId);
+                })
                 ->findOrFail($supplierId);
 
             $this->attachOnboardingStatus(collect([$supplier]));
+            $this->attachPaymentHistory($supplier);
 
             return response()->json(['data' => $supplier], 200);
 
@@ -96,7 +210,11 @@ class SupplierDirectoryController extends Controller
     public function assignedMilestones(Request $request, $supplierId)
     {
         try {
-            $supplier = SupplierDirectory::where('user_id', auth()->id())
+            $userId = auth()->id();
+            $supplier = SupplierDirectory::where('id', $supplierId)
+                ->where(function ($q) use ($userId) {
+                    $q->where('user_id', $userId)->orWhere('added_by', $userId);
+                })
                 ->findOrFail($supplierId);
 
             $assignments = $supplier->milestoneAssignments()
@@ -289,7 +407,11 @@ class SupplierDirectoryController extends Controller
 
         DB::beginTransaction();
         try {
-            $supplier = SupplierDirectory::where('id', $supplierId)
+            $supplier = // Only the owner's own suppliers (same scope as the directory list)
+                SupplierDirectory::where('id', $supplierId)
+                ->where(function ($q) use ($userId) {
+                    $q->where('user_id', $userId)->orWhere('added_by', $userId);
+                })
                 ->findOrFail($supplierId);
 
             $validated = $request->validate([
@@ -368,7 +490,11 @@ class SupplierDirectoryController extends Controller
 
         DB::beginTransaction();
         try {
-            $supplier = SupplierDirectory::where('id', $supplierId)
+            $supplier = // Only the owner's own suppliers (same scope as the directory list)
+                SupplierDirectory::where('id', $supplierId)
+                ->where(function ($q) use ($userId) {
+                    $q->where('user_id', $userId)->orWhere('added_by', $userId);
+                })
                 ->findOrFail($supplierId);
 
             // Check if supplier is assigned to any milestones
@@ -566,6 +692,29 @@ class SupplierDirectoryController extends Controller
     }
     
     /**
+     * What the supplier drawer shows about how a supplier is paid: their milestones, how many payments reached them
+     * and how much, when the last one was, the way they were paid most (from the payments themselves), and whether
+     * they have a Tujitume wallet of their own (when they use Tujitume).
+     */
+    private function attachPaymentHistory(SupplierDirectory $supplier): void
+    {
+        $links = \App\Models\Programs\MilestoneSupplier::where('supplier_id', $supplier->id)->pluck('id');
+        $paid = \App\Models\Programs\Disbursement::whereIn('supplier_id', $links)->where('status', 'completed');
+        $mostUsed = (clone $paid)->whereNotNull('payment_method')->select('payment_method', DB::raw('COUNT(*) as uses'))
+            ->groupBy('payment_method')->orderByDesc('uses')->value('payment_method');
+        $account = $supplier->account_id ? User::find($supplier->account_id, ['id', 'lipr_wallet']) : null;
+
+        $supplier->setAttribute('payment_history', [
+            'milestones' => $links->count(),
+            'payments' => (clone $paid)->count(),
+            'total_paid' => round((float) (clone $paid)->sum('amount'), 2),
+            'last_paid_at' => (clone $paid)->max('disbursed_at'),
+            'most_used_method' => $mostUsed,
+            'has_tujitume_wallet' => filled($account?->lipr_wallet),
+        ]);
+    }
+
+    /**
      * Adds `status` to each supplier: "onboarded" once the supplier has a Tujitume
      * account (matched by email), otherwise "invited". One query for the whole page.
      */
@@ -574,8 +723,10 @@ class SupplierDirectoryController extends Controller
         $emails = $suppliers->pluck('email')->filter()->map(fn ($e) => strtolower($e))->unique()->values()->all();
         $registered = [];
         if ($emails) {
-            foreach (User::whereIn(DB::raw('LOWER(email)'), $emails)->get(['id', 'email', 'image']) as $user) {
-                $registered[strtolower($user->email)] = $user;
+            foreach (array_chunk($emails, 1000) as $batch) { // a whole-directory export stays a few queries, never one per row
+                foreach (User::whereIn(DB::raw('LOWER(email)'), $batch)->get(['id', 'email', 'image']) as $user) {
+                    $registered[strtolower($user->email)] = $user;
+                }
             }
         }
 

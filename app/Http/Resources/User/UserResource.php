@@ -87,6 +87,9 @@ class UserResource extends JsonResource
                 'lipr_wallet' => $organization->lipr_wallet,
                 'stripe_account_id' => $organization->stripe_account_id,
                 'status' => $organization->status,
+                // A 7-day demo account: no KYC or wallet set-up is asked of it (it gets "Get full access" instead)
+                'is_trial' => (bool) $organization->is_trial,
+                'trial_expires_at' => $organization->trial_expires_at?->toISOString(),
             ];
         }
 
@@ -133,6 +136,8 @@ class UserResource extends JsonResource
             'lipr_wallet' => $liprWallet,
             'stripe_onboard' => $stripeAccountId && $this->completed_onboarding ? 1 : 0,
             'lipr_onboard' => $liprWallet ? 1 : 0,
+            // false: a program organisation without an active plan (creating and publishing programs is held back)
+            'subscription_active' => ! ($this->resource->exists && \App\Service\Subscription\SubscriptionAccess::blocked($this->resource)),
             'organization' => $organizationPayload,
             'role' => $role,
             'organization_membership' => $organizationMembership,
@@ -149,6 +154,11 @@ class UserResource extends JsonResource
             $user['updated_at'] = $this->updated_at;
             $user['email_verified_at'] = $this->email_verified_at
                 ?? \App\Models\EmailVerificationCode::where('email', $this->email)->whereNotNull('verified_at')->latest('verified_at')->value('verified_at');
+
+            // The address this person's links open on (their organisation's workspace), or null for the main site.
+            // The app uses it to move someone who opened an older main-site link over to their workspace.
+            $workspace = \App\Service\Notification\RecipientUrl::workspaceFor($this->resource);
+            $user['workspace_url'] = $workspace ? \App\Service\Notification\RecipientUrl::workspaceBase($workspace) : null;
         }
 
         if (! $isOrganization) {

@@ -7,7 +7,7 @@
         <p>Accept this invitation to create your new password. After that you can log in with this email (<strong>{{ $email }}</strong>) and your new password.</p>
 
         <div style="text-align:center;margin-top:2rem;">
-            <a href="{{ config('app.app_url') }}create-password?jmru_Eid={{ base64_encode($email) }}" style="background-color:#14532d;color:white;display:inline-block;padding:0.85rem 2rem;border-radius:999px;text-decoration:none;font-weight:700;font-size:1rem;box-shadow:0 4px 12px rgba(0,0,0,0.18);">Accept Invitation</a>
+            <a href="{{ $app_url ?? config('app.app_url') }}create-password?jmru_Eid={{ base64_encode($email) }}" style="background-color:#14532d;color:white;display:inline-block;padding:0.85rem 2rem;border-radius:999px;text-decoration:none;font-weight:700;font-size:1rem;box-shadow:0 4px 12px rgba(0,0,0,0.18);">Accept Invitation</a>
         </div>
 
         @include('programs.partials.brand_footer')

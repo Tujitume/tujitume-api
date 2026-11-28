@@ -11,7 +11,7 @@ use Symfony\Component\HttpFoundation\Response;
 
 class FormatDatesForUser
 {
-    /** Apply the authenticated user's calendar-date preference to JSON API responses. */
+    /** Apply the authenticated user's date format and time zone (Settings) to JSON API responses. */
     public function handle(Request $request, Closure $next): Response
     {
         $response = $next($request);
@@ -21,13 +21,16 @@ class FormatDatesForUser
         }
 
         $user = $request->user();
-        $dateFormat = $user->relationLoaded('settings')
-            ? $user->settings?->date_format
-            : UserSetting::query()->where('user_id', $user->id)->value('date_format');
+        $settings = $user->relationLoaded('settings')
+            ? $user->settings
+            : UserSetting::query()->where('user_id', $user->id)->first(['date_format', 'timezone']);
 
         $response->setData(UserDateFormatter::transform(
             $response->getData(true),
-            $dateFormat ?? UserDateFormatter::DEFAULT_FORMAT,
+            $settings?->date_format ?? UserDateFormatter::DEFAULT_FORMAT,
+            null,
+            // Settings > Timezone when chosen, else the zone of the device making the request (sent by the app as X-Timezone)
+            UserDateFormatter::zone($settings?->timezone ?: $request->header('X-Timezone')),
         ));
 
         return $response;

@@ -23,8 +23,6 @@ class NotificationService
      */
     private function store($receiver_id, $customer_id, $bid_id, $text, $link, $type)
     {
-        if (class_exists(\App\Modules\ProgramImport\Silent\OutboundGuard::class) && \App\Modules\ProgramImport\Silent\OutboundGuard::shouldSuppress((int) $receiver_id)) return null; // program import: silent mode / unclaimed imported accounts
-
         $now=date("Y-m-d H:i"); $date=date('d M, h:i a',strtotime($now));
 
         // The columns are 1000 (text) and 200 (link) characters: a longer value would make the insert fail

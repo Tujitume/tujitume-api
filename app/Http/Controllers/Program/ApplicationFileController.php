@@ -5,7 +5,9 @@ namespace App\Http\Controllers\Program;
 use App\Http\Controllers\Controller;
 use App\Models\Programs\ProgramApplication;
 use App\Models\Programs\Rounds\ApplicationRoundResponse;
+use App\Models\Programs\Rounds\ProgramRound;
 use App\Models\Programs\Rounds\ReviewerApplicationAssignment;
+use App\Models\Programs\Rounds\RoundRequiredDocument;
 use App\Service\Program\ProgramAccess;
 use Illuminate\Support\Facades\Storage;
 
@@ -28,17 +30,43 @@ class ApplicationFileController extends Controller
             return response()->json(['message' => 'File not found.'], 404);
         }
 
-        $round = $application->currentRound ?? $answer->round;
-        $user = auth()->user();
-        $allowed = $round && (
-            ProgramAccess::owns($round->program)
-            || ReviewerApplicationAssignment::where(['round_id' => $round->id, 'application_id' => $application->id, 'reviewer_id' => $user->id])->exists()
-        );
-        if (! $allowed) {
+        if (! $this->mayOpen($application, $application->currentRound ?? $answer->round)) {
             return response()->json(['message' => 'You do not have access to this application.'], 403);
         }
 
-        $path = $answer->allFilePaths()[(int) request('index', 0)] ?? null;
+        return $this->stream($answer->allFilePaths()[(int) request('index', 0)] ?? null);
+    }
+
+    /**
+     * GET applications/{application}/documents/{document}/file: a required document of a round (round_documents), for
+     * the same people as the answers' files. Replaces reading it through its public signed link.
+     */
+    public function documentFile(ProgramApplication $application, RoundRequiredDocument $document)
+    {
+        if ((int) $document->application_id !== (int) $application->id) {
+            return response()->json(['message' => 'File not found.'], 404);
+        }
+        $round = $document->round_id ? ProgramRound::find($document->round_id) : $application->currentRound;
+        if (! $this->mayOpen($application, $round)) {
+            return response()->json(['message' => 'You do not have access to this application.'], 403);
+        }
+
+        return $this->stream($document->file_path);
+    }
+
+    /** The program's owner side, or a Business Coach assigned to this application in that round. */
+    private function mayOpen(ProgramApplication $application, ?ProgramRound $round): bool
+    {
+        $user = auth()->user();
+
+        return $round && (
+            ProgramAccess::owns($round->program)
+            || ReviewerApplicationAssignment::where(['round_id' => $round->id, 'application_id' => $application->id, 'reviewer_id' => $user->id])->exists()
+        );
+    }
+
+    private function stream(?string $path)
+    {
         $disk = Storage::disk('s3');
         if (! $path || ! $disk->exists($path)) {
             return response()->json(['message' => 'File not found.'], 404);

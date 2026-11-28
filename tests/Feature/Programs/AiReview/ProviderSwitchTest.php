@@ -51,3 +51,16 @@ it('does not ask the organization to accept again when it switches between provi
     config(['ai_review.providers.cerebras.base_url' => 'https://api.cerebras.ai/v1']);
     expect($gate->satisfied('cerebras', $org->fresh()))->toBeFalse();
 });
+
+it('says the organization has not confirmed applicant data may go to the AI, rather than that no provider is set up', function () {
+    config(['ai_review.enabled' => true, 'ai_review.external_calls_disabled' => false, 'ai_review.default_provider' => 'amari', 'ai_review.fallbacks' => [],
+        'ai_review.providers.amari.api_key' => 'test-key', 'ai_review.providers.amari.allow_applicant_data' => false]);
+    $router = app(ProviderRouter::class);
+    $org = app(PrivacyGate::class)->organizationFor($this->program);
+    $org?->forceFill(['ai_data_ack_at' => null, 'ai_data_ack_provider' => null])->save();
+
+    expect($router->pick($this->program, 100)['reason'])->toBe('no_consent');
+
+    config(['ai_review.providers.amari.api_key' => '']);
+    expect($router->pick($this->program, 100)['reason'])->toBe('no_provider');
+});

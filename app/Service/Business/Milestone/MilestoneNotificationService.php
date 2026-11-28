@@ -34,7 +34,7 @@ class MilestoneNotificationService
                 $data = [
                     'investorName' => $investor->first_name,
                     'milestoneName' => $milestone->title,
-                    'reviewUrl' => 'https://beta.tujitume.com/dashboard/milestones',
+                    'reviewUrl' => \App\Service\Notification\RecipientUrl::url('dashboard/milestones', $mail_to),
                 ];
                 $this->emailService->send($subject, 'milestone.rmep.bo_submitted_rmep', $data, $mail_to);
 //                Investors vote:
@@ -56,7 +56,7 @@ class MilestoneNotificationService
             $data = [
                 'boName' => $recipient->first_name,
                 'milestoneName' => $milestone->title,
-                'reviewUrl' => 'https://beta.tujitume.com/dashboard/milestones',
+                'reviewUrl' => \App\Service\Notification\RecipientUrl::url('dashboard/milestones', $mail_to),
             ];
             $this->emailService->send($subject, 'milestone.rmep.approved', $data, $mail_to);
 
@@ -80,7 +80,7 @@ class MilestoneNotificationService
             $data = [
                 'boName' => $recipient->first_name,
                 'milestoneName' => $milestone->title,
-                'reviewUrl' => 'https://beta.tujitume.com/dashboard/milestones',
+                'reviewUrl' => \App\Service\Notification\RecipientUrl::url('dashboard/milestones', $mail_to),
             ];
             $this->emailService->send($subject, 'milestone.rmep.rejected', $data, $mail_to);
 
@@ -95,7 +95,7 @@ class MilestoneNotificationService
                 $data = [
                     'investorName' => $investor->first_name,
                     'milestoneName' => $milestone->title,
-                    'reviewUrl' => 'https://beta.tujitume.com/dashboard/milestones',
+                    'reviewUrl' => \App\Service\Notification\RecipientUrl::url('dashboard/milestones', $mail_to),
                 ];
                 $this->emailService->send($subject, 'milestone.rmep.rejected_to_all', $data, $mail_to);
             }
@@ -119,7 +119,7 @@ class MilestoneNotificationService
                 'boName' => $recipient->first_name,
                 'investorName' => $investor->first_name. ' '.$investor->last_name ,
                 'documents' => $info, // e.g., ['Invoice','Certificate']
-                'dashboardUrl' => 'https://beta.tujitume.com/dashboard/milestones',
+                'dashboardUrl' => \App\Service\Notification\RecipientUrl::url('dashboard/milestones', $mail_to),
             ];
             $this->emailService->send($subject, 'milestone.pre_release.pre_release_requested', $data, $mail_to);
         }
@@ -127,7 +127,9 @@ class MilestoneNotificationService
 
             $text = 'Milestone '. $milestone->title. ' has documents from business owner ready for review.';
             $subject = 'Pre Release Documents Submitted ';
-            $investors = $milestone->investors;
+            // Each investor has their own pre-release request: tell the one whose request was answered (all of them only
+            // when no one is named), not every investor once per upload
+            $investors = $recipient ? collect([$recipient]) : $milestone->investors;
 
             foreach($investors as $investor){
                 $this->notification->create(
@@ -138,7 +140,7 @@ class MilestoneNotificationService
                 $data = [
                     'investorName' => $investor->first_name,
                     'milestoneName' => $milestone->title,
-                    'reviewUrl' => 'https://beta.tujitume.com/dashboard/milestones',
+                    'reviewUrl' => \App\Service\Notification\RecipientUrl::url('dashboard/milestones', $mail_to),
                 ];
                 $this->emailService->send($subject, 'milestone.pre_release.bo_submitted_documents', $data, $mail_to);
             }
@@ -156,7 +158,7 @@ class MilestoneNotificationService
             $data = [
                 'boName' => $recipient->first_name,
                 'milestoneName' => $milestone->title,
-                'reviewUrl' => 'https://beta.tujitume.com/dashboard/milestones',
+                'reviewUrl' => \App\Service\Notification\RecipientUrl::url('dashboard/milestones', $mail_to),
             ];
             $this->emailService->send($subject, 'milestone.pre_release.approved', $data, $mail_to);
 
@@ -185,7 +187,7 @@ class MilestoneNotificationService
             $data = [
                 'boName' => $recipient->first_name,
                 'milestoneName' => $milestone->title,
-                'reviewUrl' => 'https://beta.tujitume.com/dashboard/milestones',
+                'reviewUrl' => \App\Service\Notification\RecipientUrl::url('dashboard/milestones', $mail_to),
             ];
             $this->emailService->send($subject, 'milestone.pre_release.rejected', $data, $mail_to);
 
@@ -222,7 +224,7 @@ class MilestoneNotificationService
                 'boName' => $recipient->first_name,
                 'investorName' => $investor->first_name.' '.$investor->last_name,
                 'milestoneName' => $milestone->title,
-                'reviewUrl' => 'https://beta.tujitume.com/dashboard/milestones',
+                'reviewUrl' => \App\Service\Notification\RecipientUrl::url('dashboard/milestones', $mail_to),
             ];
             $this->emailService->send($subject, 'milestone.pre_release.rejected_by_one', $data, $mail_to);
 
@@ -240,7 +242,7 @@ class MilestoneNotificationService
             $data = [
                 'investorName' => $recipient->first_name,
                 'milestoneName' => $milestone->title,
-                'reviewUrl' => 'https://beta.tujitume.com/dashboard/milestones',
+                'reviewUrl' => \App\Service\Notification\RecipientUrl::url('dashboard/milestones', $mail_to),
             ];
             $this->emailService->send($subject, 'milestone.pre_release.needs_pm_audit', $data, $mail_to);
         }
@@ -256,7 +258,7 @@ class MilestoneNotificationService
             $data = [
                 'investorName' => $recipient->first_name,
                 'milestoneName' => $milestone->title,
-                'reviewUrl' => 'https://beta.tujitume.com/dashboard/milestones',
+                'reviewUrl' => \App\Service\Notification\RecipientUrl::url('dashboard/milestones', $mail_to),
             ];
             $this->emailService->send($subject, 'milestone.pre_release.admin_escalation', $data, $mail_to);
         }
@@ -281,7 +283,7 @@ class MilestoneNotificationService
                 $data = [
                     'investorName' => $investor->first_name,
                     'milestoneName' => $milestone->title,
-                    'reviewUrl' => 'https://beta.tujitume.com/dashboard/milestones',
+                    'reviewUrl' => \App\Service\Notification\RecipientUrl::url('dashboard/milestones', $mail_to),
                 ];
                 $this->emailService->send($subject, 'milestone.mid_milestone.bo_submitted_documents', $data, $mail_to);
             }
@@ -298,7 +300,7 @@ class MilestoneNotificationService
             $data = [
                 'boName' => $recipient->first_name,
                 'milestoneName' => $milestone->title,
-                'reviewUrl' => 'https://beta.tujitume.com/dashboard/milestones',
+                'reviewUrl' => \App\Service\Notification\RecipientUrl::url('dashboard/milestones', $mail_to),
             ];
             $this->emailService->send($subject, 'milestone.mid_milestone.approved', $data, $mail_to);
 
@@ -333,7 +335,7 @@ class MilestoneNotificationService
                 'boName' => $recipient->first_name,
                 'milestoneName' => $midMilestone->milestone->title,
                 'reasons_list' => $reasons_list,
-                'reviewUrl' => 'https://beta.tujitume.com/dashboard/milestones',
+                'reviewUrl' => \App\Service\Notification\RecipientUrl::url('dashboard/milestones', $mail_to),
             ];
             $this->emailService->send($subject, 'milestone.mid_milestone.rejected', $data, $mail_to);
 
@@ -357,7 +359,7 @@ class MilestoneNotificationService
             $data = [
                 'boName' => $recipient->first_name,
                 'milestoneName' => $milestone->title,
-                'reviewUrl' => 'https://beta.tujitume.com/dashboard/milestones',
+                'reviewUrl' => \App\Service\Notification\RecipientUrl::url('dashboard/milestones', $mail_to),
             ];
             $this->emailService->send($subject, 'milestone.mid_milestone.pm_audit_request', $data, $mail_to);
 
@@ -386,7 +388,7 @@ class MilestoneNotificationService
                 $data = [
                     'investorName' => $investor->first_name,
                     'milestoneName' => $milestone->title,
-                    'reviewUrl' => 'https://beta.tujitume.com/dashboard/milestones',
+                    'reviewUrl' => \App\Service\Notification\RecipientUrl::url('dashboard/milestones', $mail_to),
                 ];
                 $this->emailService->send($subject, 'milestone.final_approval.bo_submitted_documents', $data, $mail_to);
             }
@@ -398,12 +400,12 @@ class MilestoneNotificationService
             );
 
             // E m a i l
-            $subject = 'Milestone Finally Approved, Funds Released';
+            $subject = 'Milestone Completed: Approved by Your Investors';
             $mail_to = $recipient->email;
             $data = [
                 'boName' => $recipient->first_name,
                 'milestoneName' => $milestone->title,
-                'reviewUrl' => 'https://beta.tujitume.com/dashboard/milestones',
+                'reviewUrl' => \App\Service\Notification\RecipientUrl::url('dashboard/milestones', $mail_to),
             ];
             $this->emailService->send($subject, 'milestone.final_approval.approved', $data, $mail_to);
 
@@ -430,7 +432,7 @@ class MilestoneNotificationService
                 'boName' => $recipient->first_name,
                 'milestoneName' => $milestone->title,
                 'reasons_list' => [], //$reasons_list,
-                'reviewUrl' => 'https://beta.tujitume.com/dashboard/milestones',
+                'reviewUrl' => \App\Service\Notification\RecipientUrl::url('dashboard/milestones', $mail_to),
             ];
             $this->emailService->send($subject, 'milestone.final_approval.rejected', $data, $mail_to);
 
@@ -456,7 +458,7 @@ class MilestoneNotificationService
             $data = [
                 'boName' => $recipient->first_name,
                 'milestoneName' => $milestone->title,
-                'reviewUrl' => 'https://beta.tujitume.com/dashboard/milestones',
+                'reviewUrl' => \App\Service\Notification\RecipientUrl::url('dashboard/milestones', $mail_to),
             ];
             $this->emailService->send($subject, 'milestone.final_approval.pm_audit_request', $data, $mail_to);
 

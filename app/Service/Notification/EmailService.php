@@ -6,10 +6,9 @@ use Illuminate\Support\Facades\Mail;
 class EmailService
 {
 
-    public function send(string $subject, string $view, $data, $email)
+    /** @return bool whether the email was handed to the mailer (false when sending failed; the error is logged) */
+    public function send(string $subject, string $view, $data, $email): bool
     {
-        if (class_exists(\App\Modules\ProgramImport\Silent\OutboundGuard::class) && \App\Modules\ProgramImport\Silent\OutboundGuard::shouldSuppress($email)) return; // program import: silent mode / unclaimed imported accounts
-
         try{
             $data = $this->withDefaults($view, (array) $data, $email);
 
@@ -20,11 +19,15 @@ class EmailService
                 $message->to($email)->subject($subject);
                 if ($fromName) $message->from(config('mail.from.address'), $fromName);
             });
+
+            return true;
         }
         catch (\Exception $e) {
             ErrorLogService::report($e, [
                 'input' => request()->except(['password', 'token']),
             ]);
+
+            return false;
         }
 
     }
@@ -39,8 +42,18 @@ class EmailService
         $data['brand'] ??= EmailBrand::forEmail($email);
 
         if (empty($data['action_url']) && ($target = EmailLink::forView($view))) {
-            $data['action_url']   = EmailLink::url($target['key']);
+            $data['action_url']   = EmailLink::url($target['key'], is_string($email) || is_array($email) ? $email : null);
             $data['action_label'] ??= $target['label'];
+        }
+
+        // Links the caller built on the main site open on the recipient's own address instead
+        // (their organisation's workspace when they work inside one). Other hosts are left alone.
+        if (is_string($email) || is_array($email)) {
+            foreach ($data as $key => $value) {
+                if (is_string($value) && preg_match('/(_url|Url|_link|Link)$/', (string) $key)) {
+                    $data[$key] = RecipientUrl::rebase($value, $email);
+                }
+            }
         }
 
         return $data;

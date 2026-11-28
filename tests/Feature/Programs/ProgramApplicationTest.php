@@ -121,6 +121,16 @@ describe('Application endpoints', function () {
             ->assertStatus(422)->assertJson(['message' => 'Program is not open for applications.']);
     });
 
+    it('records an approved single-round application as awarded in the round history, which Finalize Round counts', function () {
+        $this->program->update(['program_type' => 'single_round']);
+        \App\Models\ApplicationRoundHistory::create(['application_id' => $this->application->id, 'round_id' => $this->round->id, 'round_number' => 1, 'entered_at' => now(), 'outcome' => 'in_progress']);
+
+        $this->actingAs($this->orgUser, 'sanctum')->postJson("/api/v1/programs/applications/{$this->application->id}/accept")->assertOk();
+
+        expect($this->application->fresh()->status)->toBe('awarded')
+            ->and(\App\Models\ApplicationRoundHistory::where('application_id', $this->application->id)->value('outcome'))->toBe('awarded');
+    });
+
     it('requires the program owner to accept an application', function () {
         $this->actingAsApplicant()->postJson("/api/v1/programs/applications/{$this->application->id}/accept")
             ->assertStatus(403)->assertJson(['success' => false, 'message' => 'Unauthorized.']);

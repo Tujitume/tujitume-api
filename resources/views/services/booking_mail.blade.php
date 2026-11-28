@@ -26,8 +26,8 @@
         <p>If you no longer wish to proceed, you may cancel the booking using the Cancel button.</p>
 
         <div style="text-align:center;margin-top:2rem;">
-            <a href="{{ config('app.app_url') }}service-milestones/{{ $s_id }}" style="background-color:#14532d;color:white;display:inline-block;padding:0.85rem 2rem;border-radius:999px;text-decoration:none;font-weight:700;font-size:1rem;box-shadow:0 4px 12px rgba(0,0,0,0.18);margin:0.25rem;">Pay Here</a>
-            <a href="{{ config('app.api_url') }}CancelBookingConfirm/{{ $booking_id }}/confirm" style="background-color:#9f1239;color:white;display:inline-block;padding:0.85rem 2rem;border-radius:999px;text-decoration:none;font-weight:700;font-size:1rem;box-shadow:0 4px 12px rgba(0,0,0,0.18);margin:0.25rem;">Cancel</a>
+            <a href="{{ $link ?? (($app_url ?? config('app.app_url')).'service-milestones/'.$s_id) }}" style="background-color:#14532d;color:white;display:inline-block;padding:0.85rem 2rem;border-radius:999px;text-decoration:none;font-weight:700;font-size:1rem;box-shadow:0 4px 12px rgba(0,0,0,0.18);margin:0.25rem;">Pay Here</a>
+            <a href="{{ $link ?? (config('app.api_url').'CancelBookingConfirm/'.$booking_id.'/confirm') }}" style="background-color:#9f1239;color:white;display:inline-block;padding:0.85rem 2rem;border-radius:999px;text-decoration:none;font-weight:700;font-size:1rem;box-shadow:0 4px 12px rgba(0,0,0,0.18);margin:0.25rem;">Cancel</a>
         </div>
 
         <p style="margin-top:1.5rem;">If you need assistance, reach out to us at <a href="mailto:support@tujitume.com" style="color:#14532d;">support@tujitume.com</a>.</p>

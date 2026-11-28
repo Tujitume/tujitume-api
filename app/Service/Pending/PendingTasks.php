@@ -43,9 +43,14 @@ class PendingTasks
     {
         $type = (int) $user->user_type_id;
 
+        // The program owner's decisions (approve work, fund the wallet, finalize, decide...) are only for team
+        // members who may act on them: a viewer or an internal Business Coach cannot, so they do not see them
+        $manages = $type !== 4 || \App\Service\Organization\OrganizationPermission::can($user, 'edit');
+
         $groups = [];
         foreach (self::registry() as $key => $scenario) {
             if (! $scenario->appliesTo($type)) continue;
+            if (! $manages && str_starts_with(get_class($scenario), __NAMESPACE__.'\\Scenarios\\Owner\\')) continue;
             try {
                 $found = $scenario->forUser($user)->collect();
             } catch (\Throwable $e) {

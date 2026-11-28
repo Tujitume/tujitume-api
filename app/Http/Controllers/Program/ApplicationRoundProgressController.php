@@ -50,6 +50,25 @@ class ApplicationRoundProgressController extends Controller
                 );
             })->values();
 
+            // Scores, rank and "eligible to advance" are the review's working results: the applicant sees them once
+            // the round's result is decided (the round finalized, or they advanced / were not selected / awarded),
+            // never while Business Coaches are still scoring. Until then an application in review reads "submitted".
+            $decidedOutcomes = ['advanced', 'not_selected', 'awarded', 'withdrawn'];
+            $roundsData = $roundsData->map(function ($row) use ($decidedOutcomes) {
+                $decided = $row['round_status'] === 'finalized' || in_array($row['history']['outcome'] ?? null, $decidedOutcomes, true);
+                if (! $decided && $row['history']) {
+                    $row['history']['average_score'] = null;
+                    $row['history']['rank_in_round'] = null;
+                    $row['history']['total_applicants_in_round'] = null;
+                }
+                return $row;
+            });
+            $currentDecided = in_array($application->status, ['awarded', 'rejected'], true)
+                || in_array($application->round_status, ['advanced', 'not_selected', 'awarded'], true)
+                || $application->currentRound?->status === 'finalized';
+            $roundStatus = ! $currentDecided && in_array($application->round_status, ['assigned', 'under_review', 'scored'], true)
+                ? 'submitted' : $application->round_status;
+
             return response()->json([
                 'application' => [
                     'application_id' => $application->id,
@@ -57,11 +76,18 @@ class ApplicationRoundProgressController extends Controller
                     'total_rounds' => (int) ($program->total_rounds ?: $rounds->count()),
                     'submitted_at' => $application->created_at,
                     'status' => $application->status,
-                    'round_status' => $application->round_status,
+                    'round_status' => $roundStatus,
                     'knockout_status' => $application->knockout_status,
-                    'average_score' => $application->average_score,
-                    'is_eligible_to_advance' => $application->is_eligible_to_advance,
+                    'average_score' => $currentDecided ? $application->average_score : null,
+                    'is_eligible_to_advance' => $currentDecided ? $application->is_eligible_to_advance : null,
                     'current_round_number' => $application->currentRound?->round_number,
+                    // The same statuses as {value, label, color} (DECISION-7); the plain strings above stay for older screens
+                    'status_meta' => [
+                        'status' => \App\Support\ApiContract::statusMeta('program_application', $application->status),
+                        'round_status' => \App\Support\ApiContract::statusMeta('program_application_round', $roundStatus),
+                        'knockout_status' => \App\Support\ApiContract::statusMeta('knockout', $application->knockout_status),
+                        'funding_setup_status' => \App\Support\ApiContract::statusMeta('funding_setup', $application->funding_setup_status),
+                    ],
                 ],
                 // Where the applicant is and what to do next, worked out here so every screen says the same thing
                 'journey' => $this->journey($application, $program, $rounds, $roundsData),
@@ -96,9 +122,10 @@ class ApplicationRoundProgressController extends Controller
             ? true
             : in_array($roundRs, ['submitted', 'assigned', 'under_review', 'scored', 'advanced', 'not_selected'], true);
 
-        $notOpen = $round->status === 'draft' || ($round->open_date && $round->open_date->copy()->startOfDay()->isFuture());
-        $closed = in_array($round->status, ['closed', 'in_review', 'finalized'], true)
-            || ($round->close_date && $round->close_date->copy()->endOfDay()->isPast());
+        $notOpen = $round->status === 'draft' || ! $round->hasOpened();
+        $closed = in_array($round->status, ['closed', 'in_review', 'finalized'], true) || $round->hasClosed();
+        $zone = $round->scheduleTimezone();
+        $moment = fn ($at) => \App\Support\ProgramSchedule::describe($at, $zone);
 
         $knockout = $data['questions']['knockout'] ?? [];
         $regular = $data['questions']['regular'] ?? [];
@@ -124,7 +151,17 @@ class ApplicationRoundProgressController extends Controller
         $allReady = collect($steps)->where('key', '!=', 'submit')->every(fn ($step) => $step['done']);
 
         // One state, one headline, one sentence
-        if ($application->status === 'awarded') {
+        // DECISION-3: every milestone's final approval is approved
+        if ($application->status === 'completed') {
+            $state = 'completed';
+            $headline = 'Your program is complete';
+            $message = 'Every milestone of your funding plan is approved. Thank you for taking part.';
+        } elseif ($application->status === 'in_monitoring') {
+            // Every milestone paid and approved; the program is checking results (M&E checkpoints) before it closes
+            $state = 'in_monitoring';
+            $headline = 'Your funding is complete: in monitoring';
+            $message = 'Every milestone is paid. The program is now checking results; answer any monitoring checkpoints in your deal room.';
+        } elseif ($application->status === 'awarded') {
             $state = 'awarded';
             $headline = 'Congratulations, you were awarded';
             $message = 'Open your deal room to set up your funding plan.';
@@ -144,7 +181,7 @@ class ApplicationRoundProgressController extends Controller
         } elseif ($notOpen) {
             $state = 'not_open';
             $headline = "{$roundLabel} has not opened yet";
-            $message = ($round->open_date ? 'It opens on ' . $date($round->open_date) . '. ' : 'The organization has not set the date yet. ')
+            $message = ($round->opensAt() ? 'It opens on ' . $moment($round->opensAt()) . '. ' : 'The organization has not set the date yet. ')
                 . 'You were accepted into this round. You can read what it asks for now, and submit once it opens.';
         } elseif ($closed) {
             $state = 'missed';
@@ -153,7 +190,7 @@ class ApplicationRoundProgressController extends Controller
         } else {
             $state = 'in_progress';
             $headline = "Your turn: complete {$roundLabel}";
-            $message = ($round->close_date ? 'Submit before ' . $date($round->close_date) . '. ' : '')
+            $message = ($round->closesAt() ? 'Submit before ' . $moment($round->closesAt()) . '. ' : '')
                 . ($allReady ? 'Everything is filled in, so you can submit.' : 'Work through the steps below.');
         }
 
@@ -166,6 +203,9 @@ class ApplicationRoundProgressController extends Controller
             'message' => $message,
             'opens' => $date($round->open_date),
             'closes' => $date($round->close_date),
+            // Exact moments (ISO 8601 with offset) for the countdown
+            'opens_at' => $round->opensAt()?->format(\App\Support\ProgramSchedule::JSON_FORMAT),
+            'closes_at' => $round->closesAt()?->format(\App\Support\ProgramSchedule::JSON_FORMAT),
             'results' => $date($round->announcement_date),
             'can_submit' => ! $submitted && ! $notOpen && ! $closed && $allReady,
             'next_step' => in_array($state, ['in_progress', 'not_open'], true) ? ($firstOpenStep && $firstOpenStep['key'] !== 'submit' ? $firstOpenStep['label'] : ($state === 'in_progress' ? 'Submit the round' : null)) : null,
@@ -247,10 +287,10 @@ class ApplicationRoundProgressController extends Controller
             ], 422);
         }
 
-        // The owner chooses when it opens: 'now' makes today the open date, 'on_open_date' keeps the date they set
+        // The owner chooses when it opens: 'now' opens it this minute, 'on_open_date' keeps the moment they set
         $mode = request()->input('mode');
         if ($mode === 'now') {
-            $round->open_date = now()->startOfDay();
+            $round->setWindowMoment('opens', now()->startOfMinute());
         }
 
         // Checklist validation
@@ -265,13 +305,18 @@ class ApplicationRoundProgressController extends Controller
             $errors['dates'] = 'Round must have open and close dates.';
         }
 
-        // Today is fine: only a day that has already passed is refused
-        if ($round->open_date && $round->open_date->copy()->startOfDay() < now()->startOfDay()) {
+        // Today is fine: only a day that has already passed is refused (an earlier time today opens it at once)
+        $zone = $round->scheduleTimezone();
+        if ($round->opensAt() && \App\Support\ProgramSchedule::localDate($round->opensAt(), $zone) < now($zone)->toDateString()) {
             $errors['open_date'] = 'Open date cannot be in the past. Choose today or a later date.';
         }
 
-        if ($round->open_date && $round->close_date && $round->close_date <= $round->open_date) {
+        if ($round->opensAt() && $round->closesAt() && $round->closesAt()->lte($round->opensAt())) {
             $errors['close_date'] = 'Close date must be after open date.';
+        }
+
+        if ($round->closesAt() && $round->closesAt()->isPast()) {
+            $errors['close_date'] = 'The close time has already passed. Choose a later close date or time.';
         }
 
         // A round cannot open without at least one scoring criterion
@@ -340,7 +385,7 @@ class ApplicationRoundProgressController extends Controller
             $round->status = 'published';
             $round->save();
 
-            $opensNow = ! $round->open_date || $round->open_date->copy()->startOfDay()->lessThanOrEqualTo(now()->startOfDay());
+            $opensNow = $round->hasOpened();
 
             // Publishing the first round is what opens the program to applicants: it must be listed for them, with its dates
             // (a duplicated program starts hidden and without dates until this happens)
@@ -348,11 +393,11 @@ class ApplicationRoundProgressController extends Controller
                 $program = $round->program;
                 $program->visible = 1;
                 $program->status = 'published';
-                if (! $program->application_start_date && $round->open_date) {
-                    $program->application_start_date = $round->open_date->toDateString();
+                if (! $program->application_start_date && $round->opensAt()) {
+                    $program->setWindowMoment('opens', $round->opensAt());
                 }
-                if (! $program->application_deadline && $round->close_date) {
-                    $program->application_deadline = $round->close_date->toDateString();
+                if (! $program->application_deadline && $round->closesAt()) {
+                    $program->setWindowMoment('closes', $round->closesAt());
                 }
                 $program->save();
             }
@@ -360,31 +405,17 @@ class ApplicationRoundProgressController extends Controller
             // Applicants who advanced into this round were told "you moved on" when the last round was finalized,
             // which can be before this round existed. Tell them it is open now, so they can complete it.
             // Best effort: the round is already published.
-            if ($opensNow && (int) $round->round_number > 1) {
-                try {
-                    $notifier = new \App\Service\Notification\ProgramNotificationService();
-                    $round->loadMissing('program');
-                    ProgramApplication::with('user')
-                        ->where('current_round_id', $round->id)
-                        ->get()
-                        ->each(fn ($app) => $app->user && $notifier->send('round.opened', [$app->user], [
-                            'program_title'  => $round->program->program_title,
-                            'round_name'     => $round->round_name,
-                            'program_id'     => $round->program_id,
-                            'application_id' => $app->id,
-                            'recipientName'  => $app->user->first_name,
-                        ]));
-                } catch (\Throwable $e) {
-                    \Log::warning('Round opened notification failed: ' . $e->getMessage());
-                }
+            if ($opensNow) {
+                (new \App\Service\Program\RoundOpenedNotifier())->notify($round);
             }
 
             return response()->json([
                 'message' => $opensNow
                     ? 'Round published. It is open now.'
-                    : 'Round published. It opens on ' . $round->open_date->format('j M Y') . '.',
+                    : 'Round published. It opens on ' . \App\Support\ProgramSchedule::describe($round->opensAt(), $round->scheduleTimezone()) . '.',
                 'opens_now' => $opensNow,
                 'open_date' => $round->open_date?->toDateString(),
+                'opens_at' => $round->opensAt()?->format(\App\Support\ProgramSchedule::JSON_FORMAT),
             ], 200);
 
         } catch (\Exception $e) {

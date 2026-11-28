@@ -39,8 +39,8 @@ class UserSetting extends Model
         'font_weight' => 'light',
         'subscription_status' => 'inactive',
         'language' => 'en',
-        'currency' => 'USD',
-        'timezone' => 'UTC',
+        'currency' => 'KES', // Tujitume works in Kenyan shillings for now (the column's default too)
+        'timezone' => 'Africa/Nairobi', // a new row takes the device's zone instead, see defaults()
         'profile_visibility' => 'public',
         'date_format' => 'DD/MM/YYYY',
         'supported_currencies' => null,
@@ -84,9 +84,10 @@ class UserSetting extends Model
         return $this->belongsTo(User::class);
     }
 
+    /** Settings for a new row: the person's device zone (X-Timezone) when the app sent one, never a blanket UTC */
     public static function defaults(): array
     {
-        return self::DEFAULTS;
+        return array_merge(self::DEFAULTS, ['timezone' => \App\Support\ProgramSchedule::deviceZone()]);
     }
 
     public function toFrontendArray(): array

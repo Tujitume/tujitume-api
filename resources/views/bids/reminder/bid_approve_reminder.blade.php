@@ -12,7 +12,7 @@
             <p style="margin:0.5rem 0;"><strong>Important:</strong> if no action is taken within <strong>30 days</strong>, bids will be automatically cancelled as per Tujitume policy.</p>
         </div>
         <div style="text-align:center;margin-top:2rem;">
-            <a href="{{ config('app.app_url') }}dashboard/investment-bids" style="background-color:#14532d;color:white;display:inline-block;padding:0.85rem 2rem;border-radius:999px;text-decoration:none;font-weight:700;font-size:1rem;box-shadow:0 4px 12px rgba(0,0,0,0.18);">Review Bids</a>
+            <a href="{{ $app_url ?? config('app.app_url') }}dashboard/investment-bids" style="background-color:#14532d;color:white;display:inline-block;padding:0.85rem 2rem;border-radius:999px;text-decoration:none;font-weight:700;font-size:1rem;box-shadow:0 4px 12px rgba(0,0,0,0.18);">Review Bids</a>
         </div>
 
         @include('programs.partials.brand_footer')

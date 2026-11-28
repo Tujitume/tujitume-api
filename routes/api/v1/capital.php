@@ -1,7 +1,9 @@
 <?php
 
 
+use App\Http\Controllers\Capital\CapitalAuditController;
 use App\Http\Controllers\Capital\CapitalController;
+use App\Http\Controllers\Capital\MyCapitalApplicationsController;
 use App\Http\Controllers\CheckoutStripeController;
 use App\Http\Controllers\Program\ProgramServiceController;
 use App\Http\Controllers\Misc\AnalyticsController;
@@ -12,6 +14,7 @@ Route::prefix('/capital')->middleware(['capital'])->group(function(){
     Route::post('create-capital-offer', [CapitalController::class, 'store']);
     Route::post('investment-application',[CapitalController::class,'store_application']);
     Route::get('capital-offers', [CapitalController::class, 'index']);
+    Route::get('my-applications', [MyCapitalApplicationsController::class, 'index']); // My Capital Applications / Capital Deal Room tables
     Route::get('pitches/{capital_id}', [CapitalController::class, 'pitches']);
     Route::get('pitch/{id}', [CapitalController::class, 'pitch_details']);
     Route::get('get_capital/{id}', [CapitalController::class, 'get_capital']);
@@ -20,7 +23,7 @@ Route::prefix('/capital')->middleware(['capital'])->group(function(){
     Route::get('visibility/{capital_id}', [CapitalController::class, 'visibility']);
     Route::get('delete-capital/{id}', [CapitalController::class, 'destroy']);
     Route::get('accept/{pitch_id}', [CapitalController::class, 'accept']);
-    Route::get('reject/{pitch_id}', [CapitalController::class, 'reject']);
+    Route::match(['get', 'post'], 'reject/{pitch_id}', [CapitalController::class, 'reject']); // POST {reason?}
     Route::get('fund-release-request/{pitch_id}', [CapitalController::class, 'fund_request']);
     Route::post('match-score/{capital_id}', [MatchController::class, 'score_capital']);
     Route::post('capital-milestone', [CheckoutStripeController::class, 'capitalDisbursement']);
@@ -31,12 +34,20 @@ Route::prefix('/capital')->middleware(['capital'])->group(function(){
 
 
     Route::get('program-writing-services', [ProgramServiceController::class, 'programWritingServices']);
-    Route::get('pitch-coaching-services', [ProgramServiceController::class, 'pitchCoachingServices']);
+    Route::get('pitch-coaching-services/{listing_id?}', [ProgramServiceController::class, 'pitchCoachingServices'])->whereNumber('listing_id');
     Route::get('store-watchlist/{pitch_id}', [CapitalController::class, 'store_watchlist']);
     Route::get('get-watchlist', [CapitalController::class, 'get_watchlist']);
     Route::post('update-profile', [CapitalController::class, 'update_profile']);
     Route::post('delete-user',[CapitalController::class,'delete_user']);
     Route::post('delete/role-user',[CapitalController::class,'delete_roleUser']);
     Route::post('update-user',[CapitalController::class,'update_user']);
+    Route::get('team', [CapitalController::class, 'team']);
+    Route::post('invite-user', [CapitalController::class, 'invite_user']);
+
+    // DECISION-9: an optional paid project manager audit before a milestone is released; the portfolio of funded businesses
+    Route::post('milestones/{milestone}/audit', [CapitalAuditController::class, 'request'])->whereNumber('milestone');
+    Route::post('milestones/{milestone}/audit/pay', [CapitalAuditController::class, 'pay'])->whereNumber('milestone');
+    Route::post('milestones/{milestone}/audit/cancel', [CapitalAuditController::class, 'cancel'])->whereNumber('milestone');
+    Route::get('portfolio', [CapitalAuditController::class, 'portfolio']);
 
 });

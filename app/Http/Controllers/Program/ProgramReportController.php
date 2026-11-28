@@ -14,6 +14,7 @@ use App\Service\Program\ProgramAccess;
 use App\Support\ApiContract;
 use App\Support\CollectionList;
 use App\Support\ListQuery;
+use App\Support\ListShapes;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -66,19 +67,45 @@ class ProgramReportController extends Controller
             ->where('status', '!=', 'draft')
             ->with(['user:id,first_name,last_name,image', 'currentRound:id,round_number,round_name']);
 
+        // Described filters (the tab's panel, chips and URL state come from `filter_schema`); every old key still works
+        $sameProgram = fn () => ProgramApplication::query()->where('program_id', $program->id)->where('status', '!=', 'draft');
+        $kycVerified = fn (Builder $q) => $q->whereExists(fn ($k) => $k->from('kyc_verifications')
+            ->whereColumn('kyc_verifications.user_id', 'program_applications.user_id')->where('kyc_verifications.status', 'verified'));
+        $awarded = fn (Builder $q) => $q->where(fn (Builder $w) => $w->whereIn('program_applications.status', ['awarded', 'in_monitoring', 'completed'])->orWhereRaw('COALESCE(program_applications.awarded_amount, 0) > 0')); // COALESCE: "no" must not drop empty amounts
+        $yesNo = fn (callable $where) => fn (Builder $q, bool $yes) => $yes ? $where($q) : $q->whereNot(fn (Builder $n) => $where($n));
+        $label = fn (string $key) => 'grant:view.reports.applications.'.$key;
+
         $list = ListQuery::for($base, $request)
             ->search(['startup_name', 'contact_person_name', 'contact_person_email', 'email', 'sector', 'headquarters_location', 'user.first_name', 'user.last_name'])
-            ->filter('round', 'current_round_id')
-            ->filter('status', 'status')
-            ->filter('sector', 'sector')
-            ->filter('review', function (Builder $q, array $values) use ($scored) {
+            ->filter('id', 'id') // one row by id (a link to a row on another page)
+            ->options('status', 'status', label: $label('filterStatus'))
+            ->entity('round', 'current_round_id', fn (array $ids) => ProgramRound::whereIn('id', $ids)->get(['id', 'round_number', 'round_name'])
+                ->mapWithKeys(fn ($r) => [$r->id => 'Round '.$r->round_number.($r->round_name ? ' · '.$r->round_name : '')])->all(), label: $label('filterRound'), searchable: null)
+            ->options('review', function (Builder $q, array $values) use ($scored) {
                 if (in_array('reviewed', $values, true) && ! in_array('not_reviewed', $values, true)) {
                     $scored($q);
                 } elseif (in_array('not_reviewed', $values, true) && ! in_array('reviewed', $values, true)) {
                     $q->whereNot(fn (Builder $n) => $scored($n));
                 }
-            })
-            ->dateRange('applied', 'created_at')
+            }, label: $label('filterReview'), values: ['reviewed', 'not_reviewed'],
+                optionLabels: ['reviewed' => $label('reviewed'), 'not_reviewed' => $label('notReviewed')],
+                countBy: fn (Builder $q) => [
+                    ['value' => 'reviewed', 'count' => (clone $q)->tap($scored)->toBase()->count()],
+                    ['value' => 'not_reviewed', 'count' => (clone $q)->whereNot(fn (Builder $n) => $scored($n))->toBase()->count()],
+                ])
+            ->options('stage', 'stage', label: 'app:stage')
+            ->options('sector', ListShapes::derivedFilter($sameProgram(), ['sector'], fn ($a) => ListShapes::clean($a->sector)), label: $label('filterSector'),
+                countBy: fn (Builder $q) => ListShapes::derivedFacet($q, ['sector'], fn ($a) => ListShapes::clean($a->sector)))
+            ->options('location', ListShapes::derivedFilter($sameProgram(), ['headquarters_location'], fn ($a) => ListShapes::place($a->headquarters_location)), label: 'app:location',
+                countBy: fn (Builder $q) => ListShapes::derivedFacet($q, ['headquarters_location'], fn ($a) => ListShapes::place($a->headquarters_location)))
+            ->numberRange('match', 'match_score', label: 'app:matchScore')
+            ->options('match_tier', \App\Support\MatchTier::sql('match_score'), label: 'app:matchTierLabel', fallback: 'Match tier', values: \App\Support\MatchTier::KEYS)
+            ->numberRange('score', 'average_score', label: 'app:averageScore')
+            ->numberRange('requested', 'total_amount_requested', label: 'app:amountRequested')
+            ->boolean('awarded', $yesNo($awarded), label: 'app:awarded')
+            ->boolean('documents', $yesNo(fn (Builder $q) => $q->whereHas('roundDocuments')), label: 'app:listFilterHasDocuments', fallback: 'Has documents')
+            ->boolean('kyc', $yesNo($kycVerified), label: 'app:listFilterKycVerified', fallback: 'KYC verified')
+            ->dateRange('applied', 'created_at', label: $label('filterApplied'))
             ->sortable(['applied' => 'created_at', 'name' => 'startup_name', 'match' => 'match_score', 'score' => 'average_score', 'status' => 'status'], default: '-applied');
 
         [$rows, $page] = $list->fetch();
@@ -110,7 +137,8 @@ class ProgramReportController extends Controller
             'applied_at' => self::iso($a->created_at),
         ]);
 
-        $facets = $list->facets(['round', 'status', 'sector']);
+        $facets = $list->facets(['round', 'status', 'match_tier']);
+        $facets['sector'] = ListShapes::derivedFacet($list->query('sector', sorted: false), ['sector'], fn ($a) => ListShapes::clean($a->sector));
         $reviewedCount = $list->query('review', sorted: false)->reorder()->tap($scored)->toBase()->count();
         $unreviewedCount = $list->query('review', sorted: false)->reorder()->whereNot(fn (Builder $n) => $scored($n))->toBase()->count();
         $facets['review'] = array_values(array_filter([
@@ -127,6 +155,7 @@ class ProgramReportController extends Controller
 
         return $this->envelope('Applications retrieved', $items, $page, [
             'facets' => $facets,
+            'filter_schema' => $list->filterSchema(),
             'stats' => $stats,
             'export_truncated' => $list->wantsExport() ? $list->exportTruncated() : false,
         ]);
@@ -162,6 +191,8 @@ class ProgramReportController extends Controller
                         'label' => trim(($d->milestone ? 'Milestone '.$d->milestone->sequence_order : 'Milestone').($application ? ' · '.$application : '')),
                         'recipient' => $business ? ($application ?: self::person($d->recipientUser)) : ($d->supplier?->supplierDirectory?->legal_name ?? ''),
                         'amount' => (float) $d->amount,
+                        // the transfer fee the program paid on top (ISSUE-22), shown with the payout (ISSUE-31)
+                        'fee' => (float) ($d->fee_amount ?? 0),
                         'currency' => $d->currency,
                         'status' => $d->status,
                         'status_group' => self::statusGroup($d->status),
@@ -185,6 +216,7 @@ class ProgramReportController extends Controller
                     'label' => $o->order_type === 'site_visit' ? 'Site visit' : 'Round '.($o->round?->round_number ?? '').' review',
                     'recipient' => self::person($o->reviewer),
                     'amount' => (float) $o->fee_amount,
+                    'fee' => 0.0,
                     'currency' => $o->currency,
                     'status' => $o->payment_status,
                     'status_group' => self::statusGroup($o->payment_status === 'unpaid' ? 'pending' : $o->payment_status),
@@ -206,9 +238,16 @@ class ProgramReportController extends Controller
 
         $list = CollectionList::for($ledger, $request)
             ->search(fn ($r) => implode(' ', [$r['label'], $r['recipient'], $r['reference'], $r['kind'], $r['status']]))
-            ->filter('kind', fn ($r) => $r['kind'])
-            ->filter('status', fn ($r) => $r['status_group'])
-            ->dateRange('date', fn ($r) => $r['at'])
+            // Described filters (the ledger's panel comes from `filter_schema`)
+            ->options('kind', fn ($r) => $r['kind'], label: 'grant:view.reports.wallet.filterType', values: ['supplier', 'business', 'business_coach'],
+                optionLabels: array_combine(['supplier', 'business', 'business_coach'], array_map(fn ($k) => 'grant:view.reports.wallet.kind.'.$k, ['supplier', 'business', 'business_coach'])))
+            ->options('status', fn ($r) => $r['status_group'], label: 'grant:view.reports.wallet.filterStatus', values: ['paid', 'pending', 'failed'],
+                optionLabels: array_combine(['paid', 'pending', 'failed'], array_map(fn ($k) => 'grant:view.reports.wallet.status.'.$k, ['paid', 'pending', 'failed'])))
+            ->options('recipient', fn ($r) => $r['recipient'] ?: null, label: 'app:listFilterRecipient', fallback: 'Recipient', searchable: true)
+            ->options('currency', fn ($r) => $r['currency'] ?: null, label: 'app:currency')
+            ->numberRange('amount', fn ($r) => $r['amount'], label: 'app:amount')
+            ->boolean('business_linked', fn ($r) => $r['application_id'] !== null, label: 'app:listFilterForABusiness', fallback: 'For a business')
+            ->dateRange('date', fn ($r) => $r['at'], label: 'grant:view.reports.wallet.filterDate')
             ->sortable(['date' => fn ($r) => $r['at'], 'amount' => fn ($r) => $r['amount'], 'kind' => fn ($r) => $r['kind'], 'status' => fn ($r) => $r['status_group']], default: '-date');
 
         [$rows, $page] = $list->fetch();
@@ -236,11 +275,15 @@ class ProgramReportController extends Controller
                 'suppliers' => $by('supplier'),
                 'business_coaches' => $by('business_coach'),
                 'paid_total' => round($ledger->where('status_group', 'paid')->sum('amount'), 2),
+                // ISSUE-31: the fees the program paid on top of its payouts, and payouts + fees (what left the wallet)
+                'fees_total' => round($ledger->where('status_group', 'paid')->sum('fee'), 2),
+                'paid_with_fees_total' => round($ledger->where('status_group', 'paid')->sum(fn ($r) => $r['amount'] + $r['fee']), 2),
                 'pending_total' => round($ledger->where('status_group', 'pending')->sum('amount'), 2),
                 // Deposits are only kept as a running total on the wallet, so they are not itemised in the ledger
                 'deposits_itemised' => false,
             ],
             'facets' => $list->facets(['kind', 'status']),
+            'filter_schema' => $list->filterSchema(),
             'export_truncated' => $list->wantsExport() ? $list->exportTruncated() : false,
         ]);
     }
@@ -252,12 +295,12 @@ class ProgramReportController extends Controller
     {
         $this->authorizeOwner($program);
 
-        $cap = 1000; // per source; a program's history is far smaller, and the newest always wins
         $events = collect();
-        $event = fn (string $key, string $type, string $group, $at, array $more = []) => $events->push([
+        // The event's own details ($more) override the empty defaults (array + would keep the nulls instead)
+        $event = fn (string $key, string $type, string $group, $at, array $more = []) => $events->push(array_merge([
             'key' => $key, 'type' => $type, 'group' => $group, 'at' => self::iso($at),
             'actor' => null, 'subject' => null, 'amount' => null, 'currency' => null, 'round_number' => null, 'application_id' => null,
-        ] + $more);
+        ], $more));
 
         $event('program', 'program_created', 'program', $program->created_at, ['subject' => $program->program_title, 'actor' => self::person($program->owner)]);
 
@@ -265,18 +308,18 @@ class ProgramReportController extends Controller
         $rounds->each(fn ($r) => $event('round-'.$r->id, 'round_created', 'rounds', $r->created_at, ['subject' => $r->round_name, 'round_number' => $r->round_number]));
         $roundNumbers = $rounds->pluck('round_number', 'id');
 
-        ProgramApplication::where('program_id', $program->id)->where('status', '!=', 'draft')->latest()->limit($cap)->get(['id', 'startup_name', 'created_at'])
+        ProgramApplication::where('program_id', $program->id)->where('status', '!=', 'draft')->latest()->get(['id', 'startup_name', 'created_at'])
             ->each(fn ($a) => $event('app-'.$a->id, 'application_submitted', 'applications', $a->created_at, ['subject' => $a->startup_name, 'application_id' => $a->id]));
 
         ApplicationRoundHistory::whereIn('round_id', $rounds->pluck('id'))
             ->whereIn('outcome', ['advanced', 'not_selected', 'awarded'])->whereNotNull('exited_at')
-            ->with('application:id,startup_name')->latest('exited_at')->limit($cap)->get()
+            ->with('application:id,startup_name')->latest('exited_at')->get()
             ->each(fn ($h) => $event('outcome-'.$h->id, 'round_'.$h->outcome, 'applications', $h->exited_at, [
                 'subject' => $h->application?->startup_name, 'application_id' => $h->application_id, 'round_number' => $roundNumbers[$h->round_id] ?? $h->round_number,
             ]));
 
         ApplicationScore::whereIn('round_id', $rounds->pluck('id'))
-            ->with(['application:id,startup_name', 'reviewer:id,first_name,last_name'])->latest('scored_at')->limit($cap)->get()
+            ->with(['application:id,startup_name', 'reviewer:id,first_name,last_name'])->latest('scored_at')->get()
             ->each(fn ($s) => $event('score-'.$s->id, 'application_scored', 'reviews', $s->scored_at, [
                 'subject' => $s->application?->startup_name, 'actor' => self::person($s->reviewer), 'application_id' => $s->application_id, 'round_number' => $roundNumbers[$s->round_id] ?? null,
             ]));
@@ -287,14 +330,22 @@ class ProgramReportController extends Controller
 
         $list = CollectionList::for($events->filter(fn ($e) => $e['at']), $request)
             ->search(fn ($e) => implode(' ', [$e['subject'], $e['actor'], $e['type']]))
-            ->filter('group', fn ($e) => $e['group'])
-            ->dateRange('date', fn ($e) => $e['at'])
+            // Described filters (the feed's panel comes from `filter_schema`)
+            ->options('group', fn ($e) => $e['group'], label: 'grant:view.reports.activity.filterGroup', values: ['program', 'rounds', 'applications', 'reviews', 'money'],
+                optionLabels: array_combine(['program', 'rounds', 'applications', 'reviews', 'money'], array_map(fn ($g) => 'grant:view.reports.activity.groups.'.$g, ['program', 'rounds', 'applications', 'reviews', 'money'])))
+            ->options('round', fn ($e) => $e['round_number'], label: 'app:round2',
+                optionLabels: fn (array $numbers) => collect($numbers)->mapWithKeys(fn ($n) => [$n => 'Round '.$n])->all())
+            ->options('coach', fn ($e) => $e['type'] === 'application_scored' ? ($e['actor'] ?: null) : null, label: 'app:reviewer', fallback: 'Business Coach', searchable: true)
+            ->options('business', fn ($e) => $e['application_id'] ? ($e['subject'] ?: null) : null, label: 'app:listFilterBusiness', fallback: 'Business', searchable: true)
+            ->numberRange('amount', fn ($e) => $e['amount'], label: 'app:amount')
+            ->dateRange('date', fn ($e) => $e['at'], label: 'grant:view.reports.activity.filterDate')
             ->sortable(['date' => fn ($e) => $e['at']], default: '-date');
 
         [$rows, $page] = $list->fetch();
 
         return $this->envelope('Activity retrieved', $rows, $page, [
             'facets' => $list->facets(['group']),
+            'filter_schema' => $list->filterSchema(),
             'export_truncated' => $list->wantsExport() ? $list->exportTruncated() : false,
         ]);
     }

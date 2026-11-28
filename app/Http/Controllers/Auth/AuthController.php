@@ -127,7 +127,9 @@ class AuthController extends Controller
 
         return response()->json([
             'verified' => true,
-            'message' => 'Email verified successfully'
+            'message' => 'Email verified successfully',
+            // Lets this address set a new password in the next few minutes (Forgot password, Settings › Security)
+            'reset_token' => \App\Service\Account\PasswordResetToken::issue($record->email),
         ], 200);
     }
 
@@ -149,6 +151,9 @@ class AuthController extends Controller
             // Invited by an organization but never set a password: point them to the invitation, not "incorrect password"
             if ($user && empty($user->getAttributes()['password'] ?? null) && ($user->invited_at || $user->organization_id)) {
                 $msg = 'Your account is not set up yet. Open the invitation email and use its link to accept the invitation and choose a password.';
+            } elseif ($user && empty($user->getAttributes()['password'] ?? null)) {
+                // An applicant brought in by a program import: the account exists, it only needs a password
+                $msg = 'Your account has no password yet. Use "Forgot password" with this email to set one.';
             }
 
             return response([
@@ -185,17 +190,8 @@ class AuthController extends Controller
             $verification = $deviceService->createVerification($user, $request);
         }
 
-        //for special user
-        $specialEmail = 'agrisokoo@gmail.com';
-
-        if($data['email'] == $specialEmail){
-            $expiresAt = now()->addMonths(6); // addMonths(6)
-            $token = $user->createToken('main', ['*'], $expiresAt)->plainTextToken;
-        }
-        else
-        {
-            $token = $user->createToken('main')->plainTextToken;
-        }
+        // Every account gets the same session rules: no long-lived tokens (see sanctum.idle_timeout)
+        $token = $user->createToken('main')->plainTextToken;
 
         return response()->json([
             'user' => new UserResource($user),
@@ -429,8 +425,9 @@ class AuthController extends Controller
 
     public function logout(Request $request)
     {
-        // Public route: the token may already be expired or revoked, which still counts as logged out
-        $token = $request->user()?->currentAccessToken();
+        // Public route (no auth middleware), so the token is read with the sanctum guard itself; an expired or revoked one
+        // still counts as logged out
+        $token = $request->user('sanctum')?->currentAccessToken();
 
         if ($token instanceof \Laravel\Sanctum\PersonalAccessToken) {
             $token->delete();
@@ -442,11 +439,12 @@ class AuthController extends Controller
 
     # D e v i c e   V e r i f i c a t i o n
 
+    /** Settings > Security > Log out of all devices: every sign-in of this account ends, this one included */
     public function logoutAll(Request $request)
     {
-        $request->user()->tokens()->delete();
+        $count = $request->user()->tokens()->delete();
 
-        return response()->json(['message' => 'Logged out from all devices'],204);
+        return response()->json(['success' => true, 'message' => 'Logged out from all devices', 'data' => ['signed_out' => $count]], 200);
     }
 
     // H E L P E R S

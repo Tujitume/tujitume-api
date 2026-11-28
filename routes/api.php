@@ -18,21 +18,37 @@ use Illuminate\Support\Facades\Route;
 
     Route::post('/stripe-callback', [CheckoutStripeController::class, 'callback']);
 
-    Route::post('/lipr-callback', [MpesaCallbackController::class, 'callback']);
+    // ISSUE-48: LIPR does not sign its callbacks, so each URL the app hands LIPR carries its own signature (LiprCallback::url)
+    // and VerifyLiprCallback refuses any post without it (no more forged "Successful" transfers)
+    Route::middleware('lipr.callback')->group(function () {
+        Route::post('/lipr-callback', [MpesaCallbackController::class, 'callback']);
 
-    // d1. direct to applicant or supplier immeadiately after checkout
-    Route::post('/lipr-callback/disbursement-direct', [MpesaCallbackController::class, 'callbackProgramDisburseDirect']);
+        // d1. direct to applicant or supplier immeadiately after checkout
+        Route::post('/lipr-callback/disbursement-direct', [MpesaCallbackController::class, 'callbackProgramDisburseDirect']);
 
-    // d2. send to supplier 2nd leg callback for direct
-    Route::post('/lipr-callback/transfer-to-supplier', [MpesaCallbackController::class, 'callbackForProgramDisburseToSupplier']);
+        // d2. send to supplier 2nd leg callback for direct
+        Route::post('/lipr-callback/transfer-to-supplier', [MpesaCallbackController::class, 'callbackForProgramDisburseToSupplier']);
 
-    // to pay full application (total milestones sum) to escrow, then release milestone by milestone
-    Route::post('/lipr-callback/disbursement-escrow', [MpesaCallbackController::class, 'callbackProgramDisburseToEscrow']);
+        // to pay full application (total milestones sum) to escrow, then release milestone by milestone
+        Route::post('/lipr-callback/disbursement-escrow', [MpesaCallbackController::class, 'callbackProgramDisburseToEscrow']);
     
 
-    // Reviewer payment callbacks
-    Route::post('/lipr-callback/reviewer-payment', [MpesaCallbackController::class, 'callbackForReviewerPayment']);
-    Route::post('/lipr-callback/reviewer-payment-leg2', [MpesaCallbackController::class, 'callbackForReviewerPaymentLeg2']);
+        // Reviewer payment callbacks
+        Route::post('/lipr-callback/reviewer-payment', [MpesaCallbackController::class, 'callbackForReviewerPayment']);
+        Route::post('/lipr-callback/reviewer-payment-leg2', [MpesaCallbackController::class, 'callbackForReviewerPaymentLeg2']);
+
+        // A booked service's milestone paid to its provider (ServiceBookingFlow::approve)
+        Route::post('/lipr-callback/service-milestone', [MpesaCallbackController::class, 'callbackForServiceMilestone']);
+
+        // A project manager audit fee moved (DECISION-9: payout, hold or refund; AuditFee)
+        Route::post('/lipr-callback/audit-fee', [MpesaCallbackController::class, 'callbackForAuditFee']);
+
+        // A wallet transfer with no flow of its own (recorded and logged)
+        Route::post('/lipr-callback/transfer', [MpesaCallbackController::class, 'callbackForTransfer']);
+
+        // LIPR posts here when a transaction times out; the app keeps waiting for the result callback or the poll
+        Route::post('/lipr-callback/timeout', [MpesaCallbackController::class, 'timeout']);
+    });
 
     Route::prefix('v1')->group(function () {
 

@@ -28,7 +28,7 @@ class ProgramDisbursementController extends Controller
     public function __construct(ProgramDisbursementService $disbursementService)
     {
         parent::__construct();
-        $this->liprW2W = new LiprW2W();
+        $this->liprW2W = app(LiprW2W::class); // from the container, so a test or local stub can stand in for LIPR
         $this->balance = new BalanceService();
         $this->disbursementService = $disbursementService;
         $this->tujitume_lipr = Setting::where('key', 'platform_lipr_wallet')->first()?->value ?? null;
@@ -44,7 +44,7 @@ class ProgramDisbursementController extends Controller
         (new \App\Service\Program\ProgramAccess())->authorizeMilestone(auth()->user(), $milestone);
         $milestone->load([
             'application:id,program_id,user_id,program_owner_id,startup_name,contact_person_name,contact_person_email,status,funding_setup_status,awarded_amount,total_amount_requested,planning_mode',
-            'application.program:id,program_title,program_type,funding_per_business,mid_milestone_required',
+            'application.program:id,program_title,program_type,funding_per_business',
             'application.program.wallet:id,program_id,balance,total_reserved,total_disbursed,status',
             'suppliers',
             'budgetItems',
@@ -92,7 +92,7 @@ class ProgramDisbursementController extends Controller
             $disbursement->milestone->application->program->owner
         ], [
             'amount'        => $disbursement->amount,
-            'supplier_name' => $disbursement->supplier->supplierDirectory->legal_name,
+            'supplier_name' => $this->supplierName($disbursement),
             'application_id'    => $disbursement->milestone->app_id,
             'milestone_number' => $disbursement->milestone->sequence_order,
         ]);
@@ -188,25 +188,28 @@ class ProgramDisbursementController extends Controller
                 $disbursement->receipt_file = $validated['receipt_file'];
             }
 
+            // The same result as the LIPR "successful" callback (MpesaCallbackController), for payments completed by hand
+            $milestone = $disbursement->milestone;
             $disbursement->status = 'completed';
+            $disbursement->disbursed_at = $disbursement->disbursed_at ?? now();
+            $disbursement->supplier_id = $disbursement->supplier_id ?? $milestone->suppliers()->value('id');
             $disbursement->save();
 
             // Check if all disbursements for this milestone are completed
-            $milestone = $disbursement->milestone;
             $pendingCount = $milestone->disbursements()
                 ->whereIn('status', ['pending', 'processing'])
                 ->count();
 
             if ($pendingCount === 0) {
                 // All disbursements completed
-                $milestone->fund_release_status = 'released';
-                $milestone->save();
+                $milestone->update(['fund_release_status' => 'released', 'status' => 'completed', 'fund_released' => true]);
+                \App\Service\Program\ApplicationCompletion::refresh($milestone->application);
             }
 
             DB::commit();
 
-            $this->programNotification->send('disbursement.completed', [$disbursement->milestone->application->user, $disbursement->milestone->application->program->owner], [
-                'amount' => $disbursement->amount, 'supplier_name' => $disbursement->supplier->legal_name,
+            $this->programNotification->send('disbursement.completed', [$disbursement->milestone->application->user, ...\App\Service\Program\ProgramTeam::members($disbursement->milestone->application->program)->all()], [
+                'amount' => $disbursement->amount, 'supplier_name' => $this->supplierName($disbursement),
                 'payment_reference' => $disbursement->payment_reference, 'application_id' => $disbursement->milestone->app_id,
                 'milestone_number' => $disbursement->milestone->sequence_order,
             ]);
@@ -241,6 +244,13 @@ class ProgramDisbursementController extends Controller
         }
     }
 
+
+    /** The supplier's name for notifications; a disbursement made before it was linked to its supplier falls back to the milestone's */
+    private function supplierName(Disbursement $disbursement): string
+    {
+        $supplier = $disbursement->supplier ?? $disbursement->milestone?->suppliers()->first();
+        return (string) ($supplier?->supplierDirectory?->legal_name ?? '');
+    }
 
     # Failed & Reverse
     public function markFailed(Request $request, Disbursement $disbursement)
@@ -284,8 +294,8 @@ class ProgramDisbursementController extends Controller
 
             DB::commit();
 
-            $this->programNotification->send('disbursement.failed', [$disbursement->milestone->application->program->owner], [
-                'supplier_name' => $disbursement->supplier->legal_name, 'reason' => $validated['failure_reason'],
+            $this->programNotification->send('disbursement.failed', \App\Service\Program\ProgramTeam::members($disbursement->milestone->application->program)->all(), [
+                'supplier_name' => $this->supplierName($disbursement), 'reason' => $validated['failure_reason'],
                 'application_id' => $disbursement->milestone->app_id,
                 'milestone_number' => $disbursement->milestone->sequence_order,
             ]);
@@ -359,8 +369,8 @@ class ProgramDisbursementController extends Controller
 
             DB::commit();
 
-            $this->programNotification->send('disbursement.reversed', [$disbursement->milestone->application->user, $disbursement->milestone->application->program->owner], [
-                'amount' => $disbursement->amount, 'supplier_name' => $disbursement->supplier->legal_name,
+            $this->programNotification->send('disbursement.reversed', [$disbursement->milestone->application->user, ...\App\Service\Program\ProgramTeam::members($disbursement->milestone->application->program)->all()], [
+                'amount' => $disbursement->amount, 'supplier_name' => $this->supplierName($disbursement),
                 'application_id' => $disbursement->milestone->app_id,
                 'milestone_number' => $disbursement->milestone->sequence_order,
             ]);
@@ -431,31 +441,51 @@ class ProgramDisbursementController extends Controller
 
 
         try {
+            // ISSUE-28: a milestone with no supplier pays the applicant (beneficiary / hybrid disbursement)
             $supplier = $milestone->suppliers()->first();
-
-            if (!$supplier) {
-                return response()->json(['message' => 'Supplier not found.'], 422);
+            $route = $supplier?->payment_route ?? 'direct_to_applicant';
+            if ($route === 'direct_to_applicant' && ! filled($milestone->application->sme?->lipr_wallet)) {
+                return response()->json(['message' => 'The applicant has no M-Pesa (LIPR) wallet set up yet, so this milestone cannot be paid to them. Ask them to set one up, or add a supplier to the milestone.'], 422);
             }
             $pitch     = $milestone->application;
             $owner     = $pitch->program->owner;
 
-            $finalRecipientAmount = $this->checkoutCalculator->mpesaGC($milestone->amount, 'mpesa');
+            // ISSUE-22 (owner, 27 Nov): the supplier gets the full milestone amount; the transfer fee (platform + M-Pesa,
+            // the same size as before) is paid by the program on top, from the program wallet
+            $amountKes = (int) round((float) $milestone->amount);
+            $feeKes = (int) round($amountKes - $this->checkoutCalculator->mpesaGC($amountKes, 'mpesa'));
 
-            $amountKes = (int) round($finalRecipientAmount); //
+            if ($request->type === 'pay_from_wallet') {
+                // DECISION-5: the money is sent from the organization's main LIPR account; the program wallet is the
+                // bookkeeping that must cover it
+                $programWallet = $pitch->program->wallet;
+                if (! \App\Service\Program\OrganizationMainWallet::account($pitch->program)) {
+                    return response()->json(['message' => \App\Service\Program\OrganizationMainWallet::MISSING], 422);
+                }
+                if (! $programWallet) {
+                    return response()->json(['message' => 'This program has no wallet yet, so funds cannot be released.'], 422);
+                }
+                if ((float) $programWallet->balance < $amountKes + $feeKes) {
+                    return response()->json([
+                        'message' => 'The program wallet balance (KES ' . number_format((float) $programWallet->balance, 2) . ') does not cover this release of KES '
+                            . number_format($amountKes, 2) . ' plus the KES ' . number_format($feeKes, 2) . ' fee. Top up the program wallet and try again.',
+                    ], 422);
+                }
+            }
     
             $transfer = null;
 
             DB::transaction(function () use (
-                $milestone, $supplier, $pitch, $amountKes, &$transfer, $request,
+                $milestone, $supplier, $route, $pitch, $amountKes, $feeKes, &$transfer, $request,
                 $owner
                 ) {
 
                 // Initiate supplier transfer
-                if ($supplier->payment_route == 'direct_to_supplier') {
+                if ($route == 'direct_to_supplier') {
 
-                    $transfer = $this->disbursementService->disburse($milestone, $amountKes, $request->type);
+                    $transfer = $this->disbursementService->disburse($milestone, $amountKes, $request->type, $feeKes);
                 
-                } elseif ($supplier->payment_route == 'direct_to_applicant') {
+                } elseif ($route == 'direct_to_applicant') {
                    
                     if($request->type == 'pay_from_escrow') {
                         $transfer = $this->liprW2W->send(
@@ -466,21 +496,32 @@ class ProgramDisbursementController extends Controller
                         );
                     }
                     elseif($request->type == 'pay_from_wallet') {
+                        // DECISION-5: sent from the organization's main LIPR account; the program wallet is charged below
                         $transfer = $this->liprW2W->send(
                             $amountKes,
                             $pitch->sme->lipr_wallet,
-                            $owner->lipr_wallet,
+                            \App\Service\Program\OrganizationMainWallet::account($pitch->program),
                             $milestone
                         );
                     }
                    
                 
                 } else {
-                    throw new \Exception("Unsupported payment route: {$supplier->payment_route}", 422);
+                    throw new \Exception("Unsupported payment route: {$route}", 422);
                 }
 
                 if (!$transfer || !($transfer['success'] ?? false)) {
-                    throw new \Exception($transfer['error'] ?? $transfer['message'] ?? 'Transfer failed', 422);
+                    $reason = $transfer['error'] ?? $transfer['message'] ?? (is_array($transfer['errors'] ?? null) ? implode(' ', $transfer['errors']) : null);
+                    throw new \Exception($reason ?: 'The transfer could not be started. Please try again.', 422);
+                }
+
+                // Paying the applicant from the program wallet: the program pays the amount and the fee (ISSUE-22)
+                if ($route === 'direct_to_applicant' && $request->type === 'pay_from_wallet') {
+                    $programWallet = $pitch->program->wallet;
+                    $programWallet->balance -= $amountKes + $feeKes;
+                    $programWallet->total_disbursed += $amountKes;
+                    $programWallet->save();
+                    $transfer['disbursement']?->update(['fee_amount' => $feeKes, 'recipient_type' => 'business_owner']);
                 }
 
 
@@ -502,7 +543,7 @@ class ProgramDisbursementController extends Controller
                 $this->transaction->create($pitch->user_id, 'program_milestone', 'lipr', $amountKes, $transfer['reference'], $pitch->user_id);
 
                 // Balance update for direct_to_supplier if exists
-                if ($supplier->payment_route == 'direct_to_supplier' && $supplier->supplierDirectory->user) {
+                if ($route == 'direct_to_supplier' && $supplier?->supplierDirectory?->user) {
                     $this->balance->updateBalance($supplier->supplierDirectory->user_id, $amountKes, 'lipr');
 
                 }
@@ -515,7 +556,7 @@ class ProgramDisbursementController extends Controller
 
             // Send email to supplier if direct disbursement
 
-            if ($transfer !== null && $supplier->payment_route === 'direct_to_supplier' && filled($supplier->supplierDirectory?->email)) {
+            if ($transfer !== null && $route === 'direct_to_supplier' && filled($supplier?->supplierDirectory?->email)) {
                 $supplierDirectory = $supplier->supplierDirectory;
                 $this->emailService->send(
                     'Your Payment Is on the Way',
@@ -536,7 +577,7 @@ class ProgramDisbursementController extends Controller
                 $pitch->program->owner,
             ], [
                 'amount'         => $milestone->amount,
-                'supplier_name'  => $supplier->supplierDirectory->legal_name,
+                'supplier_name'  => $supplier?->supplierDirectory?->legal_name ?? ($pitch->startup_name ?: 'the applicant'),
                 'application_id' => $milestone->app_id,
                 'milestone_number' => $milestone->sequence_order,
             ]);

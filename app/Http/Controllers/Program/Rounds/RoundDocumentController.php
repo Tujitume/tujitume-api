@@ -51,6 +51,10 @@ class RoundDocumentController extends Controller
             if ($reason = $round->notOpenReason()) {
                 return response()->json(['message' => $reason, 'error' => $reason], 422);
             }
+            // ...and a closed one takes no more documents
+            if ($reason = $round->closedReason()) {
+                return response()->json(['message' => $reason, 'error' => $reason, 'code' => 'round_closed'], 422);
+            }
 
             $validated = $request->validate([
                 'document_type' => 'required|string|max:100',

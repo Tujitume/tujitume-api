@@ -129,10 +129,10 @@ class OrganizationProviderController extends Controller
     {
         try {
             $orgName = $organization->display_name ?: $organization->name;
-            $title = "{$orgName} added you as a third-party reviewer";
-            $body = "{$orgName} added you to its list of third-party reviewers and auditors on Tujitume. You may now receive review and audit requests from them.";
+            $title = "{$orgName} added you as a third-party Business Coach";
+            $body = "{$orgName} added you to its list of third-party Business Coaches and auditors on Tujitume. You may now receive Business Coach and audit requests from them.";
             $actorName = trim(($actor->first_name ?? '') . ' ' . ($actor->last_name ?? '')) ?: $orgName;
-            $url = rtrim((string) config('app.app_url'), '/') . '/dashboard/service-provider/grants-discover';
+            $url = \App\Service\Notification\RecipientUrl::url('dashboard/service-provider/grants-discover', $provider);
 
             (new EmailService())->send($title, 'organization_provider_added', [
                 'brand' => EmailBrand::forOrganization($organization),

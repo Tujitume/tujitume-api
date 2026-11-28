@@ -31,6 +31,17 @@ return [
         'region' => env('AWS_DEFAULT_REGION', 'us-east-1'),
     ],
 
+    // AI help for program imports ("Ask AI to fix" on the import review page). OpenAI-compatible, OpenRouter by
+    // default. The key stays on the server; the browser only calls /api/v1/programs/imports/{id}/ai-fix.
+    'import_ai' => [
+        'base_url' => env('IMPORT_AI_BASE_URL', 'https://openrouter.ai/api/v1'),
+        'api_key' => env('IMPORT_AI_API_KEY', env('OPENROUTER_API_KEY')),
+        'model' => env('IMPORT_AI_MODEL', 'openai/gpt-4o-mini'),
+        'supports_json_schema' => env('IMPORT_AI_JSON_SCHEMA', true),
+        'supports_json_mode' => true,
+        'max_output_tokens' => (int) env('IMPORT_AI_MAX_OUTPUT', 3000),
+    ],
+
     // Amari, the in-app assistant. The key stays on the server; the browser only ever calls /api/v1/amari/chat.
     'amari' => [
         'key' => env('AMARI_AI_API_KEY'),
@@ -66,11 +77,25 @@ return [
         'webhook_secret' => env('STRIPE_WEBHOOK_SECRET'),
     ],
 
+   // LIPR payments. Read from .env; without it the SANDBOX is used, so a local or test backend never moves real money.
+   // Production sets LIPR_BASE_PATH=https://api.prod.lipr.io and its live LIPR_API_KEY / LIPR_API_SECRET /
+   // LIPR_SUBSCRIPTION_KEY in the server's .env (live secrets are not kept in the code).
+    // Image moderation for uploads (SpamImageChecker). Set the keys in .env; the fallbacks keep the current account working
+    'sightengine' => [
+        'enabled' => env('SIGHTENGINE_ENABLED', true),
+        'api_user' => env('SIGHTENGINE_API_USER', '725115685'),
+        'api_secret' => env('SIGHTENGINE_API_SECRET', 'AgH2RUSa3FPoq2HexU9b32XqFvQhtSpa'),
+    ],
+
    'lipr' => [
-       'base_path' => 'https://api.prod.lipr.io',
-       'api_key' => 'api_live_d9c7bbc38f4a412f88bc8f19288226b9', //'a52b00aa0de1cc4fc742876b92e480e9',
-       'api_secret' => 'jNJdccQfb0oVC2pl8BfOynFVc-KoQWreBHtvHDiXpc-eKCPN7EVNf8dYwVcj3jnh', //'9c87f7c6d71312d89a86473eeefec46f',
-       'subscription_key' => 'bb41577b-29c5-4ed9-9ec6-0220a82b7e91'
+       'base_path' => env('LIPR_BASE_PATH', 'https://api.sandbox.lipr.io'),
+       'api_key' => env('LIPR_API_KEY', 'api_test_3f30c671f57d4f2f9eaa65971f7e8f48'),
+       'api_secret' => env('LIPR_API_SECRET', 'mdsxMNy69bCOCTBHpgpaN3VZxmjuPPLKhbOJ4-i-_BcQ6Y6eig14XL9TkoflUbbI'),
+       'subscription_key' => env('LIPR_SUBSCRIPTION_KEY', 'a7e4372b-6926-405c-ac05-f25f74256f90'),
+       // ISSUE-48: callback URLs are signed with this (default: APP_KEY); set LIPR_VERIFY_CALLBACKS=false only to let
+       // transfers started before the deploy (unsigned URLs) finish, then switch it back on
+       'callback_secret' => env('LIPR_CALLBACK_SECRET'),
+       'verify_callbacks' => env('LIPR_VERIFY_CALLBACKS', true),
    ],
 
     // sandbox version

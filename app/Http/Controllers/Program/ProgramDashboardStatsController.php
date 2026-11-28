@@ -31,9 +31,9 @@ class ProgramDashboardStatsController extends Controller
             }
             $ownerId = $user->organizationOwnerId();
 
-            $programs = Program::where('user_id', $ownerId)
-                ->select(['id', 'status', 'total_program_amount', 'currency', 'application_deadline'])
-                ->with('rounds:id,program_id,round_number,status,open_date,close_date')
+            $programs = Program::ofOrganization($user) // ISSUE-38: the organization's programs, whoever created them
+                ->select(['id', 'status', 'total_program_amount', 'currency', 'application_deadline', 'application_closes_at', 'timezone'])
+                ->with('rounds:id,program_id,round_number,status,open_date,close_date,opens_at,closes_at')
                 ->get();
             Program::annotateApplicationState($programs);
             $programIds = $programs->pluck('id');
@@ -89,7 +89,7 @@ class ProgramDashboardStatsController extends Controller
                         'in_review' => $submitted->filter(fn ($a) => in_array($round($a), ['assigned', 'under_review', 'in_review'], true))->count(),
                         'scored' => $submitted->filter(fn ($a) => $round($a) === 'scored')->count(),
                         'advanced' => $submitted->filter(fn ($a) => $round($a) === 'advanced')->count(),
-                        'awarded' => $submitted->filter(fn ($a) => in_array($status($a), ['awarded', 'completed'], true))->count(),
+                        'awarded' => $submitted->filter(fn ($a) => in_array($status($a), ['awarded', 'in_monitoring', 'completed'], true))->count(),
                         'not_selected' => $submitted->filter(fn ($a) => $round($a) === 'not_selected' || $status($a) === 'rejected')->count(),
                     ],
                     'requests' => [

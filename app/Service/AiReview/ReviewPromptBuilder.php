@@ -65,12 +65,13 @@ TXT;
     public function review(Program $program, ProgramRound $round, array $input, array $blocks, bool $withScores): array
     {
         $config = $round->ai_review_config ?? [];
-        $criteria = collect($round->scoring_criteria ?? [])->map(function ($c) {
-            $range = $c['score_range'] ?? $c['scoreRange'] ?? '0-10';
-            $max = is_numeric($range) ? $range : (preg_match_all('/\d+(?:\.\d+)?/', (string) $range, $m) ? end($m[0]) : 10);
-
+        // ISSUE-35: the same maximum the scoring uses (RubricCalculator), and the exact name kept apart from the
+        // description, so the reply's "criterion" is the name and its score is on the right scale
+        $rubric = app(\App\Service\Program\RubricCalculator::class);
+        $criteria = collect($round->scoring_criteria ?? [])->map(function ($c) use ($rubric) {
+            $max = rtrim(rtrim(number_format($rubric->maxScoreFor($c), 2, '.', ''), '0'), '.');
             $weight = isset($c['weight']) && is_numeric($c['weight']) ? '; weight '.$c['weight'].'%' : '';
-            return '- '.($c['name'] ?? '').($c['description'] ?? '' ? ': '.$c['description'] : '').' (score 0 to '.$max.$weight.')';
+            return '- "'.($c['name'] ?? '').'" (score 0 to '.$max.$weight.')'.(($c['description'] ?? '') !== '' ? ' — '.$c['description'] : '');
         })->implode("\n");
 
         $questions = collect($input['questions'])->keyBy('id');
@@ -79,7 +80,7 @@ TXT;
         $owner = [];
         $owner[] = 'PROGRAM: '.$this->redactor->redact((string) $program->program_title);
         $owner[] = 'DIMENSIONS TO ASSESS: '.implode(', ', $config['dimensions'] ?? ApplicationAiFinding::DIMENSIONS);
-        $owner[] = "SCORING CRITERIA (use exactly these names):\n".($criteria ?: '- none');
+        $owner[] = "SCORING CRITERIA (for each score, \"criterion\" is exactly the quoted name, \"max\" is its top score, the score is between 0 and that max, and \"rationale\" is never empty):\n".($criteria ?: '- none');
         if (! empty($config['priority_keywords'])) $owner[] = 'PRIORITY KEYWORDS: '.implode(', ', $config['priority_keywords']);
         if ($desired !== '') $owner[] = "DESIRED RESPONSES:\n{$desired}";
         if (! empty($config['instructions'])) $owner[] = "OWNER GUIDANCE:\n".$config['instructions'];

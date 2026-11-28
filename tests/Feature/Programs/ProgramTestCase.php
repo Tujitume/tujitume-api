@@ -49,9 +49,12 @@ abstract class ProgramTestCase extends TestCase
         $this->reviewerUser = User::factory()->create(['user_type_id' => 6]);
 
         $this->createVerifiedKyc($this->orgUser, 'organization', $this->organization->id);
+        // A program organisation works only with an active plan (SubscriptionAccess); tests start with one
+        \App\Models\Business\BusinessSubscriptions::create(['plan' => 'gold', 'investor_id' => $this->orgUser->id, 'amount' => 29.99,
+            'start_date' => now(), 'expire_date' => now()->addYear(), 'token_remaining' => 30, 'trial' => 0, 'active' => 1]);
         $this->createVerifiedKyc($this->applicantUser, 'entrepreneur');
         $this->createVerifiedKyc($this->reviewerUser, 'service_provider'); 
-        $this->program = Program::factory()->create(['user_id' => $this->orgUser->id, 'status' => 'published']);
+        $this->program = Program::factory()->create(['user_id' => $this->orgUser->id, 'status' => 'published', 'visible' => 1]);
         $this->wallet = ProgramWallet::factory()->create(['program_id' => $this->program->id, 'status' => 'active', 'balance' => 100000]);
         $this->round = ProgramRound::factory()->create(['program_id' => $this->program->id, 'round_number' => 1, 'status' => 'published', 'advancement_mode' => 'manual']);
         $this->application = ProgramApplication::factory()->create(['program_id' => $this->program->id, 'user_id' => $this->applicantUser->id, 'program_owner_id' => $this->orgUser->id, 'current_round_id' => $this->round->id, 'status' => 'pending', 'round_status' => 'submitted']);

@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers\Misc;
 
+
+use Exception;
 use App\Http\Controllers\Controller;
 use App\Models\Business\BusinessBids;
 use App\Models\Business\Listing;

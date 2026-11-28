@@ -39,11 +39,15 @@ class ProgramServiceController extends Controller
     }
 
 
-    public function pitchCoachingServices($listing_id){
+    /** GET capital/pitch-coaching-services/{listing_id?}: services near the business (else near the person's newest business) */
+    public function pitchCoachingServices($listing_id = null){
         try{
-            $results = array();
-            $this_program = Listing::where('id',$listing_id)->first();
-            $program_loc = $this_program->location;
+            $this_program = $listing_id
+                ? Listing::where('id', $listing_id)->first()
+                : Listing::where('user_id', Auth::id())->latest()->first();
+            if (! $this_program) {
+                return response()->json(['message' => 'Business not found.'], 404);
+            }
             $lat = (float)$this_program->lat;
             $lng = (float)$this_program->lng;
             $services = $this->findNearestServices($lat,$lng,100);

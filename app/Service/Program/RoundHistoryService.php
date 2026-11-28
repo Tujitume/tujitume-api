@@ -56,7 +56,7 @@ class RoundHistoryService
             ]);
 
         if (in_array($outcome, ['not_selected', 'withdrawn'])) {
-            $application->update(['round_status' => 'not_selected']);
+            $application->update(['round_status' => 'not_selected', 'status' => 'rejected']); // ISSUE-29
         }
     }
 }

@@ -52,6 +52,9 @@ class User extends Authenticatable
     protected $hidden = [
         'password',
         'remember_token',
+        // legacy column (empty) and the invitation link's hash: never sent to anyone
+        'token',
+        'invitation_token_hash',
     ];
 
     protected $with = ['user_type'];
@@ -95,6 +98,12 @@ class User extends Authenticatable
     public function capital_profile()
     {
         return $this->hasOne(CapitalProfile::class, 'user_id', 'id');
+    }
+
+    /** A capital provider (user type 5): the owner or one of its capital team members */
+    public function isCapital(): bool
+    {
+        return (int) $this->user_type_id === 5;
     }
 
     public function user_type()

@@ -51,6 +51,13 @@ it('does not ask team members to verify on behalf of the organization', function
     expect(pendingTypes(pendingFor($this, $member)))->not->toContain('kyc.incomplete');
 });
 
+it('does not ask a demo account to verify', function () {
+    $this->organization->update(['is_trial' => true]);
+    $owner = User::factory()->create(['user_type_id' => 4, 'organization_id' => $this->organization->id]);
+    $this->organization->update(['owner_user_id' => $owner->id]);
+    expect(pendingTypes(pendingFor($this, $owner->fresh())))->not->toContain('kyc.incomplete');
+});
+
 it('lists review requests, with a link that opens the Pending drawer on the review tab', function () {
     DB::table('round_reviewers')->insert(['round_id' => $this->round->id, 'user_id' => $this->reviewerUser->id, 'reviewer_type' => 'external', 'acceptance_status' => 'pending', 'created_at' => now(), 'updated_at' => now()]);
     $res = pendingFor($this, $this->reviewerUser);
@@ -157,6 +164,23 @@ it('lists delivered work and fee proposals for the program owner', function () {
     expect(pendingTypes(pendingFor($this, $this->reviewerUser)))->toContain('review.modification');
 });
 
+it('keeps the owner\'s decisions away from team members who cannot act on them', function () {
+    DB::table('reviewer_orders')->insert(['organization_id' => $this->organization->id, 'reviewer_id' => $this->reviewerUser->id, 'program_id' => $this->program->id, 'order_type' => 'round_review', 'round_id' => $this->round->id, 'fee_amount' => 100, 'work_status' => 'delivered', 'acceptance_status' => 'accepted', 'created_at' => now(), 'updated_at' => now()]);
+    foreach ([10002 => 'editor', 10003 => 'viewer', 10004 => 'internal_reviewer'] as $id => $name) {
+        \App\Models\Auth\Role::find($id) ?? \App\Models\Auth\Role::forceCreate(['id' => $id, 'name' => $name, 'access_types' => '[]']);
+    }
+    $member = function (int $roleId) {
+        $user = User::factory()->create(['user_type_id' => 4, 'organization_id' => $this->organization->id]);
+        DB::table('organization_user_roles')->insert(['organization_id' => $this->organization->id, 'user_id' => $user->id, 'role_id' => $roleId, 'status' => 'active', 'accepted_at' => now(), 'created_at' => now(), 'updated_at' => now()]);
+
+        return $user;
+    };
+
+    expect(pendingTypes(pendingFor($this, $member(10002))))->toContain('owner.order_delivered');
+    expect(pendingTypes(pendingFor($this, $member(10003))))->not->toContain('owner.order_delivered');
+    expect(pendingTypes(pendingFor($this, $member(10004))))->not->toContain('owner.order_delivered');
+});
+
 it('walks a service booking through provider confirmation, payment and release', function () {
     $provider = User::factory()->create(['user_type_id' => 3]);
     $customer = User::factory()->create(['user_type_id' => 2]);
@@ -174,7 +198,9 @@ it('walks a service booking through provider confirmation, payment and release',
     DB::table('service_booking_milestones')->insert(['mile_id' => 1, 'service_id' => $svc, 'booker_id' => $customer->id, 'booking_id' => $booking, 'title' => 'Phase 1', 'amount' => 50, 'status' => 'Done', 'released' => 0, 'created_at' => now(), 'updated_at' => now()]);
     $res = pendingFor($this, $customer);
     expect(pendingTypes($res))->toContain('service.release')->not->toContain('service.pay');
-    expect(collect(pendingGroup($res, 'services')['items'])->firstWhere('type', 'service.release')['link'])->toBe('dashboard.investor.bookings');
+    // Approving a finished milestone happens in the booking's Milestones & payments panel
+    $release = collect(pendingGroup($res, 'services')['items'])->firstWhere('type', 'service.release');
+    expect($release['link'])->toStartWith('dashboard.investor.bookings?milestones=@');
 });
 
 it('walks an investment through bid, payment and terms', function () {

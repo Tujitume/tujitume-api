@@ -18,9 +18,9 @@
             {{-- nothing further to do for this supplier --}}
         @elseif (empty($onboarded))
             <p>Create your free Tujitume account to follow your payments and manage your details with {{ $org_name }}.</p>
-            @include('programs.partials.brand_button', ['label' => 'Join ' . $org_name . ' on Tujitume', 'url' => rtrim((string) config('app.app_url'), '/') . '/auth/create/service'])
+            @include('programs.partials.brand_button', ['label' => 'Join ' . $org_name . ' on Tujitume', 'url' => rtrim((string) ($app_url ?? config('app.app_url')), '/') . '/auth/create/service'])
         @else
-            @include('programs.partials.brand_button', ['label' => 'Open Tujitume', 'url' => rtrim((string) config('app.app_url'), '/')])
+            @include('programs.partials.brand_button', ['label' => 'Open Tujitume', 'url' => rtrim((string) ($app_url ?? config('app.app_url')), '/')])
         @endif
 
         <p style="margin-top:1.5rem;font-size:12px;color:gray;">

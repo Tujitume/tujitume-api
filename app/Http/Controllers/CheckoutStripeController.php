@@ -17,6 +17,7 @@ use App\Models\Programs\ProgramApplication;
 use App\Models\Programs\ProgramMilestone;
 use App\Models\Milestones\Milestones;
 use App\Models\Services\ServiceBookingMilestone;
+use App\Service\Services\ServiceBookingFlow;
 use App\Models\Services\ServiceMessages;
 use App\Service\Balance\BalanceService;
 use App\Service\Misc\ErrorLogService;
@@ -26,6 +27,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Str;
 use Session;
 use Stripe\StripeClient;
 use Stripe\Webhook;
@@ -234,11 +236,13 @@ class CheckoutStripeController extends Controller
                 return response()->json(['message' => 'Booking not found'], 500);
             }
 
-            if ($repMilestone->booking->paid) {
-                return response()->json(['message'=>'Milestone already paid'], 409);
+            try {
+                ServiceBookingFlow::assertPayable($repMilestone->booking, $user);
+            } catch (\RuntimeException $e) {
+                return response()->json(['message' => $e->getMessage()], in_array($e->getCode(), [403, 409], true) ? $e->getCode() : 422);
             }
 
-            $amount= (float) $service->price;
+            $amount = ServiceBookingFlow::amountDue($repMilestone->booking);
             $amountPayable = $this->checkoutCalculator->stripe($amount);
             try{
                 $charge = $this->Client->charges->create ([
@@ -258,17 +262,8 @@ class CheckoutStripeController extends Controller
                 return response()->json(['message' => 'Payment could not be processed by Stripe'], 400);
             }
 
-            $repMilestone->booking()->update([
-                'paid' => 1,
-                'method' => 'stripe',
-                'status' => 'paid',
-                'stage' => 'paid'
-            ]);
-            //$repMilestone->update([ 'status' => 'In Progress']);
-            //Transaction
-            $this->transaction->create(
-                $user->id,'service_fee','stripe', $amountPayable, $charge->id, $service->owner->id
-            );
+            // Paid once: the booking, its first milestone started and the transaction (ServiceBookingFlow)
+            (new ServiceBookingFlow())->markPaid($repMilestone->booking, $user, 'stripe', $charge->id, (float) $amountPayable);
 
             StripePayments::create([ // L O G
                 'user_id' => $user->id,
@@ -696,7 +691,7 @@ class CheckoutStripeController extends Controller
             $data = [
                 'investorName' => $bid->investor->first_name,
                 'milestoneName' => $bid->milestone->title,
-                'reviewUrl' => 'https://beta.tujitume.com/dashboard/milestones',
+                'reviewUrl' => \App\Service\Notification\RecipientUrl::url('dashboard/milestones', $bid->investor),
             ];
 
             try{
@@ -1066,173 +1061,97 @@ class CheckoutStripeController extends Controller
         }
     }
 
+    /**
+     * POST capital/capital-milestone {listing: capital milestone id, percent?: 100 = every unreleased milestone,
+     * stripeToken}: the capital provider pays a tranche by card.
+     * The entrepreneur gets the full amount (Stripe transfer to their connected account); the platform and Stripe fee
+     * is charged to the provider on top (ISSUE-22). The release is recorded before the charge (CapitalRelease).
+     */
     public function capitalDisbursement(Request $request)
     {
-        if( !Auth::check() ){
-            return response()->json(['message' => 'Unauthorized!' ],401);
-        }
         $user = Auth::user();
+        if (! $user) {
+            return response()->json(['message' => 'Unauthorized!'], 401);
+        }
 
+        $request->validate([
+            'listing' => 'required|integer|exists:capital_milestones,id',
+            'percent' => 'nullable|numeric|min:0|max:100',
+            'stripeToken' => 'required|string',
+        ]);
+
+        $milestone = CapitalMilestone::findOrFail($request->listing);
+        $all = (float) $request->input('percent', 0) === 100.0;
+        if ($refusal = \App\Service\Capital\CapitalRelease::refusal($user, $milestone, $all)) {
+            return response()->json(['message' => $refusal[0]], $refusal[1]);
+        }
+
+        $pitch = StartupPitches::with('capital_offer')->find($milestone->app_id);
+        $smeConnectId = User::whereKey($pitch->user_id)->value('stripe_connect_id');
+        if (! $smeConnectId || $smeConnectId === 'null') {
+            return response()->json(['message' => 'The business owner cannot receive funds by Stripe yet, please use M-Pesa.'], 422);
+        }
+
+        $milestones = \App\Service\Capital\CapitalRelease::milestones($milestone, $all);
+        $amount = \App\Service\Capital\CapitalRelease::amount($milestones);
+        $fee = \App\Service\Capital\CapitalRelease::fee($amount, 'stripe');
+        $amountPayable = round($amount + $fee, 2);
+        $reference = 'capital_release_'.$milestone->id.'_'.Str::random(10);
+
+        // 1. the record, before any money
         try {
-            $request->validate([
-                'listing' => 'required|integer|exists:capital_milestones,id',
-                'percent' => 'numeric|min:0|max:100',
-                'stripeToken'  => 'required|string',
-            ]);
-
-            $milestone = CapitalMilestone::findOrFail($request->listing);
-
-            if ($milestone->status === 1){
-                return response()->json(['message' => 'Payment already completed!'], 409);
-            }
-
-            $pitch = StartupPitches::with('capital_offer')->where('id',$milestone->app_id)->first();
-
-            if ($pitch->capital_owner_id !== $user->id) {
-                return response()->json(['message' => 'Forbidden!'], 403);
-            }
-
-            $emails = User::whereIn('id', [$pitch->user_id, $pitch->capital_owner_id])
-                ->pluck('email', 'id');
-            $sme_email = $emails[$pitch->user_id];
-            $capital_owner_email = $emails[$pitch->capital_owner_id];
-
-            $connectIds = User::whereIn('id', [$pitch->user_id, $pitch->capital_owner_id])
-                ->pluck('connect_id', 'id');
-            $sme_connect_id = $connectIds[$pitch->user_id];
-
-            $amount = (float) $milestone->amount;
-            $amountPayable = round($amount, 2);
-            //round($amount + ( $amount* ($tujitume_fee/100) ),2); // 5%
-
-            if ($pitch->capital_offer->available_amount < $amount) {
-                return response()->json(['message' => 'Insufficient available funds.'], 400);
-            }
-
-            //T r a n s f e r
-            if($request->percent == 100){
-                $amount = $pitch->total_amount_requested;
-                $amountPayable = round($amount, 2);
-                //round($amount + ($amount * ($tujitume_fee / 100)), 2); // 5%
-            }
-
-            //C h a r g e
-            try{
-                $charge = $this->Client->charges->create ([
-                    //"billing_address_collection": null,
-                    "amount" => (int) round($amountPayable*100), //100 * 100,
-                    "currency" => 'USD',
-                    "source" => $request->stripeToken,
-                    "description" => "Capital Milestone Release Funds."
-                ], [
-                    'idempotency_key' => 'release_'.$milestone->id.'_'.now()->timestamp
-                ]);
-            }
-            catch (\Stripe\Exception\ApiErrorException $e) {
-                StripePayments::create([
-                    'user_id' => $user->id,
-                    'charge_id' => $charge?->id ?? null,
-                    'amount' => $amountPayable ?? 0,
-                    'status' => 'failed',
-                ]);
-                Log::error('Stripe charge failed', ['error' => $e->getMessage()]);
-                return response()->json(['message' => 'Payment could not be processed by Stripe'], 400);
-            }
-
-            //D a t a b a s e
-            if($request->percent == 100){
-                CapitalMilestone::where('app_id', $milestone->app_id)->update([
-                    'status' => 1,
-                    'fund_released' => 1,
-                ]);
-            }
-            else{
-                $milestone->update([ 'status' => 1 ]);
-            }
-
-            DB::beginTransaction();
-            try{
-                CapitalOffer::where('id', $pitch->capital_id)->update([
-                    'available_amount' => DB::raw("available_amount - {$amount}")
-                ]);
-
-                //Update User Wallet
-                $this->balance->updateBalance($pitch->user_id, (float)$amount, 'lipr');
-                DB::commit();
-            }
-            catch(\Exception $e){
-                DB::rollBack();
-                return response()->json(['message' => 'Payment succeeded but Balance/Capital update failed. Admin notified.'], 500);
-            }
-
-            // Transactions & Stripe Log
-            try {
-                $this->transaction->create(
-                    $user->id,'capital_milestone','stripe', $amountPayable, $charge->id, $pitch->user_id
-                );
-
-                StripePayments::create([
-                    'user_id' => $user->id,
-                    'charge_id' => $charge->id,
-                    'amount' => $amountPayable,
-                    'status' => 'settled',
-                ]);
-            } catch (\Exception $e) {
-                Log::error('Transaction or StripePayments DB insert failed', [
-                    'charge_id' => $charge->id,
-                    'user_id' => $user->id,
-                    'error' => $e->getMessage(),
-                ]);
-            }
-
-            //T r a n s f e r to each SME and DB Amount Calculation
-            $amountToTransfer = $this->checkoutCalculator->stripeGC($amount); // $(91.30 of 100)
-            if($charge && $charge->id){
-                $transfer = $this->Client->transfers->create ([
-                    "amount" => $amountToTransfer*100, //100 * 100,
-                    "currency" => 'USD',
-                    "source_transaction" => $charge->id,
-                    'destination' => $sme_connect_id
-                ]);
-            }
-
-            // E M A I L  & NotificationService
-            try{
-                $text = $milestone->title.' fund for '.$pitch->capital_offer->offer_title.' has been released.';
-                $this->notification->create($pitch->user_id,$pitch->capital_offer->user_id, $text
-                    ,'overview/funding/funding?pitch_id='.$pitch->id,' capital');
-
-                $info=[
-                    'capital'=>$pitch->capital_offer->offer_title,
-                    'amount'=>$milestone->amount,
-                    'milestone_title' => $milestone->title
-                ]; $recipients ['to'] = [$capital_owner_email, $sme_email];
-
-                Mail::send('opportunities.capital_milestone', $info, function($msg) use ($recipients){
-                    $msg->to($recipients ['to']);
-                    $msg->subject(' Capital Milestone Release');
-                });
-            }
-            catch (\Exception $e){
-                Log::error('Mail/NotificationService failed', [
-                    'user_id' => $user->id,
-                    'error' => $e->getMessage(),
-                ]);
-            }
-
-            return response()->json(['message' => 'Fund Release Success.', 'status' =>200], 200);
+            \App\Service\Capital\CapitalRelease::begin($milestones, $reference, $fee);
+        } catch (\RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 409);
         }
-        catch (\Exception $e) {
-            ErrorLogService::report($e, [
-                'input' => request()->except(['password', 'token']),
-            ]);
 
-            return response()->json([
-                'message' => 'Something went wrong, please try again later.'
-            ], 500);
+        // 2. the charge (on failure nothing is released)
+        try {
+            $charge = $this->Client->charges->create([
+                'amount' => (int) round($amountPayable * 100),
+                'currency' => 'USD',
+                'source' => $request->stripeToken,
+                'description' => 'Capital Milestone Release Funds.',
+            ], ['idempotency_key' => $reference]);
+        } catch (\Throwable $e) {
+            \App\Service\Capital\CapitalRelease::fail($milestones);
+            StripePayments::create(['user_id' => $user->id, 'charge_id' => 'failed_'.Str::random(20), 'amount' => $amountPayable, 'status' => 'failed', 'message' => 'Capital release charge failed']);
+            Log::error('Stripe capital charge failed', ['error' => $e->getMessage()]);
+
+            return response()->json(['message' => 'Payment could not be processed by Stripe'], 400);
         }
+        CapitalMilestone::whereIn('id', $milestones->pluck('id'))->update(['release_reference' => $charge->id]);
+
+        // 3. the release in one database transaction (the milestones stay "processing" with the charge id if it fails)
+        try {
+            \App\Service\Capital\CapitalRelease::complete($pitch, $milestones, 'stripe', $charge->id, $fee, function () use ($user, $charge, $amountPayable) {
+                StripePayments::create(['user_id' => $user->id, 'charge_id' => $charge->id, 'amount' => $amountPayable, 'status' => 'settled', 'message' => 'Capital milestone release']);
+            });
+        } catch (\Throwable $e) {
+            ErrorLogService::report($e, ['capital_release' => $milestones->pluck('id')->all(), 'charge_id' => $charge->id]);
+
+            return response()->json(['message' => 'Payment received; the release is being finalised. Admin notified.'], 500);
+        }
+
+        // 4. the full amount to the entrepreneur
+        $transferred = true;
+        try {
+            $this->Client->transfers->create([
+                'amount' => (int) round($amount * 100),
+                'currency' => 'USD',
+                'source_transaction' => $charge->id,
+                'destination' => $smeConnectId,
+            ]);
+        } catch (\Throwable $e) {
+            $transferred = false;
+            ErrorLogService::report($e, ['capital_transfer' => $milestones->pluck('id')->all(), 'charge_id' => $charge->id]);
+        }
+
+        \App\Service\Capital\CapitalRelease::notifyReleased($pitch, $milestones);
+
+        return response()->json([
+            'message' => 'Fund Release Success.', 'status' => 200, 'amount' => $amount, 'fee' => $fee, 'charged' => $amountPayable,
+            'transfer' => $transferred ? 'sent' : 'pending',
+        ], 200);
     }
-
-
-//Class Ends
 }

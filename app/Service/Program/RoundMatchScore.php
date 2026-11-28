@@ -17,6 +17,9 @@ class RoundMatchScore
 
     public const MAX_FILES_PER_QUESTION = 10;
 
+    /** File categories a file-upload question can ask for; 'photo_video' is the old combined category, still read. */
+    public const FILE_CATEGORIES = ['document', 'photo', 'video', 'photo_video', 'beneficiary_list', 'other'];
+
     private const TYPE_ALIASES = [
         'long_answer' => 'long_text',
         'checkboxes' => 'checkbox',
@@ -60,6 +63,7 @@ class RoundMatchScore
     {
         $type = $data['question_type'] ?? $question?->question_type;
         $options = array_key_exists('options', $data) ? $data['options'] : $question?->options;
+        $data = $this->withFileCategory($data, (string) $type);
         $useScoring = array_key_exists('use_in_match_score', $data)
             ? filter_var($data['use_in_match_score'], FILTER_VALIDATE_BOOLEAN)
             : (bool) ($question?->use_in_match_score ?? false);
@@ -147,6 +151,51 @@ class RoundMatchScore
         ]);
     }
 
+    /**
+     * Sets `file_category` for a question being saved: what was sent (a category or a list of them), otherwise the
+     * categories found in the options an older client packs them into. Other question types have none.
+     */
+    private function withFileCategory(array $data, string $type): array
+    {
+        if ($this->canonicalType($type) !== 'file_upload') {
+            if (array_key_exists('question_type', $data) || array_key_exists('file_category', $data)) {
+                $data['file_category'] = null;
+            }
+
+            return $data;
+        }
+
+        if (array_key_exists('file_category', $data)) {
+            $sent = $data['file_category'];
+            $sent = is_string($sent) ? array_map('trim', explode(',', $sent)) : (array) ($sent ?? []);
+            $categories = array_values(array_unique(array_filter(array_map(fn ($value) => strtolower((string) $value), $sent), fn ($value) => $value !== '')));
+            foreach ($categories as $category) {
+                if (! in_array($category, self::FILE_CATEGORIES, true)) {
+                    $this->fail('file_category', 'Choose a file category from: '.implode(', ', self::FILE_CATEGORIES).'.');
+                }
+            }
+            $data['file_category'] = $categories ?: null;
+        } elseif (array_key_exists('options', $data)) {
+            $data['file_category'] = self::fileCategoriesIn((array) ($data['options'] ?? [])) ?: null;
+        }
+
+        return $data;
+    }
+
+    /** The file categories among a question's plain options (how they were stored before the file_category column). */
+    public static function fileCategoriesIn(array $options): array
+    {
+        $found = [];
+        foreach ($options as $option) {
+            $value = strtolower(trim((string) (is_array($option) ? ($option['value'] ?? '') : $option)));
+            if (in_array($value, self::FILE_CATEGORIES, true) && ! in_array($value, $found, true)) {
+                $found[] = $value;
+            }
+        }
+
+        return $found;
+    }
+
     public function score(Program $program, ProgramRound $round, array $answers): array
     {
         if (! $program->use_match_score || (int) $round->round_number !== 1) {
@@ -165,12 +214,33 @@ class RoundMatchScore
 
         $answerMap = $this->answerMap($answers);
         $total = 0.0;
+        $allPoints = 0;
+        $answeredPoints = 0;
         $breakdown = [];
 
+        // Missing answers never count against the applicant. A scored question with no answer at all (for example one
+        // added after they applied, or one not reached yet in the live preview) is left out, and what was earned is
+        // scaled over the points of the questions that do have an answer:
+        //     score = earned * (points of all scored questions / points of the answered ones)
+        // With every question answered this is exactly the plain sum, so complete applications score as before.
+        // With no scored question answered there is nothing to score, and the score is null rather than 0.
         foreach ($questions as $question) {
             $answer = $answerMap[$question->id] ?? [];
-            $earned = $this->scoreAnswer($question, $answer);
             $points = (int) $question->match_points;
+            $allPoints += $points;
+            if (! $this->hasAnswer($question, $answer)) {
+                $breakdown[] = [
+                    'question_id' => (int) $question->id,
+                    'question_text' => $question->question_text,
+                    'match_points' => $points,
+                    'earned_points' => 0.0,
+                    'status' => 'not answered',
+                    'counted' => false,
+                ];
+                continue;
+            }
+            $earned = $this->scoreAnswer($question, $answer);
+            $answeredPoints += $points;
             $total += $earned;
             $breakdown[] = [
                 'question_id' => (int) $question->id,
@@ -178,15 +248,23 @@ class RoundMatchScore
                 'match_points' => $points,
                 'earned_points' => round($earned, 1),
                 'status' => $earned >= $points ? 'matched' : ($earned > 0 ? 'partial' : 'not matched'),
+                'counted' => true,
             ];
         }
 
-        $score = round(min(100, max(0, $total)), 1);
+        if ($answeredPoints === 0) {
+            return ['score' => null, 'match_score' => null, 'breakdown' => $breakdown, 'below_threshold' => false];
+        }
+
+        $scaled = $answeredPoints < $allPoints ? $total * $allPoints / $answeredPoints : $total;
+        $score = round(min(100, max(0, $scaled)), 1);
         $limit = $program->match_score_limit;
 
         return [
             'score' => $score,
             'match_score' => $score,
+            // ideal (80+) | strong (60-79) | needs_revision (under 60), see MatchTier
+            'match_tier' => \App\Support\MatchTier::of($score),
             'breakdown' => $breakdown,
             'below_threshold' => $limit !== null && $score < (int) $limit,
         ];
@@ -266,6 +344,15 @@ class RoundMatchScore
         return $answer;
     }
 
+    /** Whether the applicant gave any answer to a scored question (a wrong answer is still an answer). */
+    private function hasAnswer(RoundCustomQuestion $question, array $answer): bool
+    {
+        $response = $answer['response'] ?? null;
+        $hasFile = filled($answer['file_path'] ?? null) || filled($answer['file_paths'] ?? null) || $response instanceof UploadedFile;
+
+        return $this->answerIsProvided((string) $question->question_type, $response instanceof UploadedFile ? null : $response, $hasFile);
+    }
+
     public function answerIsProvided(string $questionType, mixed $response, bool $hasFile = false): bool
     {
         if ($hasFile) {
@@ -327,16 +414,62 @@ class RoundMatchScore
      */
     public function validateFileSet(array $files, RoundCustomQuestion $question, string $field): void
     {
-        $options = (array) ($question->options ?? []);
+        // The categories live in their own column now; older questions still have them in the options
+        $options = array_merge((array) ($question->options ?? []), (array) ($question->file_category ?? []));
         $max = $this->maxFilesFor($options);
         if (count($files) > $max) {
             throw ValidationException::withMessages([$field => ["This question takes at most {$max} file".($max === 1 ? '' : 's').'.']]);
         }
         foreach ($files as $file) {
+            if ($refusal = $this->contentMismatch($file) ?? app(\App\Service\Validation\SpamImageChecker::class)->refusal($file)) {
+                throw ValidationException::withMessages([$field => [$refusal]]);
+            }
             if (! $this->fileMatchesQuestionOptions($file, $options)) {
                 throw ValidationException::withMessages([$field => ['The uploaded file type is not allowed for this question.']]);
             }
         }
+    }
+
+    /**
+     * The file's real content (sniffed from its bytes, not its name) against what its name says it is. Returns why it is
+     * refused, or null. Only clear contradictions are refused: a photo renamed to .pdf, a program renamed to .docx, an
+     * image whose bytes are a video. Content that cannot be told apart (application/octet-stream) is let through.
+     */
+    public function contentMismatch(UploadedFile $file): ?string
+    {
+        $name = $file->getClientOriginalName() ?: 'The file';
+        $extension = strtolower($file->getClientOriginalExtension());
+        $mime = strtolower((string) $file->getMimeType());
+        if ($mime === '' || $mime === 'application/octet-stream') return null;
+
+        $refused = "\"{$name}\" was refused: its content is not a .{$extension} file.";
+        if (preg_match('#^application/(x-(dosexec|msdownload|executable|mach-binary|sharedlib|elf|msdos-program)|vnd\.microsoft\.portable-executable)$#', $mime)) {
+            return "\"{$name}\" was refused: programs cannot be uploaded.";
+        }
+
+        $family = str_contains($mime, '/') ? explode('/', $mime)[0] : '';
+        $isMedia = in_array($family, ['image', 'video', 'audio'], true);
+        $documentExtensions = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'csv', 'txt', 'rtf', 'odt', 'ods', 'odp'];
+        $wanted = match (true) {
+            $extension === 'svg' => null, // sniffed as image/svg+xml or text/xml: both fine
+            in_array($extension, ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'heic', 'heif', 'tif', 'tiff'], true) => 'image',
+            in_array($extension, ['mp4', 'mov', 'avi', 'mkv', 'webm', 'mpg', 'mpeg', 'wmv', '3gp'], true) => 'video',
+            in_array($extension, ['mp3', 'wav', 'aac', 'ogg', 'm4a'], true) => 'audio',
+            default => null,
+        };
+        if ($wanted !== null) {
+            // A video container can hold only sound (mp4/webm/ogg sniffed as audio, and the other way round)
+            $close = ['video' => ['audio'], 'audio' => ['video']][$wanted] ?? [];
+            return $family === $wanted || in_array($family, $close, true) ? null : $refused;
+        }
+        if ($extension === 'pdf') {
+            return $mime === 'application/pdf' || $mime === 'application/x-pdf' ? null : $refused;
+        }
+        if (in_array($extension, $documentExtensions, true) && $isMedia) {
+            return $refused;
+        }
+
+        return null;
     }
 
     public function fileMatchesQuestionOptions(UploadedFile $file, array $options): bool

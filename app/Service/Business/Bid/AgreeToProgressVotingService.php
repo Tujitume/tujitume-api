@@ -182,25 +182,16 @@ class AgreeToProgressVotingService
                 ];
             }
 
-            // Release payments if rating threshold met
+            // Money is not moved here any more: a milestone's money goes out only through its pre-release (75%) and
+            // mid-milestone (25%) votes. This used to send every money bid on the milestone straight to the owner by
+            // Stripe once enough investors agreed, on top of those releases (a double payment).
             if ($t_rating >= 5.10) {
-                foreach ($release as $r) {
-                    if ($r['type'] === 'Monetary') {
-                        $this->Client->transfers->create([
-                            'amount' => $r['amount'] * 100,
-                            'currency' => 'USD',
-                            'destination' => $owner->connect_id
-                        ]);
-                    }
-                }
-
                 $this->notification->createWithBidId(
                     $bid->owner_id, $bid->investor_id, $bidId,
-                    'All payments for Milestone '.$milestone->title.' of Business '.$listing->name.' are now released!',
-                    '/', 'investor'
+                    'Investors in Milestone '.$milestone->title.' of '.$listing->name.' agreed to go ahead.',
+                    'dealroom', 'investor'
                 );
             }
-
             return $t_rating;
 
         } catch (\Exception $e) {

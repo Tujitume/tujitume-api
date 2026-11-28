@@ -93,6 +93,9 @@ class EmailBrand
         if (!$owner) return $brand;
 
         $org  = $owner->organization;
+        // A 7-day demo account is not an organisation's own space yet: its emails (and those to its address, such as
+        // the sign-up code for the full account) look like Tujitume's. The real account brands its own once created.
+        if ($org?->is_trial) return $brand;
         $name = $org?->display_name ?: $org?->name ?: $owner->display_name;
         if ($name) {
             $brand['custom'] = true;

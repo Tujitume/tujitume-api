@@ -43,7 +43,8 @@ class Controller extends BaseController
         $this->site_url = 'https://tujitume.com/';
         $this->tujitume_fee = (float) Setting::where('key', 'tujitume_fee')->first()?->value ?? 5;
 
-        $this->converter = new CurrencyConverter();
+        // From the container, so tests can swap in a fixed rate instead of calling the rates API on every request
+        $this->converter = app(CurrencyConverter::class);
         $this->usdToKes = $this->converter->UsdToKes();
     }
 

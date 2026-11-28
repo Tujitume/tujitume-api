@@ -52,7 +52,10 @@ class MilestoneFinalApprovalController extends Controller
                 ->where('milestone_id',$milestoneId)->latest()->first();
 
 
-            $exec->voted = $exec->votes->contains('investor_id', $user_id);
+            // No completion proof sent yet: an empty answer, not an error
+            if ($exec) {
+                $exec->voted = $exec->votes->contains('investor_id', $user_id);
+            }
 
             return response()->json([
                 'data'    => $exec
@@ -87,7 +90,18 @@ class MilestoneFinalApprovalController extends Controller
             ]);
 
             $fileUpload = new FileUploadService();
-            //$milestone = Milestones::find($validated['milestone_id']);
+            $milestone = \App\Models\Milestones\Milestones::with('listing')->find($validated['milestone_id']);
+            // Only the business owner sends the completion proof, once the milestone's money has been released
+            if (!$milestone || (int) $milestone->listing?->user_id !== (int) Auth::id()) {
+                return response()->json(['message' => 'Milestone not found.'], 404);
+            }
+            if (!$milestone->fund_released) {
+                return response()->json(['message' => 'The completion proof is sent after the milestone\'s money has been released.'], 422);
+            }
+            if (MilestoneExecutionDocuments::where('milestone_id', $milestone->id)->whereIn('status', ['pending', 'submitted', 'in_audit', 'approved'])->exists()
+                && $milestone->status === 'execution_submitted') {
+                return response()->json(['message' => 'The completion proof was already sent and is waiting for the investors.'], 409);
+            }
             $exec = MilestoneExecutionDocuments::create([
                 'milestone_id'    => $validated['milestone_id'],
                 'delay_reason'    => $validated['delay_reason'] ?? null,
@@ -105,9 +119,9 @@ class MilestoneFinalApprovalController extends Controller
 
             // File type check for all
             foreach($uploadTypes as $input =>$type) {
-//                if (!$request->hasFile($input)) {
-//                    continue;
-//                }
+                if (!$request->hasFile($input)) {
+                    continue; // every proof type is optional; only what was sent is checked
+                }
 
                 $files = $request->file($input);
                 $files = is_array($files) ? $files : [$files];
@@ -142,6 +156,8 @@ class MilestoneFinalApprovalController extends Controller
 
             $exec->milestone->status = 'execution_submitted';
             $exec->milestone->save();
+            // The investors vote on it in an open window (none was ever opened, so every vote was "Voting window is closed")
+            $this->votingService->open('final_approval', $exec->id, 7);
             $investors = $exec->milestone->investors;
             $this->notify($investors, 'final_approval_submitted', $exec->milestone);
 
@@ -192,7 +208,8 @@ class MilestoneFinalApprovalController extends Controller
             }
 
             // verify investor
-            $isInvestor = $execution->milestone->accepted_bids()->where('investor_id', $investorId)->exists();
+            $isInvestor = $execution->milestone->accepted_bids()->where('investor_id', $investorId)
+                ->whereIn('status', ['confirmed', 'Confirmed', 'verified', 'equipment_released'])->exists();
             if (!$isInvestor) {
                 return response()->json(['message' => 'Only investors can vote'], 422);
             }

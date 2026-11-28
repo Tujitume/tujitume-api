@@ -18,6 +18,12 @@ use Illuminate\Support\Collection;
  *       ->dateRange('date', fn ($r) => $r['at'])        // a string or Carbon
  *       ->sortable(['date' => fn ($r) => $r['at'], 'amount' => fn ($r) => $r['amount']], default: '-date');
  *   [$items, $page] = $list->fetch();
+ *
+ * Described filters (sent to the frontend panel as `data.filter_schema` via filterSchema(), like ListQuery):
+ *   ->options('kind', fn ($r) => $r['kind'], label: 'app:type')   (the value may be a list: a row matches any of its values)
+ *   ->dateRange('date', fn ($r) => $r['at'], label: 'app:date')
+ *   ->numberRange('amount', fn ($r) => $r['amount'], label: 'app:amount')
+ *   ->boolean('paid', fn ($r) => $r['paid'], label: 'app:paid')
  */
 class CollectionList
 {
@@ -25,6 +31,12 @@ class CollectionList
     private array $filters = [];
     /** @var array<string, callable> */
     private array $ranges = [];
+    /** @var array<string, callable> */
+    private array $numbers = [];
+    /** @var array<string, callable> */
+    private array $booleans = [];
+    /** @var array<string, array> */
+    private array $described = [];
     /** @var array<string, callable> */
     private array $sorts = [];
     private ?string $defaultSort = null;
@@ -53,11 +65,79 @@ class CollectionList
         return $this;
     }
 
-    public function dateRange(string $key, callable $value): static
+    public function dateRange(string $key, callable $value, ?string $label = null, array|bool $presets = true, ?string $fallback = null): static
     {
         $this->ranges[$key] = $value;
+        if ($label !== null || $fallback !== null) {
+            $this->describe($key, 'dateRange', $label, $fallback, ['presets' => $presets === true ? ListQuery::DATE_PRESETS : ($presets ?: [])]);
+        }
 
         return $this;
+    }
+
+    /** A multi-select filter described in filter_schema; $optionLabels and $values work as in ListQuery::options(). */
+    public function options(string $key, callable $value, ?string $label = null, array|\Closure|null $optionLabels = null, ?array $values = null, ?bool $searchable = null, ?string $fallback = null): static
+    {
+        $this->filters[$key] = $value;
+        $this->describe($key, 'options', $label, $fallback, ['labels' => $optionLabels, 'values' => $values, 'searchable' => $searchable]);
+
+        return $this;
+    }
+
+    /** Numbers min~max over fn ($row) => number. */
+    public function numberRange(string $key, callable $value, ?string $label = null, ?string $fallback = null): static
+    {
+        $this->numbers[$key] = $value;
+        $this->describe($key, 'numberRange', $label, $fallback);
+
+        return $this;
+    }
+
+    /** Yes / No / Any over fn ($row) => bool. */
+    public function boolean(string $key, callable $value, ?string $label = null, ?string $fallback = null): static
+    {
+        $this->booleans[$key] = $value;
+        $this->describe($key, 'boolean', $label, $fallback);
+
+        return $this;
+    }
+
+    /** The described filters with counts and bounds (each with the search and the OTHER filters applied); see ListQuery. */
+    public function filterSchema(): array
+    {
+        if ($this->wantsExport()) {
+            return [];
+        }
+
+        $out = [];
+        foreach ($this->described as $key => $d) {
+            $entry = ['key' => $key, 'type' => $d['type'], 'label' => $d['label'], 'fallback' => $d['fallback']];
+            if ($d['type'] === 'options') {
+                $entry['options'] = ListQuery::optionList($this->facets([$key])[$key] ?? [], $d['values'], $d['labels']);
+                $entry['searchable'] = $d['searchable'] ?? count($entry['options']) > ListQuery::SEARCHABLE_AFTER;
+            } elseif ($d['type'] === 'dateRange') {
+                $entry['presets'] = array_values($d['presets']);
+            } elseif ($d['type'] === 'numberRange') {
+                $values = $this->matching($key)->map(fn ($row) => ($this->numbers[$key])($row))->filter(fn ($v) => is_numeric($v))->map(fn ($v) => (float) $v);
+                $number = fn ($v) => floor($v) == $v ? (int) $v : round($v, 2);
+                if ($values->isNotEmpty()) {
+                    $entry['min'] = $number($values->min());
+                    $entry['max'] = $number($values->max());
+                }
+            } elseif ($d['type'] === 'boolean') {
+                $rows = $this->matching($key);
+                $yes = $rows->filter(fn ($row) => (bool) ($this->booleans[$key])($row))->count();
+                $entry['options'] = [['value' => 'yes', 'count' => $yes], ['value' => 'no', 'count' => $rows->count() - $yes]];
+            }
+            $out[] = $entry;
+        }
+
+        return $out;
+    }
+
+    private function describe(string $key, string $type, ?string $label, ?string $fallback, array $extra = []): void
+    {
+        $this->described[$key] = ['type' => $type, 'label' => $label, 'fallback' => $fallback ?? ucfirst(str_replace(['_', '-'], ' ', $key))] + $extra;
     }
 
     public function sortable(array $sorts, ?string $default = null): static
@@ -94,8 +174,26 @@ class CollectionList
                 if ($key === $except) {
                     continue;
                 }
+                if (isset($this->numbers[$key])) {
+                    [$min, $max] = ListQuery::numberBounds($value);
+                    $number = ($this->numbers[$key])($row);
+                    if (($min !== null || $max !== null) && ! is_numeric($number)) {
+                        return false;
+                    }
+                    if (($min !== null && (float) $number < $min) || ($max !== null && (float) $number > $max)) {
+                        return false;
+                    }
+                    continue;
+                }
+                if (isset($this->booleans[$key])) {
+                    $yes = ListQuery::yesNo($value);
+                    if ($yes !== null && (bool) ($this->booleans[$key])($row) !== $yes) {
+                        return false;
+                    }
+                    continue;
+                }
                 if (isset($this->ranges[$key])) {
-                    [$from, $to] = array_pad(explode('~', (string) (is_array($value) ? reset($value) : $value), 2), 2, '');
+                    [$from, $to] = ListQuery::splitRange($value);
                     $day = substr((string) ($this->ranges[$key])($row), 0, 10);
                     if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $from) && ($day === '' || $day < $from)) {
                         return false;
@@ -109,7 +207,9 @@ class CollectionList
                     continue;
                 }
                 $values = array_map('strval', array_values(array_filter((array) $value, fn ($v) => is_scalar($v) && $v !== '')));
-                if ($values && ! in_array((string) ($this->filters[$key])($row), $values, true)) {
+                // a value may be a list (a row with several Business Coaches): the row matches when any of them is picked
+                $own = array_map('strval', (array) ($this->filters[$key])($row));
+                if ($values && ! array_intersect($own, $values)) {
                     return false;
                 }
             }
@@ -124,7 +224,7 @@ class CollectionList
         $rows = $this->sorted($this->matching());
 
         if ($this->wantsExport()) {
-            return [$rows->take(ListQuery::EXPORT_CAP)->values(), null];
+            return [$rows->values(), null];
         }
         if (! ApiContract::wantsPagination($this->request)) {
             return [$rows->values(), null];
@@ -137,9 +237,10 @@ class CollectionList
         return [$paginator->getCollection(), $paginator];
     }
 
+    /** Exports are never cut (every matching row is returned); kept so responses still carry `export_truncated: false`. */
     public function exportTruncated(): bool
     {
-        return $this->wantsExport() && $this->matching()->count() > ListQuery::EXPORT_CAP;
+        return false;
     }
 
     /**
@@ -155,7 +256,7 @@ class CollectionList
                 continue;
             }
             $out[$key] = $this->matching($key)
-                ->map(fn ($row) => ($this->filters[$key])($row))
+                ->flatMap(fn ($row) => (array) ($this->filters[$key])($row))
                 ->filter(fn ($v) => $v !== null && $v !== '')
                 ->countBy()
                 ->map(fn ($count, $value) => ['value' => $value, 'count' => $count])

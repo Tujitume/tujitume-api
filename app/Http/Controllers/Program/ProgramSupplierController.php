@@ -43,26 +43,39 @@ class ProgramSupplierController extends Controller
     }
 
     /**
-     * Store a newly created resource in storage.
+     * POST milestones/{milestone}/suppliers (ISSUE-25): attach a directory supplier to a milestone. It is the same action
+     * as POST milestones/{milestone}/assign-suppliers (owner or applicant, with the same checks), so both routes work.
      */
+    public function store(Request $request, ProgramMilestone $milestone)
+    {
+        return app(SupplierDirectoryController::class)->assignToMilestone($request, $milestone);
+    }
 
 
     /**
-     * Display the specified resource.
+     * The milestone's supplier link, from the nested route milestones/{milestone}/suppliers/{supplier}
+     * ({supplier} is the milestone_suppliers id). A link of another milestone is not found.
      */
-    public function show(string $id)
+    private function linkOf(string $milestone, string $supplier): MilestoneSupplier
     {
-        $userId = auth()->id();
+        return MilestoneSupplier::with('milestone.application.program')
+            ->where('milestone_id', $milestone)
+            ->whereKey($supplier)
+            ->firstOrFail();
+    }
 
+    /** GET milestones/{milestone}/suppliers/{supplier}: one supplier link, for whoever may see the milestone */
+    public function show(string $milestone, string $supplier)
+    {
         try {
-            $supplier = MilestoneSupplier::with('supplierDirectory')
-                ->where('supplier_id', $id)->first();
+            $link = $this->linkOf($milestone, $supplier);
+            (new \App\Service\Program\ProgramAccess())->authorizeMilestone(auth()->user(), $link->milestone);
 
-            return response()->json(['data' => $supplier], 200);
-
+            return response()->json(['data' => $link->load('supplierDirectory')], 200);
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
-            return response()->json(['error' => 'Supplier not found'], 404);
-
+            return response()->json(['error' => 'Supplier assignment not found'], 404);
+        } catch (\Illuminate\Auth\Access\AuthorizationException $e) {
+            return response()->json(['error' => 'Unauthorized'], 403);
         } catch (\Exception $e) {
             ErrorLogService::report($e);
             return response()->json(['message' => 'Something went wrong'], 500);
@@ -70,43 +83,38 @@ class ProgramSupplierController extends Controller
     }
 
     /**
-     * Show the form for editing the specified resource.
+     * PATCH milestones/{milestone}/suppliers/{supplier}: a supplier link is not edited in place; remove it and assign the
+     * supplier again (POST milestones/{milestone}/suppliers). Says so plainly instead of answering with an empty 200.
      */
-    public function edit(string $id)
-    {
-        //
-    }
-
-    /**
-     * Update the specified resource in storage.
-     */
-    public function update(Request $request, string $id)
-    {
-        $supplier = MilestoneSupplier::with('milestone.application')->find($id);
-
-        if ($supplier?->milestone?->application?->funding_setup_status === 'completed') {
-            return response()->json([
-                'error' => 'Funding setup is completed. Suppliers cannot be edited or deleted.',
-            ], 403);
-        }
-    }
-
-    /**
-     * Remove the specified resource from storage.
-     */
-    public function destroy(string $id)
+    public function update(Request $request, string $milestone, string $supplier)
     {
         try {
-            $supplier = MilestoneSupplier::with('milestone.application.program')->findOrFail($id);
-            $milestone = $supplier->milestone;
-            $application = $milestone->application;
+            $link = $this->linkOf($milestone, $supplier);
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json(['error' => 'Supplier assignment not found'], 404);
+        }
+        if ($link->milestone?->application?->funding_setup_status === 'completed') {
+            return response()->json(['error' => 'Funding setup is completed. Suppliers cannot be edited or deleted.'], 403);
+        }
+
+        return response()->json(['error' => 'A supplier on a milestone is not edited. Remove it and assign the supplier again.'], 405);
+    }
+
+    /** DELETE milestones/{milestone}/suppliers/{supplier}: the program team, or the applicant while they may add suppliers */
+    public function destroy(string $milestone, string $supplier)
+    {
+        try {
+            $link = $this->linkOf($milestone, $supplier);
+            $milestoneModel = $link->milestone;
+            $application = $milestoneModel->application;
             $userId = auth()->id();
 
-            $isProgramOwner = $application->program->user_id === $userId;
-            $isPermittedApplicant = $application->user_id === $userId
-                && $milestone->canApplicantEdit('can_add_suppliers');
+            // The owner or a team member who may edit the program (not only the account that created it)
+            $isProgramTeam = \App\Service\Program\ProgramAccess::owns($application->program);
+            $isPermittedApplicant = (int) $application->user_id === (int) $userId
+                && $milestoneModel->canApplicantEdit('can_add_suppliers');
 
-            if (!$isProgramOwner && !$isPermittedApplicant) {
+            if (!$isProgramTeam && !$isPermittedApplicant) {
                 return response()->json(['error' => 'Unauthorized'], 403);
             }
 
@@ -116,17 +124,17 @@ class ProgramSupplierController extends Controller
                 ], 403);
             }
 
-            if ($isPermittedApplicant && $application->funding_setup_status !== 'awaiting_applicant_revision') {
+            if (!$isProgramTeam && $application->funding_setup_status !== 'awaiting_applicant_revision') {
                 return response()->json(['error' => 'Suppliers can only be deleted while the plan is being prepared or revised.'], 403);
             }
 
-            $supplier->delete();
+            $link->delete();
 
             return response()->json(['message' => 'Supplier removed from milestone successfully.'], 200);
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
             return response()->json(['error' => 'Supplier assignment not found'], 404);
         } catch (\Exception $e) {
-            ErrorLogService::report($e, ['supplier_id' => $id]);
+            ErrorLogService::report($e, ['milestone_id' => $milestone, 'supplier_link_id' => $supplier]);
             return response()->json(['message' => 'Something went wrong'], 500);
         }
     }

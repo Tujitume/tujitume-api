@@ -37,10 +37,7 @@ class MECheckpointResource extends JsonResource
                 'name' => trim(($assignedTo->first_name ?? '') . ' ' . ($assignedTo->last_name ?? '')) ?: $assignedTo->email,
             ] : null,
             'sent_at' => $this->whenHas('sent_at', $this->sent_at?->toISOString()),
-            'status' => $this->whenHas('status', [
-                'value' => $this->status,
-                'color' => config("status.me_checkpoint.{$this->status}", 'gray'),
-            ]),
+            'status' => $this->whenHas('status', \App\Support\ApiContract::statusMeta('me_checkpoint', $this->status)),
             'submission' => new MESubmissionResource($this->whenLoaded('submission')),
             'site_visit' => new MESiteVisitResource($this->whenLoaded('siteVisit')),
         ];

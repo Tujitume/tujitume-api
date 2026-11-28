@@ -11,6 +11,34 @@ class MESiteVisit extends Model
     use HasFactory;
     protected static function newFactory() { return \Database\Factories\MESiteVisitFactory::new(); }
 
+    /**
+     * A new visit always starts with its checkpoint's copy (KPIs, fields to collect, objective) and the business's
+     * location, whichever code path creates it (the M&E tab, a program import...). Values given explicitly win.
+     */
+    protected static function booted(): void
+    {
+        static::creating(function (MESiteVisit $visit) {
+            $checkpoint = $visit->checkpoint_id ? MECheckpoint::find($visit->checkpoint_id) : null;
+            if (! $checkpoint) return;
+            if (empty($visit->kpi_targets) && ! empty($checkpoint->kpis_to_track)) {
+                $visit->kpi_targets = $checkpoint->kpis_to_track;
+            }
+            if (empty($visit->data_collection_fields)) {
+                $fields = array_merge($checkpoint->submission_fields ?? [], $checkpoint->evidence_required ?? []);
+                if ($fields) $visit->data_collection_fields = $fields;
+            }
+            if (blank($visit->objective) && filled($checkpoint->requirement)) {
+                $visit->objective = $checkpoint->requirement;
+            }
+            if (blank($visit->location) || $visit->gps_lat === null || $visit->gps_lng === null) {
+                $business = $checkpoint->application?->business;
+                $visit->location = filled($visit->location) ? $visit->location : $business?->location;
+                $visit->gps_lat ??= $business?->lat;
+                $visit->gps_lng ??= $business?->lng;
+            }
+        });
+    }
+
     protected $fillable = [
         'checkpoint_id', 'app_id', 'reviewer_id', 'inspector', 'start_date',
         'location', 'gps_lat', 'gps_lng', 'confirm_location', 'objective', 'kpi_targets', 'assign_type', 'email',
@@ -35,6 +63,8 @@ class MESiteVisit extends Model
     {
         return $query->whereHas('checkpoint', fn ($checkpoint) => $checkpoint->whereNotNull('sent_at'));
     }
+    /** The application the visit is for (app_id), for searching by its business name. */
+    public function application() { return $this->belongsTo(\App\Models\Programs\ProgramApplication::class, 'app_id'); }
     public function reviewer()   { return $this->belongsTo(User::class, 'reviewer_id'); }
     public function files()      { return $this->hasMany(MESiteVisitFile::class, 'site_visit_id'); }
 

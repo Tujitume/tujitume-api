@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Misc;
 
 use App\Http\Controllers\Controller;
 use App\Service\AI\AmariAccountContext;
+use App\Service\AI\AmariUsage;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -41,12 +42,28 @@ class AmariController extends Controller
         $profile = in_array($request->input('profile'), ['public', 'debug'], true) ? $request->input('profile') : 'portal';
         $public = $profile === 'public';
 
+        // Usage (Admin › Amari usage): the signed-in account even on the landing page, otherwise the visitor's key
+        $asker = auth('sanctum')->user();
+        $guestKey = $asker ? null : AmariUsage::guestKey($request);
+        $feature = AmariUsage::feature($request->input('feature'));
+        $started = microtime(true);
+        $track = fn (string $status, array $row = []) => AmariUsage::record($asker, $guestKey, $row + [
+            'status' => $status, 'profile' => $profile, 'feature' => $feature,
+            'duration_ms' => (int) round((microtime(true) - $started) * 1000),
+        ]);
+
+        if ($refusal = AmariUsage::refusal($asker, $guestKey)) {
+            $track($refusal['status']);
+
+            return $this->refused($refusal);
+        }
+
         // The browser cannot supply an ACCOUNT block of its own: the only one is the server's, placed straight
         // after the leading system messages.
         $sent = array_values(array_filter($messages, fn ($m) => ! (
             ($m['role'] ?? null) === 'system' && is_string($m['content'] ?? null) && str_starts_with($m['content'], 'ACCOUNT ')
         )));
-        $user = $public ? null : auth('sanctum')->user();
+        $user = $public ? null : $asker;
         $account = $user ? AmariAccountContext::messageFor($user) : null;
         if ($account) {
             $at = collect($sent)->search(fn ($m) => ($m['role'] ?? null) !== 'system');
@@ -68,6 +85,10 @@ class AmariController extends Controller
                 return $this->error('Please shorten your question before sending it.', 400);
             }
             if ($blocked = $this->guard($question)) {
+                if ($blocked->getStatusCode() === 403) {
+                    $track('blocked', ['model' => config('services.amari.guard_model')]);
+                }
+
                 return $blocked;
             }
         }
@@ -82,10 +103,16 @@ class AmariController extends Controller
             'top_p' => 1,
             'reasoning_effort' => $public ? 'low' : 'medium',
         ];
+        if ($stream) {
+            $body['stream_options'] = ['include_usage' => true]; // the last chunk carries the token counts
+        }
+        $promptTokens = fn () => AmariUsage::estimateTokens(AmariUsage::messagesText($sent));
 
         try {
             $upstream = $this->upstream()->withOptions(['stream' => $stream])->timeout(90)->post(config('services.amari.url'), $body);
         } catch (ConnectionException) {
+            $track('error', ['model' => $model]);
+
             return $this->error('upstream unavailable', 502);
         }
 
@@ -97,27 +124,93 @@ class AmariController extends Controller
         }
         if (! $upstream->successful()) {
             logger()->error('amari: upstream error', ['status' => $upstream->status(), 'model' => $model]); // never the prompt or key
+            $track('error', ['model' => $model]);
 
             return $this->error('upstream unavailable', 502);
         }
         if (! $stream) {
+            $usage = $this->usageOf($upstream->json());
+            $track('answered', [
+                'model' => $upstream->json('model') ?? $model,
+                'input_tokens' => $usage['in'] ?? $promptTokens(),
+                'output_tokens' => $usage['out'] ?? AmariUsage::estimateTokens((string) $upstream->json('choices.0.message.content')),
+                'tokens_estimated' => $usage === null,
+            ]);
+
             return response($upstream->body(), 200, ['Content-Type' => 'application/json', 'Cache-Control' => 'no-store']);
         }
 
         $source = $upstream->toPsrResponse()->getBody();
 
-        return new StreamedResponse(function () use ($source) {
+        return new StreamedResponse(function () use ($source, $track, $model, $promptTokens) {
+            $buffer = '';
+            $usage = null;
+            $answerChars = 0;
+            $read = function (string $line) use (&$usage, &$answerChars) {
+                if (! str_starts_with($line, 'data:')) {
+                    return;
+                }
+                $chunk = json_decode(trim(substr($line, 5)), true);
+                if (! is_array($chunk)) {
+                    return;
+                }
+                $usage = $this->usageOf($chunk) ?? $usage;
+                $delta = $chunk['choices'][0]['delta'] ?? [];
+                $answerChars += strlen((string) ($delta['content'] ?? '')) + strlen((string) ($delta['reasoning'] ?? ''));
+            };
+
             while (! $source->eof() && ! connection_aborted()) { // the client pressed Stop or left: stop paying for the answer
-                echo $source->read(1024);
+                $piece = $source->read(1024);
+                echo $piece;
                 @ob_flush();
                 flush();
+                $buffer .= $piece;
+                while (($at = strpos($buffer, "\n")) !== false) {
+                    $read(trim(substr($buffer, 0, $at)));
+                    $buffer = substr($buffer, $at + 1);
+                }
             }
+            $read(trim($buffer));
+            $stopped = ! $source->eof();
             $source->close();
+
+            $track($stopped ? 'stopped' : 'answered', [
+                'model' => $model,
+                'input_tokens' => $usage['in'] ?? $promptTokens(),
+                'output_tokens' => $usage['out'] ?? (int) ceil($answerChars / 4),
+                'tokens_estimated' => $usage === null,
+            ]);
         }, 200, [
             'Content-Type' => 'text/event-stream',
             'Cache-Control' => 'no-cache, no-transform',
             'X-Accel-Buffering' => 'no', // nginx: do not buffer the stream
         ]);
+    }
+
+    /** Token counts from a provider response or stream chunk (OpenAI-style `usage`, or Groq's `x_groq.usage`) */
+    private function usageOf(?array $payload): ?array
+    {
+        $usage = $payload['usage'] ?? $payload['x_groq']['usage'] ?? null;
+        if (! is_array($usage) || ! isset($usage['prompt_tokens'])) {
+            return null;
+        }
+
+        return ['in' => (int) $usage['prompt_tokens'], 'out' => (int) ($usage['completion_tokens'] ?? 0)];
+    }
+
+    /** The answer when an admin's limit or pause stops a request (Admin › Amari usage) */
+    private function refused(array $refusal): JsonResponse
+    {
+        if ($refusal['status'] === 'paused') {
+            return response()->json(['error' => ['code' => 'amari_paused', 'message' => 'Amari is paused for this account. Please contact Tujitume support.']], 403);
+        }
+        $resets = AmariUsage::startOfToday()->addDay();
+
+        return response()->json([
+            'error' => ['code' => 'daily_limit', 'message' => "You've reached today's Amari limit. It resets at midnight (UTC)."],
+            'limit' => $refusal['limit'],
+            'resets_at' => $resets->toIso8601String(),
+        ], 429);
     }
 
     // Prompt Guard check for signed-out visitors: long questions are scanned in overlapping windows. An additional

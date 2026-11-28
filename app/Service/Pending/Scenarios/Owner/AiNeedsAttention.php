@@ -28,7 +28,8 @@ class AiNeedsAttention extends Scenario
             ->join('program_applications as pa', 'pa.id', '=', 'r.application_id')
             ->join('program_rounds as pr', 'pr.id', '=', 'r.round_id')->join('programs as p', 'p.id', '=', 'pr.program_id')
             ->whereColumn('pa.current_round_id', 'r.round_id')->whereIn('pa.round_status', \App\Models\Programs\ProgramApplication::AI_REVIEWABLE_STATUSES)
-            ->where('p.user_id', $this->ownerId)->whereIn('r.status', ['needs_attention', 'failed'])->whereNotIn('pr.status', ['finalized']);
+            ->whereIn('p.id', \App\Models\Programs\Program::ofOrganization(\App\Models\Auth\User::find($this->ownerId))->select('id')) // ISSUE-38
+            ->whereIn('r.status', ['needs_attention', 'failed'])->whereNotIn('pr.status', ['finalized']);
         if (! \App\Service\Misc\AutomatedAccounts::$reviewWithAi) {
             $query->whereNotIn('pa.user_id', DB::table('users')->where('email', 'like', \App\Service\Misc\AutomatedAccounts::EMAIL_LIKE)->select('id'));
         }

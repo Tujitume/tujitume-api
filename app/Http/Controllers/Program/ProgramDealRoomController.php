@@ -208,14 +208,8 @@ class ProgramDealRoomController extends Controller
             return response()->json([
                 'application' => [
                     ...$pitch->toArray(),
-                    'status' => [
-                        'value' => $pitch->status,
-                        'color' => config('status.program_application.' . $pitch->status, 'gray'),
-                    ],
-                    'funding_setup_status' => [
-                        'value' => $pitch->funding_setup_status,
-                        'color' => config('status.funding_setup.' . $pitch->funding_setup_status, 'gray'),
-                    ],
+                    'status' => \App\Support\ApiContract::statusMeta('program_application', $pitch->status),
+                    'funding_setup_status' => \App\Support\ApiContract::statusMeta('funding_setup', $pitch->funding_setup_status),
                 ],
 
             ]);

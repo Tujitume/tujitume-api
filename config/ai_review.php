@@ -195,7 +195,8 @@ return [
             'api_key' => env('OPENROUTER_API_KEY'),
             'model' => env('OPENROUTER_MODEL', 'meta-llama/llama-3.3-70b-instruct:free'),
             'vision_model' => env('OPENROUTER_VISION_MODEL'),
-            'supports_json_schema' => false,
+            // Off by default (not every OpenRouter model enforces a schema); true for models that do, e.g. openai/gpt-4o-mini
+            'supports_json_schema' => (bool) env('OPENROUTER_JSON_SCHEMA', false),
             'supports_json_mode' => true,
             'context_tokens' => (int) env('OPENROUTER_CONTEXT_TOKENS', 64000),
             'max_output_tokens' => (int) env('OPENROUTER_MAX_OUTPUT', 4096),

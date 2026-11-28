@@ -52,8 +52,8 @@ class MilestonePreAgreementController extends Controller
             if (!$agreement->exists) {
                 $agreement->status = $isApplicant ? 'submitted' : 'pending';
                 $agreement->submitted_by = $userId;
-            } elseif ($isApplicant) {
-                // An applicant response reopens a rejected agreement for owner review.
+            } elseif ($isApplicant && $agreement->status !== 'final_rejected') {
+                // An applicant response reopens a rejected agreement for owner review (not one rejected twice, DECISION-8).
                 $agreement->status = 'submitted';
                 $agreement->submitted_by = $userId;
                 $agreement->reviewed_by = null;
@@ -71,6 +71,7 @@ class MilestonePreAgreementController extends Controller
             ]);
 
             DB::commit();
+            $this->broadcastUpdate($milestone, $type, 'comment');
 
             $this->notifyAgreementAction($agreement, $milestone, $application, $isApplicant, $validated['comment']);
 
@@ -86,6 +87,16 @@ class MilestonePreAgreementController extends Controller
             DB::rollBack();
             ErrorLogService::report($e, ['input' => request()->except(['password', 'token'])]);
             return response()->json(['message' => 'Something went wrong, please try again later.'], 500);
+        }
+    }
+
+    /** ISSUE-42: tell every open drawer of this step at once; a websocket that cannot be reached never fails the save */
+    private function broadcastUpdate(ProgramMilestone $milestone, string $type, string $action): void
+    {
+        try {
+            broadcast(new \App\Events\StepAgreementUpdated((int) $milestone->id, $type, $action, auth()->id()))->toOthers();
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::warning('Step conversation broadcast failed', ['milestone_id' => $milestone->id, 'error' => $e->getMessage()]);
         }
     }
 
@@ -122,16 +133,22 @@ class MilestonePreAgreementController extends Controller
         if ($isApplicant && $isAgreement) {
             $data['request_count'] = count($commentData['q'] ?? []);
             try {
-                $notification->send('agreement.agreed', [$owner], $data);
+                // the whole owner program team (ISSUE-42), not only the program's creator
+                $notification->send('agreement.agreed', \App\Service\Program\ProgramTeam::members($program)->all(), $data);
             } catch (\Throwable $e) {
                 ErrorLogService::report($e, ['notification_event' => 'agreement.agreed']);
             }
             return;
         }
 
-        // Ordinary agreement messages are throttled per conversation and recipient.
-        $recipient = $isApplicant ? $owner : $applicant;
-        if (!$recipient || !Cache::add('agreement-message:' . $agreement->id . ':' . $recipient->id, true, now()->addMinutes(10))) {
+        // Ordinary agreement messages go to the other side: the applicant, or everyone on the owner's program team (ISSUE-42).
+        // They are throttled per conversation and recipient (at most one notice / email every 10 minutes), a digest
+        // rather than one per message; the open drawer updates live (StepAgreementUpdated).
+        $others = $isApplicant
+            ? \App\Service\Program\ProgramTeam::members($program)->reject(fn ($u) => (int) $u->id === (int) auth()->id())
+            : collect([$applicant])->filter();
+        $recipients = $others->filter(fn ($u) => Cache::add('agreement-message:' . $agreement->id . ':' . $u->id, true, now()->addMinutes(10)))->values();
+        if ($recipients->isEmpty()) {
             return;
         }
         $data['actor_side'] = $isApplicant ? 'applicant' : 'owner';
@@ -142,7 +159,7 @@ class MilestonePreAgreementController extends Controller
             ? (string) ($commentData['t'] ?? $commentData['m'] ?? '')
             : $comment;
         try {
-            $notification->send('agreement.message', [$recipient], $data);
+            $notification->send('agreement.message', $recipients->all(), $data);
         } catch (\Throwable $e) {
             ErrorLogService::report($e, ['notification_event' => 'agreement.message']);
         }
@@ -207,6 +224,7 @@ class MilestonePreAgreementController extends Controller
             }
 
             DB::commit();
+            $this->broadcastUpdate($milestone, $type, 'approve');
 
             return response()->json([
                 'message'   => 'Agreement approved successfully',
@@ -256,11 +274,13 @@ class MilestonePreAgreementController extends Controller
             }
 
             $newRejectionCount = $agreement->rejection_count + 1;
-            //$isFinalRejection  = $newRejectionCount >= 2;
+            // DECISION-8: rejected twice, the agreement is settled as final_rejected (no endless loop); the step goes
+            // ahead, and its checks are audited by a project manager (RepeatedRejectionAudit)
+            $isFinalRejection = $newRejectionCount >= \App\Service\Program\RepeatedRejectionAudit::LIMIT;
 
             // Update agreement
             $agreement->update([
-                'status'          => 'rejected',
+                'status'          => $isFinalRejection ? 'final_rejected' : 'rejected',
                 'rejection_count' => $newRejectionCount,
                 'reviewed_at'     => now(),
             ]);
@@ -275,9 +295,51 @@ class MilestonePreAgreementController extends Controller
             ]);
 
             DB::commit();
+            $this->broadcastUpdate($milestone, $type, 'reject');
+
+            $application = $milestone->application;
+            $data = ['business_name' => $application->startup_name, 'milestone_number' => $milestone->sequence_order,
+                'application_id' => $application->id, 'program_id' => $application->program_id,
+                'check' => ['mprv' => 'MPRV', 'mid_milestone' => 'mid-milestone check', 'final_approval' => 'final approval'][$type] ?? $type,
+                'step' => ['mprv' => 'mprv', 'mid_milestone' => 'mid-milestone', 'final_approval' => 'final-approval'][$type] ?? 'mprv'];
+
+            // ISSUE-42: a first rejection tells the applicant what to change (in-app + email, link to the step)
+            if (! $isFinalRejection) {
+                try {
+                    app(\App\Service\Notification\ProgramNotificationService::class)->send('agreement.changes_requested', [$application->user], $data + [
+                        'reason' => $validated['rejection_reason'],
+                        'email_title' => 'Changes asked for on the '.$data['check'].' instructions',
+                        'email_message' => 'The program team asked for changes to the '.$data['check'].' instructions for milestone '.$milestone->sequence_order.': "'.$validated['rejection_reason'].'". Reply in the step conversation and agree again.',
+                        'action_label' => 'Open the step',
+                    ]);
+                } catch (\Throwable $e) {
+                    ErrorLogService::report($e, ['agreement_id' => $agreement->id]);
+                }
+            }
+
+            if ($isFinalRejection) {
+                try {
+                    $notify = app(\App\Service\Notification\ProgramNotificationService::class);
+                    $notify->send('verification.audit_needed_applicant', [$application->user], $data + [
+                        'email_title' => 'Your check goes to an independent audit',
+                        'email_message' => 'The instructions for the '.$data['check'].' of milestone '.$milestone->sequence_order.' were not agreed after two rounds, so an independent project manager will audit that check when you submit it.',
+                        'action_label' => 'Open your deal room',
+                    ]);
+                    $notify->send('verification.audit_needed', \App\Service\Program\ProgramTeam::members($application->program)->all(), $data + [
+                        'email_title' => 'A project manager audit will be needed',
+                        'email_message' => 'The '.$data['check'].' instructions for milestone '.$milestone->sequence_order.' were rejected twice. That check will need a project manager audit: pick one when it is submitted.',
+                        'action_label' => 'Open the deal room',
+                    ]);
+                } catch (\Throwable $e) {
+                    ErrorLogService::report($e, ['agreement_id' => $agreement->id]);
+                }
+            }
 
             return response()->json([
-                'message'          => 'Agreement rejected. Applicant can respond and resubmit.',
+                'message'          => $isFinalRejection
+                    ? 'Agreement rejected a second time. It is settled, and this check will be audited by a project manager.'
+                    : 'Agreement rejected. Applicant can respond and resubmit.',
+                'final'            => $isFinalRejection,
                 'rejection_count'  => $newRejectionCount,
                 'data'             => $agreement->load('comments.user'),
             ], 200);
@@ -326,6 +388,38 @@ class MilestonePreAgreementController extends Controller
         return response()->noContent();
     }
 
+    /**
+     * DECISION-8 change: an agreement rejected twice (final_rejected) can be reopened by the owner team, who then review
+     * the applicant's instructions themselves (approve or reject) instead of sending the step's check to an audit.
+     * POST milestones/{milestone}/agreements/{type}/reopen
+     */
+    public function reopen(Request $request, ProgramMilestone $milestone, string $type)
+    {
+        if (! \App\Service\Program\ProgramAccess::owns($milestone->application->program)) {
+            return response()->json(['message' => 'Only the program team can reopen this agreement.'], 403);
+        }
+        $data = $request->validate(['reason' => 'nullable|string|max:1000']);
+        $agreement = MilestonePreAgreement::where('milestone_id', $milestone->id)->where('verification_type', $type)->first();
+        if (! $agreement) return response()->json(['message' => 'No agreement found for this check.'], 404);
+        if ($agreement->status !== 'final_rejected') {
+            return response()->json(['message' => 'Only an agreement rejected twice can be reopened.'], 409);
+        }
+
+        DB::transaction(function () use ($agreement, $data) {
+            // Back to waiting for the owner's decision on the applicant's latest instructions
+            $agreement->update(['status' => 'submitted', 'reviewed_at' => null]);
+            MilestoneAgreementComment::create([
+                'agreement_id' => $agreement->id,
+                'user_id' => auth()->id(),
+                'comment' => 'Reopened by the program team to review it themselves (no project manager audit).'.(filled($data['reason'] ?? null) ? ' '.trim($data['reason']) : ''),
+                'action' => 'comment',
+            ]);
+        });
+        $this->broadcastUpdate($milestone, $type, 'reopen');
+
+        return response()->json(['message' => 'Agreement reopened. Approve or reject it yourself.', 'data' => $agreement->fresh()]);
+    }
+
     private function sanitizeAgreementText(string $text, SpamWordChecker $spam): string
     {
         $clean = function (string $value) use ($spam): string {
@@ -372,10 +466,7 @@ class MilestonePreAgreementController extends Controller
             ->map(function ($agreement) {
                 return [
                     ...$agreement->toArray(),
-                    'status' => [
-                        'value' => $agreement->status,
-                        'color' => config('status.milestone_pre_agreement.' . $agreement->status, 'gray'),
-                    ],
+                    'status' => \App\Support\ApiContract::statusMeta('milestone_pre_agreement', $agreement->status),
                 ];
             });
 

@@ -3,7 +3,7 @@
 
     <div style="padding:20px;font-size:14px;line-height:1.6;">
         <p>Hi,</p>
-        <p>The milestone payment was released by the program owner.</p>
+        <p>The milestone payment was released by the capital provider.</p>
 
         <div style="background-color:#f0fdf4;padding:1rem 1.25rem;border-radius:0.5rem;margin:1.5rem 0;border-left:4px solid #14532d;">
             <p style="margin:0.5rem 0;"><strong>Milestone Name:</strong> {{ $milestone_title }}</p>

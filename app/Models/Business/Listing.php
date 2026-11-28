@@ -12,6 +12,15 @@ use Illuminate\Support\Str;
 
 class Listing extends Model
 {
+    /**
+     * investors_fee is a fixed amount in KSh an investor pays once to unlock the business. Anything below this was
+     * almost always a percentage typed by mistake (5 meaning 5%), so it is refused; old rows were set to the default.
+     */
+    public const MIN_INVESTORS_FEE = 100;
+
+    /** What an old percentage-like fee became (the amount the form suggests) */
+    public const DEFAULT_INVESTORS_FEE = 500;
+
     use HasFactory;
 
 
@@ -51,6 +60,15 @@ class Listing extends Model
 
     public function accepted_bids(){
         return $this->hasMany(AcceptedBids::class, 'business_id');
+    }
+
+    /** "Investors" is people, not bids: an investor in two milestones (or with a cash and an asset bid) counts once.
+     *  Money bids count from acceptance, assets once verified (as amount_collected does). */
+    public function refreshInvestorCount(): void
+    {
+        $this->update(['invest_count' => $this->accepted_bids()
+            ->where(fn ($q) => $q->where('type', 'Monetary')->orWhereIn('status', ['verified', 'equipment_released']))
+            ->distinct()->count('investor_id')]);
     }
 
     public function conversations(){

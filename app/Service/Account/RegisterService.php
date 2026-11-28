@@ -79,7 +79,7 @@ class RegisterService
                     });
             }
 
-            UserSetting::create(['user_id' => $user->id]);
+            UserSetting::create(['user_id' => $user->id, 'timezone' => \App\Support\ProgramSchedule::deviceZone()]); // their device's zone, not always Nairobi
 
             DB::commit();
 
@@ -159,7 +159,7 @@ class RegisterService
                 'past_investment' => $data['past_investment'] ?? null,
             ]);
 
-            UserSetting::create(['user_id' => $user->id]);
+            UserSetting::create(['user_id' => $user->id, 'timezone' => \App\Support\ProgramSchedule::deviceZone()]); // their device's zone, not always Nairobi
 
             DB::commit();
 
@@ -243,7 +243,7 @@ class RegisterService
                 'available_to' => $data['available_to'] ?? null,
             ]);
 
-            UserSetting::create(['user_id' => $user->id]);
+            UserSetting::create(['user_id' => $user->id, 'timezone' => \App\Support\ProgramSchedule::deviceZone()]); // their device's zone, not always Nairobi
 
             DB::commit();
 
@@ -264,12 +264,32 @@ class RegisterService
     // ─── Organization ────────────────────────────────────────────────────
     public function registerOrganization(Request $request)
     {
+        // Program-provider accounts are created by invitation only: a one-time link for one email address
+        // (ProgramRegistrationInvite, sent from the admin or by "Get full access" in a demo account).
+        $invite = \App\Models\ProgramRegistrationInvite::findUsable($request->input('invite_token'));
+        if (! $invite) {
+            return response()->json([
+                'message' => 'Program provider accounts are created by invitation. Open the link in your invitation email, or request one from our website.',
+                'errors' => ['invite_token' => ['This invitation link is invalid, has expired or has already been used.']],
+            ], 403);
+        }
+        if (strcasecmp(trim((string) $request->input('email')), $invite->email) !== 0) {
+            return response()->json([
+                'message' => 'This invitation is for '.$invite->email.'. Sign up with that email address.',
+                'errors' => ['email' => ['This invitation is for '.$invite->email.'.']],
+            ], 422);
+        }
+        // A demo (trial) account still holds this address until the new account is created
+        $trialUserId = $invite->demoRequest?->hasTrial() ? $invite->demoRequest->trial_user_id : null;
+        // The password they set for the demo carries over, so the sign-up does not ask for one again
+        $demoPasswordHash = $trialUserId ? \Illuminate\Support\Facades\DB::table('users')->where('id', $trialUserId)->value('password') : null;
+
         $data = $request->validate([
             // Owner
             'first_name' => ['required', 'string', 'max:255'],
             'last_name' => ['required', 'string', 'max:255'],
-            'email' => ['required', 'email', 'max:255', 'unique:users,email'],
-            'password' => ['required', 'string', Password::min(8)->mixedCase()->numbers()],
+            'email' => ['required', 'email', 'max:255', \Illuminate\Validation\Rule::unique('users', 'email')->ignore($trialUserId)],
+            'password' => [$demoPasswordHash ? 'nullable' : 'required', 'string', Password::min(8)->mixedCase()->numbers()],
             'phone' => ['nullable', 'string', 'max:50'],
 
             // Organization
@@ -320,17 +340,24 @@ class RegisterService
                 $uploadedImage = $this->imageUpload->save($image, 'images/users');
             }
 
+            $demoRequests = app(\App\Service\DemoRequests\DemoRequestService::class);
+            $demoRequests->prepareRegistration($invite);
+
             // Create owner user
             $user = User::create([
                 'first_name' => $data['first_name'],
                 'last_name' => $data['last_name'],
                 'display_name' => $data['org_display_name'] ?? $data['org_name'],
                 'email' => $data['email'],
-                'password' => Hash::make($data['password']),
+                'password' => ! empty($data['password']) ? Hash::make($data['password']) : null,
                 'phone' => $data['phone'] ?? null,
                 'user_type_id' => 4,
                 'image' => $uploadedImage,
             ]);
+            if (empty($data['password']) && $demoPasswordHash) {
+                // stored as it is (already hashed), not hashed again by the model's cast
+                DB::table('users')->where('id', $user->id)->update(['password' => $demoPasswordHash]);
+            }
 
             // Create organization
             $organization = Organization::create([
@@ -385,6 +412,9 @@ class RegisterService
                 'default_language' => $data['default_language'] ?? 'en',
             ]);
 
+            // The invitation works once: it is used up by this account
+            $demoRequests->markRegistered($invite->fresh(), $user);
+
             DB::commit();
 
             return response()->json([
@@ -399,6 +429,106 @@ class RegisterService
             $this->deleteUploadedImage($uploadedImage);
 
             ErrorLogService::report($e, ['input' => $request->except(['password', 'token'])]);
+
+            return response()->json(['message' => 'Something went wrong, please try again later.'], 500);
+        }
+    }
+
+    // ─── Capital provider ────────────────────────────────────────────────
+    /**
+     * A capital provider (user type 5): the person signing up is the owner of the capital organization. Their
+     * CapitalProfile (no role = owner) holds the investment preferences; the investment guidelines file goes to s3.
+     */
+    public function registerCapital(Request $request)
+    {
+        $data = $request->validate([
+            // The person (owner)
+            'first_name' => ['required', 'string', 'max:255'],
+            'last_name' => ['nullable', 'string', 'max:255'],
+            'email' => ['required', 'email', 'max:255', 'unique:users,email'],
+            'password' => ['required', 'string', Password::min(8)->mixedCase()->numbers()],
+            'phone' => ['nullable', 'string', 'max:50'],
+            'website' => ['nullable', 'url', 'max:255'],
+            'country' => ['nullable', 'string', 'max:10'],
+            'city' => ['nullable', 'string', 'max:100'],
+            'image' => ['nullable', 'image', 'mimes:jpeg,png,jpg,gif,svg', 'max:2048'],
+
+            // The capital organization
+            'org_name' => ['required', 'string', 'max:255'],
+            'org_type' => ['required', 'string', 'max:255'],
+            'inv_range' => ['required', 'array', 'min:1'],
+            'inv_range.*' => ['string', 'max:100'],
+            'sectors' => ['required', 'array', 'min:1'],
+            'sectors.*' => ['string', 'max:255'],
+            'startup_stage' => ['required', 'array', 'min:1'],
+            'startup_stage.*' => ['string', 'max:100'],
+            'regions' => ['required', 'array', 'min:1'],
+            'regions.*' => ['string', 'max:255'],
+            'eng_prefer' => ['required', 'array', 'min:1'],
+            'eng_prefer.*' => ['string', 'max:255'],
+            'turnover_range' => ['nullable', 'array'],
+            'turnover_range.*' => ['string', 'max:100'],
+            'social_impact_areas' => ['nullable', 'array'],
+            'social_impact_areas.*' => ['string', 'max:255'],
+            'investment_guidelines' => ['nullable', 'file', 'mimes:pdf,doc,docx', 'max:5120'],
+        ]);
+
+        $uploadedImage = null;
+        $guidelines = null;
+
+        DB::beginTransaction();
+        try {
+            if ($image = $data['image'] ?? null) {
+                $uploadedImage = $this->imageUpload->save($image, 'images/users');
+            }
+
+            $user = User::create([
+                'first_name' => $data['first_name'],
+                'last_name' => $data['last_name'] ?? null,
+                'display_name' => $data['org_name'],
+                'email' => $data['email'],
+                'password' => Hash::make($data['password']),
+                'phone' => $data['phone'] ?? null,
+                'website' => $data['website'] ?? null,
+                'country' => $data['country'] ?? null,
+                'city' => $data['city'] ?? null,
+                'user_type_id' => 5,
+                'image' => $uploadedImage,
+            ]);
+
+            $guidelines = \App\Service\Capital\CapitalFiles::store($data['investment_guidelines'] ?? null, 'files/capitalProfiles/'.$user->id);
+
+            \App\Models\Capital\CapitalProfile::create([
+                'user_id' => $user->id,
+                'role_id' => null, // the owner
+                'capital_owner_id' => null,
+                'org_name' => $data['org_name'],
+                'org_type' => $data['org_type'],
+                'inv_range' => array_values($data['inv_range']),
+                'sectors' => array_values($data['sectors']),
+                'startup_stage' => array_values($data['startup_stage']),
+                'regions' => array_values($data['regions']),
+                'eng_prefer' => array_values($data['eng_prefer']),
+                'turnover_range' => isset($data['turnover_range']) ? array_values($data['turnover_range']) : null,
+                'social_impact_areas' => isset($data['social_impact_areas']) ? array_values($data['social_impact_areas']) : null,
+                'investment_guidelines' => $guidelines,
+                'active' => 1,
+            ]);
+
+            UserSetting::create(['user_id' => $user->id, 'timezone' => \App\Support\ProgramSchedule::deviceZone()]);
+
+            DB::commit();
+
+            return response()->json([
+                'message' => 'Registration successful.',
+                'user' => new UserResource($user->load('capital_profile')),
+                'token' => $user->createToken('main')->plainTextToken,
+            ], 201);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            $this->deleteUploadedImage($uploadedImage);
+            \App\Service\Capital\CapitalFiles::delete($guidelines);
+            ErrorLogService::report($e, ['input' => $request->except(['password', 'token', 'investment_guidelines', 'image'])]);
 
             return response()->json(['message' => 'Something went wrong, please try again later.'], 500);
         }
@@ -465,7 +595,7 @@ class RegisterService
                 'image' => $uploadedImage,
             ]);
 
-            UserSetting::create(['user_id' => $user->id]);
+            UserSetting::create(['user_id' => $user->id, 'timezone' => \App\Support\ProgramSchedule::deviceZone()]); // their device's zone, not always Nairobi
 
             OrganizationUserRole::create([
                 'organization_id' => $organization->id,
@@ -480,8 +610,8 @@ class RegisterService
 
             DB::commit();
 
-            $invitationUrl = rtrim(config('app.app_url'), '/')
-                .'/organization-invitations/accept?token='.$invitationToken;
+            // A team member signs in on the organisation's workspace address when it has one
+            $invitationUrl = \App\Service\Notification\RecipientUrl::url('organization-invitations/accept?token='.$invitationToken, $user);
 
             $emailSent = true;
 
@@ -579,12 +709,12 @@ class RegisterService
                 'invitation_expires_at' => now()->addDays(7),
             ]);
 
-            UserSetting::create(['user_id' => $user->id]);
+            UserSetting::create(['user_id' => $user->id, 'timezone' => \App\Support\ProgramSchedule::deviceZone()]); // their device's zone, not always Nairobi
 
             DB::commit();
 
-            $invitationUrl = rtrim(config('app.app_url'), '/')
-                . '/organization-invitations/accept?token=' . $invitationToken;
+            // External Business Coaches are not the organisation's own people: main site (see RecipientUrl)
+            $invitationUrl = \App\Service\Notification\RecipientUrl::url('organization-invitations/accept?token=' . $invitationToken, $user);
 
             $emailSent = true;
 
@@ -594,12 +724,12 @@ class RegisterService
                     'teamMember' => $user,
                     'organization' => $organization,
                     'inviter' => $inviter,
-                    'role' => 'External Reviewer',
+                    'role' => 'Business Coach',
                     'invitationUrl' => $invitationUrl,
                     'expiresAt' => now()->addDays(7),
                 ], function ($message) use ($user, $organization): void {
                     $message->to($user->email)
-                        ->subject("You've been invited to join Tujitume as an External Reviewer for {$organization->name}");
+                        ->subject("You've been invited to join Tujitume as a Business Coach for {$organization->name}");
                 });
             } catch (\Throwable $mailException) {
                 // The pending membership remains valid so the invite can be resent.

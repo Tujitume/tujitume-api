@@ -42,6 +42,36 @@ class WithdrawController extends Controller
 
     }
 
+    /** A withdrawal needs a code the server emailed and checked (POST /sendEmailOtp, /verifyEmailOtp) in the last 15 minutes */
+    public const CODE_VALID_MINUTES = 15;
+
+    /**
+     * Null when the signed-in person verified an emailed code in the last 15 minutes, which is then used up (one code,
+     * one withdrawal); otherwise the 403 to send back. The browser asks for the code first, so this only stops calls
+     * that skip it.
+     */
+    private function withdrawCodeRefusal(): ?\Illuminate\Http\JsonResponse
+    {
+        $email = (string) (Auth::user()?->email ?? '');
+        $code = $email === '' ? null : \App\Models\EmailVerificationCode::query()
+            ->where('email', $email)
+            ->whereNotNull('verified_at')
+            ->where('verified_at', '>=', now()->subMinutes(self::CODE_VALID_MINUTES))
+            ->latest('verified_at')
+            ->first();
+
+        if (! $code) {
+            return response()->json([
+                'success' => false,
+                'code' => 'withdraw_code_required',
+                'message' => 'Enter the code we emailed you before withdrawing. Request a new code if it has expired.',
+            ], 403);
+        }
+        $code->delete();
+
+        return null;
+    }
+
     // Mobile  W I T H D R A W  M E T H O D S
     public function mobile_initiate_withdraw(Request $request)
     {
@@ -50,6 +80,10 @@ class WithdrawController extends Controller
                 'amount' => 'required|numeric',
                 'phone'  => 'required',
             ]);
+
+            if ($refusal = $this->withdrawCodeRefusal()) {
+                return $refusal;
+            }
 
             $user      = Auth::user()->load('balance');
             $amountKes = round($validated['amount'], 2);
@@ -140,7 +174,7 @@ class WithdrawController extends Controller
 
             //NotificationService
             $link = 'account';
-            if($user->user_type_id == 4 || $user->user_type_id == 3){
+            if(in_array((int) $user->user_type_id, [3, 4, 5], true)){
                 $link = 'overview/account';
             }
             $text = 'Hi, your wallet was debited by USD $'. $amountUsd .' from withdraw.';
@@ -172,6 +206,10 @@ class WithdrawController extends Controller
                 'paybill_number'         => 'required',
                 'paybill_account_number' => 'required',
             ]);
+
+            if ($refusal = $this->withdrawCodeRefusal()) {
+                return $refusal;
+            }
 
             $user      = Auth::user()->load('balance');
             $amountKes = round($validated['amount'], 2);
@@ -260,7 +298,7 @@ class WithdrawController extends Controller
 
             //NotificationService
             $link = 'account';
-            if($user->user_type_id == 4 || $user->user_type_id == 3){
+            if(in_array((int) $user->user_type_id, [3, 4, 5], true)){
                 $link = 'overview/account';
             }
             $text = 'Hi, your wallet was debited by USD $'. $amountUsd .' from withdraw.';
@@ -291,6 +329,10 @@ class WithdrawController extends Controller
                 'amount'      => 'required|numeric',
                 'till_number' => 'required',
             ]);
+
+            if ($refusal = $this->withdrawCodeRefusal()) {
+                return $refusal;
+            }
 
             $user      = Auth::user()->load('balance');
             $amountKes = round($validated['amount'], 2);
@@ -376,7 +418,7 @@ class WithdrawController extends Controller
 
             //NotificationService
             $link = 'account';
-            if($user->user_type_id == 4 || $user->user_type_id == 3){
+            if(in_array((int) $user->user_type_id, [3, 4, 5], true)){
                 $link = 'overview/account';
             }
             $text = 'Hi, your wallet was debited by USD $'. $amountUsd .' from withdraw.';
@@ -412,6 +454,10 @@ class WithdrawController extends Controller
             $request->validate([
                 'amount' => 'required|numeric',//USD
             ]);
+
+            if ($refusal = $this->withdrawCodeRefusal()) {
+                return $refusal;
+            }
             $amount = round($request->amount, 2);
 
             // Fetch User Wallet
@@ -457,7 +503,7 @@ class WithdrawController extends Controller
                 });
                 //NotificationService
                 $link = 'account';
-                if($user->user_type_id == 4 || $user->user_type_id == 3){
+                if(in_array((int) $user->user_type_id, [3, 4, 5], true)){
                     $link = 'overview/account';
                 }
                 $text = 'Hi, your wallet was debited by USD $'. $payout_amount .' from withdraw.';

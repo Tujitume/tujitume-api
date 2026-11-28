@@ -24,6 +24,12 @@ class SiteVisitRequests extends Scenario
             ->where('v.reviewer_id', $this->user->id)->where('v.status', 'scheduled')->whereNotNull('c.sent_at')->where('o.acceptance_status', 'pending')
             ->select('v.id', 'v.objective', 'v.location', 'v.start_date');
 
-        return [$this->group('review', $q, fn ($r) => $this->item('review.site_visit', 'Site visit request', $r->objective ?: $r->location, $this->drawer('siteVisit'), $r->id, $this->date($r->start_date)))];
+        // A service provider answers on the visit's own Program Work page (accept / decline / propose a fee are there);
+        // the drawer's Site visits tab is only shown once its own list has loaded, so linking to it opened nothing
+        $link = fn ($r) => $this->type === 3
+            ? 'dashboard.serviceProvider.programWork.siteVisitReport::visitId='.$r->id
+            : $this->drawer('siteVisit');
+
+        return [$this->group('review', $q, fn ($r) => $this->item('review.site_visit', 'Site visit request', $r->objective ?: $r->location, $link($r), $r->id, $this->date($r->start_date)))];
     }
 }

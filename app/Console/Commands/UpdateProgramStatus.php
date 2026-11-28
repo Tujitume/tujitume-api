@@ -21,7 +21,10 @@ class UpdateProgramStatus extends Command
      *
      * @var string
      */
-    protected $description = 'It updates program statuses based on their application_start_date and application_deadline.';
+    protected $description = 'Updates program statuses at their exact opening and closing moments, and reminds applicants three days before a round closes.';
+
+    /** It runs hourly: each run reminds about the rounds whose close falls in one hour, exactly three days ahead. */
+    private const REMINDER_WINDOW_MINUTES = 60;
 
     /**
      * Execute the console command.
@@ -29,9 +32,10 @@ class UpdateProgramStatus extends Command
     public function handle()
     {
         $notificationService = new ProgramNotificationService();
+        $now = now();
 
-        // Open programs % rounds
-        $openedPrograms = Program::where('status', 'published')->whereDate('application_start_date', '<=', now())->get();
+        // Programs whose opening moment has passed
+        $openedPrograms = Program::where('status', 'published')->whereNotNull('application_opens_at')->where('application_opens_at', '<=', $now)->get();
         foreach ($openedPrograms as $program) {
             $program->update(['status' => 'open']);
             $notificationService->send('program.opened', [$program->user], [
@@ -39,17 +43,8 @@ class UpdateProgramStatus extends Command
             ]);
         }
 
-        // Open programs
-        $draftRounds = ProgramRound::where('status', 'draft')->whereDate('open_date', '<=', now())->get();
-        //foreach ($draftRounds as $round) {
-            //$round->update(['status' => 'published']);
-//            $notificationService->send('program.opened', [$program->user], [
-//                'program_title' => $program->program_title, 'program_id' => $program->id,
-//            ]);
-        //}
-
-        // Close programs
-        $closedPrograms = Program::where('status', 'open')->whereDate('application_deadline', '<', now())->get();
+        // Programs whose closing moment has passed
+        $closedPrograms = Program::where('status', 'open')->whereNotNull('application_closes_at')->where('application_closes_at', '<', $now)->get();
         foreach ($closedPrograms as $program) {
             $program->update(['status' => 'closed']);
             $notificationService->send('program.closed', [$program->user], [
@@ -57,17 +52,38 @@ class UpdateProgramStatus extends Command
             ]);
         }
 
-        // Closing soon (3 days)
-        $closingSoonRounds = ProgramRound::where('status', 'published')->whereDate('close_date', '=', now()->addDays(3))->get();
+        // Later rounds reaching their opening moment: tell the applicants waiting in them (once per round). Only rounds
+        // that opened in the last day, so rounds that opened long ago are never announced late.
+        $openedRounds = ProgramRound::where('status', 'published')
+            ->where('round_number', '>', 1)
+            ->whereNull('opened_notified_at')
+            ->whereNotNull('opens_at')
+            ->whereBetween('opens_at', [$now->copy()->subDay(), $now])
+            ->where(fn ($q) => $q->whereNull('closes_at')->orWhere('closes_at', '>', $now))
+            ->get();
+        $roundOpened = new \App\Service\Program\RoundOpenedNotifier();
+        foreach ($openedRounds as $round) {
+            $roundOpened->notify($round);
+        }
+
+        // Closing soon: rounds that close in three days (each round falls in exactly one run's window)
+        $remindUntil = $now->copy()->addDays(3);
+        $closingSoonRounds = ProgramRound::where('status', 'published')
+            ->where('closes_at', '>', $remindUntil->copy()->subMinutes(self::REMINDER_WINDOW_MINUTES))
+            ->where('closes_at', '<=', $remindUntil)
+            ->get();
         foreach ($closingSoonRounds as $round) {
-            // Program import: a historic imported round never sends closing reminders
-            if (class_exists(\App\Modules\ProgramImport\Support\ImportedRecords::class) && \App\Modules\ProgramImport\Support\ImportedRecords::isImportedRound($round->id)) {
+            // Only those who have not handed the round in yet: a reminder to someone who already submitted is noise
+            $applicants = $round->applications()->with('user')
+                ->where(fn ($q) => $q->whereNull('round_status')->orWhere('round_status', 'draft'))
+                ->get()->pluck('user')->filter()->values();
+            if ($applicants->isEmpty()) {
                 continue;
             }
-            $applicants = $round->applications()->with('user')->get()->pluck('user');
             $notificationService->send('round.closing_soon', $applicants->all(), [
                 'round_name' => $round->round_name, 'program_title' => $round->program->program_title,
                 'days_left' => 3, 'program_id' => $round->program_id,
+                'closes_at' => \App\Support\ProgramSchedule::describe($round->closesAt(), $round->scheduleTimezone()),
             ]);
         }
     }

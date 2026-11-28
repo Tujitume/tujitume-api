@@ -87,7 +87,7 @@ class SocialController extends Controller
             $token = 'a123456789';
 
             return redirect()->to(
-                config('app.app_url') .
+                \App\Service\Notification\RecipientUrl::url('', $user) .
                 '?user=' . json_encode($user) .
                 '&token=' . $token
             );

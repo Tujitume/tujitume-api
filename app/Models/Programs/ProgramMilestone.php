@@ -26,6 +26,9 @@ class ProgramMilestone extends Model
 
     protected $guarded = [];
 
+    // ISSUE-30: the earlier milestone number this one waits for (null when open), so the applicant's tabs can say so
+    protected $appends = ['waiting_for_milestone'];
+
     protected $casts = [
         'is_template' => 'boolean',
         'allowed_edits' => 'array',
@@ -67,6 +70,69 @@ class ProgramMilestone extends Model
                 $query->Where('fund_release_status', '!=', 'released');
             })
             ->exists();
+    }
+
+    /**
+     * The one rule for "this milestone is finished" (used by the deal room progress, the next-milestone lock and the
+     * application's completion): its funds are released and, when it has a final approval step, that is approved (as a
+     * check, or as a completion report).
+     */
+    public function isFinished(): bool
+    {
+        // A status may be decorated for the API ({value, color}); read the plain value
+        $plain = fn ($v) => is_object($v) ? (string) ($v->value ?? '') : (is_array($v) ? (string) ($v['value'] ?? '') : (string) $v);
+        if ($plain($this->fund_release_status) !== 'released') return false;
+        if (! $this->final_approval_required) return true;
+
+        return $plain($this->status) === 'completion_approved'
+            || MilestoneVerification::where('milestone_id', $this->id)->where('verification_type', 'final_approval')->where('decision', 'approved')->exists();
+    }
+
+    /**
+     * ISSUE-30: the earlier milestone this one waits for, or null when it is open. A milestone takes its checks (MPRV,
+     * mid-milestone, final approval) only once every earlier milestone is finished: its funds released and, when it has
+     * a final approval step, that approved (as a check or as a completion report). This mirrors ISSUE-21's unlock.
+     */
+    public function waitingFor(): ?self
+    {
+        $earlier = static::where('app_id', $this->app_id)->where('is_template', false)
+            ->where('sequence_order', '<', $this->sequence_order)->orderBy('sequence_order')->get();
+
+        foreach ($earlier as $m) {
+            if (! $m->isFinished()) return $m;
+        }
+
+        return null;
+    }
+
+    /**
+     * A milestone with no final approval step is finished as soon as its money lands: open the next one then (the
+     * final approval / completion approval opens it otherwise). Locked → approved unless it still needs its MPRV.
+     */
+    public function unlockNextWhenFinished(?int $userId = null): ?self
+    {
+        if ($this->final_approval_required || ! $this->fresh()?->isFinished()) return null;
+
+        $next = static::where('app_id', $this->app_id)->where('is_template', false)
+            ->where('sequence_order', '>', $this->sequence_order)->orderBy('sequence_order')->first();
+        if (! $next || $next->fund_release_status !== 'locked' || ($next->mprv_required && ! $next->mprv_ready)) return null;
+
+        $next->update([
+            'fund_release_status' => 'approved',
+            'status' => 'approved',
+            'approved_by' => $userId,
+            'approved_at' => now(),
+            'verification_notes' => $next->verification_notes ?: 'Unlocked: Previous milestone completed',
+        ]);
+
+        return $next;
+    }
+
+    public function getWaitingForMilestoneAttribute(): ?int
+    {
+        if ($this->is_template || ! $this->app_id || ! $this->exists) return null;
+
+        return $this->waitingFor()?->sequence_order;
     }
 
     public function disbursements()

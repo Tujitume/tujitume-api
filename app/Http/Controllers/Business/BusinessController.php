@@ -2,11 +2,16 @@
 
 namespace App\Http\Controllers\Business;
 
+
+
 use App\Http\Controllers\Controller;
 use App\Models\Business\BusinessDocs;
 use App\Models\Capital\CapitalOffer;
 use App\Models\Programs\Program;
 use App\Service\AI\InvestorPersonalizedListing;
+use App\Service\Business\MilestoneOverviewList;
+use App\Service\Business\MyListingList;
+use App\Support\ListShapes;
 use Illuminate\Http\Request;
 use Illuminate\Support\Arr;
 use App\Models\Auth\User;
@@ -41,7 +46,12 @@ class BusinessController extends Controller
         //$this->middleware('business');
     }
 
-    public function listings(){
+    public function listings(Request $request){
+
+        // A page with search / filters / sort / export for the My Businesses and Deal Room tables; no params = the full list
+        if (ListShapes::wanted($request)) {
+            return (new MyListingList((int) Auth::id()))->respond($request);
+        }
 
         $listings = Listing::where('user_id', Auth::id())->latest()->get();
 
@@ -79,7 +89,7 @@ class BusinessController extends Controller
                     ->all();
             }
 
-            $programs   = Program::withCount('liked')->where('visible', 1)->latest()->get();
+            $programs   = Program::listedForApplicants()->withCount('liked')->latest()->get();
             $capitals = CapitalOffer::withCount('liked')->where('visible', 1)->latest()->get();
 
             if ($userId) {
@@ -135,7 +145,7 @@ class BusinessController extends Controller
                 'title'               => 'required|string|max:300',
                 'category'            => 'required|string|max:255',
                 'image'               => 'required|file|mimes:jpg,jpeg,png,webp|max:2048',
-                'identification'      => 'required|file|mimes:pdf,docx|max:2048',
+                'identification'      => 'required|file|mimes:pdf,docx,jpg,jpeg,png|max:2048', // a photo of the ID, as the form and updateListing allow
                 'document'            => 'required|file|mimes:pdf,docx|max:2048',
                 'pin'                 => 'required|file|mimes:pdf,docx|max:2048',
                 'yeary_fin_statement' => 'nullable|file|mimes:pdf,docx|max:2048',
@@ -153,7 +163,8 @@ class BusinessController extends Controller
                 'reason'              => 'nullable|string|max:500',
                 'stage'               => 'nullable|string|max:70',
                 'social_impact_areas' => 'nullable|array',
-                'investors_fee'       => 'nullable|integer',
+                // A fixed KSh amount an investor pays to unlock the business, never a percentage
+                'investors_fee'       => 'nullable|integer|min:'.\App\Models\Business\Listing::MIN_INVESTORS_FEE,
                 'id_no'               => 'required|string|max:255',
                 'tax_pin'             => 'required|string|max:255',
                 // Business verification (KYB) details asked by the form
@@ -264,7 +275,7 @@ class BusinessController extends Controller
                 'contact'              => 'nullable|string|max:255',
                 'contact_mail'         => 'nullable|email|max:100',
                 'stage'                => 'nullable|string|max:70',
-                'investors_fee'        => 'nullable|integer|min:0',
+                'investors_fee'        => 'nullable|integer|min:'.\App\Models\Business\Listing::MIN_INVESTORS_FEE,
                 'social_impact_areas'  => 'nullable|array',
                 'business_type'        => 'nullable|string|max:60',
                 'registration_number'  => 'nullable|string|max:100',
@@ -357,6 +368,12 @@ class BusinessController extends Controller
     }
 
     // show
+    /** Listing fields only the business owner may read: identity numbers and compliance documents */
+    public const PRIVATE_LISTING_FIELDS = [
+        'identification', 'id_no', 'tax_pin', 'document', 'proof_of_address', 'business_registration_certificate',
+        'yeary_fin_statement', 'registration_number', 'pin',
+    ];
+
     public function listing($id)
     {
         try {
@@ -389,7 +406,7 @@ class BusinessController extends Controller
                 $countMilestones = $milestones->count();
                 $allDone         = $milestones->every(fn($m) => $m->status === 'done');
                 $isInvested      = $listing->accepted_bids()->where('investor_id', $userId)->exists();
-                $isInvestor      = $user->user_type_id == 1;
+                $isInvestor      = (int) $user->user_type_id === 2; // 2 = investor (1 is the business owner)
                 $allowToReview   = $allDone && $isInvested;
                 $running         = (int) $milestones->contains('active', true);
 
@@ -400,6 +417,11 @@ class BusinessController extends Controller
 
             $listing->file    = $files->file ?? false;
             $amountRequired   = $listing->investment_needed - $listing->amount_collected;
+
+            // The owner's identity and compliance papers are for the owner only (this endpoint is public)
+            if ((int) Auth::id() !== (int) $listing->user_id) {
+                $listing->makeHidden(self::PRIVATE_LISTING_FIELDS);
+            }
 
             return response()->json([
                 'data'           => $listing,
@@ -424,7 +446,7 @@ class BusinessController extends Controller
     public function listingDetailsInfo(int $listingId) // for listing details
     {
         $investorId  = Auth::id();
-        $isInvestor  = User::where('id', $investorId)->value('user_type_id') === 1;
+        $isInvestor  = (int) User::where('id', $investorId)->value('user_type_id') === 2; // 2 = investor
         $listing     = Listing::find($listingId);
         $investorsFee = $listing?->investors_fee;
 
@@ -520,9 +542,10 @@ class BusinessController extends Controller
     public function activateListing(int $id)
     {
         try {
-            $listing = Listing::where('id', $id)
-                ->where('user_id', Auth::id())
-                ->firstOrFail();
+            $listing = Listing::where('id', $id)->where('user_id', Auth::id())->first();
+            if (! $listing) {
+                return response()->json(['message' => 'Business not found.'], 404);
+            }
 
             if (!$listing->share || !$listing->investment_needed) {
                 return response()->json([
@@ -548,7 +571,12 @@ class BusinessController extends Controller
         }
     }
 
-    public function useMilestoneBusinessInfo(){
+    public function useMilestoneBusinessInfo(Request $request){
+
+        // The Milestones table: one row per business with its milestone progress, searched / filtered / paged on the server
+        if (ListShapes::wanted($request)) {
+            return (new MilestoneOverviewList((int) Auth::id()))->respond($request);
+        }
 
         $milestones = Milestones::where('user_id',Auth::id())->latest()->get();
         $business = listing::where('user_id',Auth::id())->get();
@@ -567,26 +595,48 @@ class BusinessController extends Controller
     }
 
     // ratings
+    /**
+     * Rate a business (GET ratingListing/{id}/{rating}/{text}): 1 to 5 stars and a comment.
+     * listings.rating is the AVERAGE out of 5 and rating_count how many rated it, so a new rating moves the average:
+     * (average × count + stars) / (count + 1). It used to add the stars onto the average (3.8 + 5 read 8.8). A row
+     * already holding a total above 5 is read as total / count, so it heals on its next rating. The values may come in
+     * the path or as query/body input. Same rule as ServiceController::serviceRating.
+     */
     public function ratingListing(Request $request)
     {
         try {
+            $request->merge(array_filter([
+                'id'     => $request->input('id', $request->route('id')),
+                'rating' => $request->input('rating', $request->route('rating')),
+                'text'   => $request->input('text', is_string($request->route('text')) ? trim($request->route('text')) : null),
+            ], fn ($value) => $value !== null && $value !== ''));
             $validated = $request->validate([
                 'id'     => 'required|integer|exists:listings,id',
                 'rating' => 'required|integer|between:1,5',
                 'text'   => 'nullable|string|max:1000',
             ]);
-            $listing = Listing::findOrFail($validated['id']);
 
-            $listing->increment('rating', $validated['rating']);
-            $listing->increment('rating_count');
+            $stars = (int) $validated['rating'];
+            DB::transaction(function () use ($validated, $stars) {
+                $listing = Listing::lockForUpdate()->findOrFail($validated['id']);
+                $count = max(0, (int) $listing->rating_count);
+                $stored = (float) $listing->rating;
+                // An older row may hold the sum of every rating instead of the average
+                $average = $stored > 5 ? ($count > 0 ? $stored / $count : 5.0) : $stored;
+                $average = max(0.0, min(5.0, $average));
+                $listing->forceFill([
+                    'rating' => round((($average * $count) + $stars) / ($count + 1), 2),
+                    'rating_count' => $count + 1,
+                ])->save();
 
-            Review::create([
-                'user_id'    => Auth::id(),
-                'listing_id' => $validated['id'],
-                'user_name'  => Auth::user()->first_name,
-                'text'       => mb_convert_encoding($validated['text'] ?? '', 'UTF-8', 'UTF-8'),
-                'rating'     => $validated['rating'],
-            ]);
+                Review::create([
+                    'user_id'    => Auth::id(),
+                    'listing_id' => $validated['id'],
+                    'user_name'  => Auth::user()->first_name,
+                    'text'       => mb_convert_encoding($validated['text'] ?? '', 'UTF-8', 'UTF-8'),
+                    'rating'     => $stars,
+                ]);
+            });
 
             return response()->json(['success' => 'Success!']);
 
@@ -599,38 +649,45 @@ class BusinessController extends Controller
     }
 
 
-    public function unlockBusiness(Request $request)
+    public function unlockBusiness(Request $request, $id = null, $sub_id = null, $plan = null)
     {
+        // The route is unlockBySubs/{id}/{sub_id}/{plan}: read those (it used to validate an empty body and always fail)
+        $listingId = (int) ($id ?? $request->input('listing_id'));
+        $subId = (int) ($sub_id ?? $request->input('sub_id'));
+
+        $listing = Listing::find($listingId);
+        if (!$listing) {
+            return response()->json(['message' => 'Business not found.'], 404);
+        }
+
+        // Already unlocked: the same answer, no second token used
+        if (Conversation::where('investor_id', Auth::id())->where('listing_id', $listing->id)->exists()) {
+            return response()->json(['message' => 'success', 'already_unlocked' => true], 200);
+        }
+
+        // The subscription must be the person's own (or their organisation's) and still running; each unlock uses one
+        // of the plan's unlocks, whatever plan name the browser sends
+        $subscription = BusinessSubscriptions::where('id', $subId)
+            ->where('investor_id', \App\Service\Subscription\SubscriptionHolder::idFor(Auth::user()))
+            ->where('expire_date', '>', now())->first();
+        if (!$subscription) {
+            return response()->json(['message' => 'You need an active subscription to unlock this business.'], 403);
+        }
+        if ((int) $subscription->token_remaining <= 0) {
+            return response()->json(['message' => 'You have used all the business unlocks in your plan. Upgrade or pay the unlock fee instead.'], 422);
+        }
+
         try {
-            $validated = $request->validate([
-                'listing_id' => 'required|integer|exists:listings,id',
-                'sub_id'     => 'required|integer|exists:business_subscriptions,id',
-                'plan'       => 'required|string',
-            ]);
-
-            $subscription = BusinessSubscriptions::findOrFail($validated['sub_id']);
-
-            if ($validated['plan'] === 'gold') {
-                //$listing = Listing::findOrFail($validated['listing_id']);
-                /*if ($subscription->chosen_range !== $listing->y_turnover) {
-                    return response()->json(['error' => 'The business is not in your range.'], 422);
-                }*/
-            }
-
-            if ($validated['plan'] === 'token') {
+            DB::transaction(function () use ($subscription, $listing) {
                 $subscription->decrement('token_remaining');
-            }
+                Conversation::create([
+                    'investor_id' => Auth::id(),
+                    'listing_id'  => $listing->id,
+                    'price'       => 'Subscription',
+                ]);
+            });
 
-            Conversation::create([
-                'investor_id' => Auth::id(),
-                'listing_id'  => $validated['listing_id'],
-                'price'       => 'Subscription',
-            ]);
-
-            return response()->json(['message' => 'success'], 200);
-
-        } catch (ValidationException $e) {
-            return response()->json(['message' => 'Validation failed.', 'errors' => $e->errors()], 422);
+            return response()->json(['message' => 'success', 'unlocks_left' => (int) $subscription->refresh()->token_remaining], 200);
         } catch (Exception $e) {
             ErrorLogService::report($e, ['input' => $request->except(['password', 'token'])]);
             return response()->json(['message' => 'Something went wrong, please try again later.'], 500);

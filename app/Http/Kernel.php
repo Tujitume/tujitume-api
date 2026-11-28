@@ -40,6 +40,8 @@ class Kernel extends HttpKernel
         ],
 
         'api' => [
+            // First, so it runs last: no request may leave a database transaction open (ISSUE-27)
+            \App\Http\Middleware\CloseOpenTransactions::class,
             // \Laravel\Sanctum\Http\Middleware\EnsureFrontendRequestsAreStateful::class,
             \Illuminate\Routing\Middleware\ThrottleRequests::class.':api',
             \Illuminate\Routing\Middleware\SubstituteBindings::class,
@@ -57,6 +59,8 @@ class Kernel extends HttpKernel
      */
     protected $middlewareAliases = [
         'auth' => \App\Http\Middleware\Authenticate::class,
+        // A program organisation needs an active plan (SubscriptionAccess)
+        'subscribed' => \App\Http\Middleware\EnsureSubscribed::class,
         'extend-token' => \App\Http\Middleware\ExtendTokenExpiry::class,
         'auth.basic' => \Illuminate\Auth\Middleware\AuthenticateWithBasicAuth::class,
         'auth.session' => \Illuminate\Session\Middleware\AuthenticateSession::class,
@@ -76,6 +80,9 @@ class Kernel extends HttpKernel
         'program' => \App\Http\Middleware\Api\ProgramMiddleware::class,
         'program.response' => \App\Http\Middleware\Api\StandardizeProgramMutationResponse::class,
         'format.dates' => \App\Http\Middleware\FormatDatesForUser::class,
+        'lipr.callback' => \App\Http\Middleware\VerifyLiprCallback::class,
         'capital' => \App\Http\Middleware\Api\CapitalMiddleware::class,
+        // Company roles (viewer reads only, editor never deletes) on routes outside /programs and /capital
+        'org.role' => \App\Http\Middleware\Api\OrganizationRoleMiddleware::class,
     ];
 }

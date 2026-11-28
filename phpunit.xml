@@ -20,8 +20,6 @@
     </source>
     <php>
         <env name="APP_ENV" value="testing"/>
-        <!-- The module is off in tests unless PROGRAM_IMPORTS_ENABLED is set in the shell, whatever .env says -->
-        <env name="PROGRAM_IMPORTS_ENABLED" value="false"/>
         <env name="APP_KEY" value="base64:hXyzuGebnHAVMs+36wutVBOWAaENNuR8sylJu2Y871Q="/>
         <env name="BCRYPT_ROUNDS" value="4"/>
         <env name="CACHE_DRIVER" value="array"/>
@@ -30,6 +28,7 @@
         <env name="MAIL_MAILER" value="array"/>
         <env name="PULSE_ENABLED" value="false"/>
         <env name="QUEUE_CONNECTION" value="sync"/>
+        <env name="SIGHTENGINE_ENABLED" value="false"/>
         <env name="SESSION_DRIVER" value="array"/>
         <env name="TELESCOPE_ENABLED" value="false"/>
     </php>

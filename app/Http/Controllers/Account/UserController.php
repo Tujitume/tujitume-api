@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers\Account;
 
+
+use Exception;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\User\UserResource;
 use App\Models\Auth\OrganizationUserRole;
@@ -24,6 +26,7 @@ use App\Models\Services\Smilestones;
 use App\Service\Account\AccountDeletionEligibilityService;
 use App\Service\Account\CalculateUserFunds;
 use App\Service\Misc\ErrorLogService;
+use App\Service\Organization\TeamMemberList;
 use App\Service\Organization\TeamMemberNotifier;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -156,9 +159,6 @@ class UserController extends Controller
                 case 2: // Investor
                     return response()->json($funds->calculateProgramFunds($user), 200);
 
-                case 3: // Service Provider
-                    return response()->json($funds->calculateCapitalFunds($user), 200);
-
                 case 4: // Org / Internal Reviewer (with role_id = 10004)
                     // The same reply as before, plus the organization's program funds for the Wallet & Funds section
                     $programFunds = $funds->calculateProgramFunds($user);
@@ -169,7 +169,10 @@ class UserController extends Controller
                         'available_funds' => $programFunds['available_funds'],
                     ], 200);
 
-                case 5: // Service Provider
+                case 5: // Capital provider (owner or team): the capital owner's offers
+                    return response()->json($funds->calculateCapitalFunds($user), 200);
+
+                case 3: // Service Provider
                     // return $funds->calculateServiceProviderFunds($user);
 
                 case 6: // External Reviewer
@@ -207,6 +210,12 @@ class UserController extends Controller
         }
 
         try {
+            // ?page / per_page / search / filters / sort / export: the Team page's server list (TeamMemberList);
+            // without them, every member as before (the team pickers read this)
+            if (TeamMemberList::wanted($request)) {
+                return (new TeamMemberList(Organization::findOrFail($user->organization_id)))->respond($request);
+            }
+
             $memberships = OrganizationUserRole::query()
                 ->where('organization_id', $user->organization_id)
                 ->with([
@@ -216,32 +225,7 @@ class UserController extends Controller
                 ->orderBy('created_at')
                 ->get();
 
-            $members = $memberships->map(fn (OrganizationUserRole $membership) => [
-                'id' => $membership->user->id,
-                'first_name' => $membership->user->first_name,
-                'last_name' => $membership->user->last_name,
-                'display_name' => $membership->user->display_name,
-                'email' => $membership->user->email,
-                'phone' => $membership->user->phone,
-                'image' => $membership->user->image,
-                'user_type_id' => $membership->user->user_type_id,
-                'organization_id' => $membership->organization_id,
-                'membership' => [
-                    'id' => $membership->id,
-                    'status' => $membership->status,
-                    'invited_at' => $membership->invited_at?->toISOString(),
-                    'accepted_at' => $membership->accepted_at?->toISOString(),
-                    'revoked_at' => $membership->revoked_at?->toISOString(),
-                    'invitation_expires_at' => $membership->invitation_expires_at?->toISOString(),
-                    'created_at' => $membership->created_at?->toISOString(),
-                    'updated_at' => $membership->updated_at?->toISOString(),
-                ],
-                'role' => [
-                    'id' => $membership->role->id,
-                    'name' => $membership->role->name,
-                    'access_types' => $membership->role->access_types,
-                ],
-            ])->values();
+            $members = $memberships->map(fn (OrganizationUserRole $membership) => TeamMemberList::payload($membership))->values();
 
             return response()->json([
                 'organization_id' => $user->organization_id,
@@ -283,10 +267,16 @@ class UserController extends Controller
         try {
             $validated = $request->validate([
                 'email' => 'required|email',
-                'password' => 'required|string|min:6', // optional: add password_confirmation
+                'password' => 'required|string|min:8',
+                'reset_token' => 'required|string',
             ]);
 
-            $user = User::where('email', $validated['email'])->first();
+            // Only someone who has just entered the code emailed to this address may set its password
+            if (! \App\Service\Account\PasswordResetToken::consume($validated['email'], $validated['reset_token'])) {
+                return response()->json(['message' => 'This reset has expired. Ask for a new code and try again.'], 403);
+            }
+
+            $user = User::whereRaw('LOWER(email) = ?', [strtolower(trim($validated['email']))])->first();
 
             if (! $user) {
                 return response()->json(['status' => 400, 'message' => 'User does not exist'], 400);
@@ -569,7 +559,7 @@ class UserController extends Controller
                     'pending' => 'reinvited', 'active' => 'activated', default => 'revoked'
                 },
                 $membership->role?->name ?? 'Team member',
-                $invitationToken ? rtrim(config('app.app_url'), '/').'/organization-invitations/accept?token='.$invitationToken : null,
+                $invitationToken ? \App\Service\Notification\RecipientUrl::url('organization-invitations/accept?token='.$invitationToken, $teamMember) : null,
             );
 
             return response()->json([
@@ -686,7 +676,8 @@ class UserController extends Controller
         return OrganizationUserRole::query()
             ->where('organization_id', $user->organization_id)
             ->where('user_id', $user->id)
-            // ->where('status', 'active')
+            // A deactivated or declined super admin manages nothing
+            ->whereNotIn('status', ['revoked', 'declined'])
             ->whereHas('role', fn ($query) => $query->where('name', 'super_admin'))
             ->exists();
     }
@@ -742,7 +733,7 @@ class UserController extends Controller
 
             // Balance logs
             BalanceLog::where('changed_by', $user->id)->delete();
-            $this->deleteProgramDataForUser($user);
+            (new \App\Service\Account\ProgramDataPurger())->forUser($user);
 
             if ($type == 1) {
                 // Delete all investor files & active investment
@@ -834,12 +825,13 @@ class UserController extends Controller
 
     private function deleteOrganizationDataForUser(User $user): void
     {
+        // Only organizations this person owns. A team member deleting their own account leaves the organization (and
+        // everyone else in it) untouched: their membership goes with their account.
         $organizationIds = Organization::query()
             ->where('owner_user_id', $user->id)
-            ->when($user->organization_id, function ($query) use ($user) {
-                $query->orWhere('id', $user->organization_id);
-            })
             ->pluck('id');
+
+        OrganizationUserRole::where('user_id', $user->id)->whereNotIn('organization_id', $organizationIds)->delete();
 
         if ($organizationIds->isEmpty()) {
             return;
@@ -850,99 +842,6 @@ class UserController extends Controller
             ->delete();
 
         Organization::whereIn('id', $organizationIds)->delete();
-    }
-
-    private function deleteProgramDataForUser(User $user): void
-    {
-        $userId = $user->id;
-        $programIds = Program::where('user_id', $userId)->pluck('id');
-
-        $applicationIds = ProgramApplication::where(function ($query) use ($userId, $programIds) {
-            $query->where('user_id', $userId)
-                ->orWhere('program_owner_id', $userId);
-
-            if ($programIds->isNotEmpty()) {
-                $query->orWhereIn('program_id', $programIds);
-            }
-        })->pluck('id');
-
-        $this->deleteProgramApplications($applicationIds->all());
-        Program::where('user_id', $userId)
-            ->get()
-            ->each(function (Program $program): void {
-                $program->delete();
-            });
-    }
-
-    private function deleteProgramApplications(array $applicationIds): void
-    {
-        if (empty($applicationIds)) {
-            return;
-        }
-
-        $applications = ProgramApplication::whereIn('id', $applicationIds)->get();
-        $milestoneIds = DB::table('program_milestones')
-            ->whereIn('app_id', $applicationIds)
-            ->pluck('id');
-
-        $applications->each(function (ProgramApplication $application): void {
-            $this->deleteS3File($application->pitch_deck_file);
-            $this->deleteS3File($application->business_plan_file);
-            $this->deleteLocalFile($application->pitch_video);
-        });
-
-        DB::table('round_required_documents')
-            ->whereIn('application_id', $applicationIds)
-            ->pluck('file_path')
-            ->each(fn (?string $path) => $this->deleteS3File($path));
-
-        DB::table('application_round_responses')
-            ->whereIn('application_id', $applicationIds)
-            ->pluck('file_path')
-            ->each(fn (?string $path) => $this->deleteS3File($path));
-
-        if ($milestoneIds->isNotEmpty()) {
-            $this->deleteProgramMilestones($milestoneIds->all());
-        }
-
-        ProgramApplication::whereIn('id', $applicationIds)->delete();
-    }
-
-    private function deleteProgramMilestones(array $milestoneIds): void
-    {
-        DB::table('program_milestones')
-            ->whereIn('id', $milestoneIds)
-            ->pluck('document')
-            ->each(fn (?string $path) => $this->deleteS3File($path));
-
-        DB::table('milestone_verifications')
-            ->whereIn('milestone_id', $milestoneIds)
-            ->pluck('document')
-            ->each(fn (?string $path) => $this->deleteS3File($path));
-
-        DB::table('deal_room_documents')
-            ->whereIn('milestone_id', $milestoneIds)
-            ->pluck('file_path')
-            ->each(fn (?string $path) => $this->deleteS3File($path));
-
-        DB::table('disbursements')
-            ->whereIn('milestone_id', $milestoneIds)
-            ->pluck('receipt_file')
-            ->each(fn (?string $path) => $this->deleteS3File($path));
-
-        DB::table('milestone_suppliers')
-            ->whereIn('milestone_id', $milestoneIds)
-            ->get(['invoice_file', 'quotation_file'])
-            ->each(function ($supplier): void {
-                $this->deleteS3File($supplier->invoice_file);
-                $this->deleteS3File($supplier->quotation_file);
-            });
-
-        DB::table('disbursements')->whereIn('milestone_id', $milestoneIds)->delete();
-        DB::table('deal_room_documents')->whereIn('milestone_id', $milestoneIds)->delete();
-        DB::table('milestone_verifications')->whereIn('milestone_id', $milestoneIds)->delete();
-        DB::table('milestone_completion_submissions')->whereIn('milestone_id', $milestoneIds)->delete();
-        DB::table('program_milestones')->whereIn('id', $milestoneIds)->delete();
     }
 
     private function deleteLocalFile(?string $path): void

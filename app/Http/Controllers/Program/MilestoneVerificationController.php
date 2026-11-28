@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Program;
 
 use App\Http\Controllers\Controller;
+use App\Models\Auth\User;
 use App\Models\Programs\ProgramMilestone;
 use App\Models\Programs\MilestoneVerification;
 use App\Models\Milestones\MilestoneCompletionSubmission;
@@ -22,7 +23,8 @@ class MilestoneVerificationController extends Controller
         try {
             (new \App\Service\Program\ProgramAccess())->authorizeMilestone(auth()->user(), $milestone);
             $verifications = MilestoneVerification::where('milestone_id', $milestone->id)
-                //->with(['submitter', 'decider', 'auditor'])
+                // The project manager auditing it, shown with their report (audit_status, audit_recommendation, audit_notes)
+                ->with('auditor:id,first_name,last_name,image')
                 ->orderBy('created_at', 'desc')
                 ->get();
             return response()->json(['verifications' => $verifications]);
@@ -89,6 +91,21 @@ class MilestoneVerificationController extends Controller
             if (!$milestone->{$requiredFlag}) {
                 throw ValidationException::withMessages([
                     'verification_type' => ['This verification is not required for the milestone.'],
+                ]);
+            }
+
+            // ISSUE-30: a milestone takes no checks while an earlier one is unfinished
+            if ($blocker = $milestone->waitingFor()) {
+                throw ValidationException::withMessages([
+                    'verification_type' => ["This milestone opens once Milestone {$blocker->sequence_order} is complete."],
+                ]);
+            }
+
+            // ISSUE-19 (owner decision, 27 Nov): final approval is the end of a funded milestone, so it opens only once the
+            // milestone's funds have been released
+            if ($verificationType === 'final_approval' && ! (int) $milestone->fund_released) {
+                throw ValidationException::withMessages([
+                    'verification_type' => ['Final approval opens once the funds for this milestone are released.'],
                 ]);
             }
 
@@ -188,6 +205,10 @@ class MilestoneVerificationController extends Controller
             $validated['milestone_id'] = $milestone->id;
             $validated['submitted_by'] = auth()->id();
             $validated['decision'] = 'pending';
+            // DECISION-8: sent back twice already (or its step agreement rejected twice): this one waits for a project
+            // manager audit, picked by the owner, before anyone decides it
+            $auditNeeded = \App\Service\Program\RepeatedRejectionAudit::required($milestone, $verificationType);
+            if ($auditNeeded) $validated['audit_status'] = 'needed';
 
             // Handle file uploads
             $uploadedFiles = [];
@@ -214,19 +235,50 @@ class MilestoneVerificationController extends Controller
 
             DB::commit();
 
-            $this->programNotification->send('mprv.submitted', [$milestone->application->program->owner], [
+            // ISSUE-18: each check has its own event, wording and link (MPRV / mid-milestone / final approval)
+            $label = ['mprv' => 'MPRV', 'mid_milestone' => 'Mid-milestone check', 'final_approval' => 'Final approval'][$verificationType];
+            $inSentence = ['mprv' => 'MPRV', 'mid_milestone' => 'mid-milestone check', 'final_approval' => 'final approval'][$verificationType];
+            if ($auditNeeded) {
+                $data = [
+                    'business_name' => $milestone->application->startup_name, 'milestone_number' => $milestone->sequence_order,
+                    'application_id' => $milestone->app_id, 'program_id' => $milestone->application->program_id, 'check' => $inSentence,
+                    'step' => ['mprv' => 'mprv', 'mid_milestone' => 'mid-milestone', 'final_approval' => 'final-approval'][$verificationType],
+                ];
+                $this->programNotification->send('verification.audit_needed', \App\Service\Program\ProgramTeam::members($milestone->application->program)->all(), $data + [
+                    'email_title' => 'Pick a project manager to audit',
+                    'email_message' => $milestone->application->startup_name.' sent the '.$inSentence.' for milestone '.$milestone->sequence_order.' again after it was sent back twice. It now needs an independent project manager audit: pick a project manager in the deal room.',
+                    'action_label' => 'Pick a project manager',
+                ]);
+                $this->programNotification->send('verification.audit_needed_applicant', [$milestone->application->user], $data + [
+                    'email_title' => 'Your check goes to an independent audit',
+                    'email_message' => 'Your '.$inSentence.' for milestone '.$milestone->sequence_order.' was sent back twice, so this submission goes to an independent project manager, who checks it and reports to the program. You will be told the result.',
+                    'action_label' => 'Open your deal room',
+                ]);
+
+                return response()->json([
+                    'message' => $label.' submitted. It was sent back twice before, so an independent project manager will audit it.',
+                    'audit_needed' => true,
+                    'data' => $verification,
+                ], 201);
+            }
+
+            $this->programNotification->send($verificationType.'.submitted', \App\Service\Program\ProgramTeam::members($milestone->application->program)->all(), [
                 'business_name' => $milestone->application->startup_name, 'milestone_number' => $milestone->sequence_order,
                 'application_id' => $milestone->app_id,
+                'email_title' => $label.' submitted',
+                'email_message' => $milestone->application->startup_name.' submitted the '.$inSentence.' for milestone '.$milestone->sequence_order.'. Review it, then approve it or ask for changes.',
+                'action_label' => 'Review '.$inSentence,
             ]);
 
             return response()->json([
-                'message' => 'MPRV submitted successfully. Program owner will review.',
+                'message' => $label.' submitted successfully. Program owner will review.',
                 'file' => $request->file('document'),
                 's3' => $validated['document'] ?? 'n/a',
                 'data' => $verification,
             ], 201);
 
         } catch (ValidationException $e) {
+            if (DB::transactionLevel() > 0) DB::rollBack(); // opened above; a refusal must not leave it open (ISSUE-27)
             return response()->json(['message' => 'Validation failed.', 'errors' => $e->errors()], 422);
 
         } catch (\Exception $e) {
@@ -274,7 +326,10 @@ class MilestoneVerificationController extends Controller
         }
 
         // Check if already decided
-        if ($verification->decision !== 'pending') {
+        if (\App\Service\Program\RepeatedRejectionAudit::waiting($verification)) {
+            return response()->json(['message' => 'This check was sent back twice, so it needs a project manager audit first. Pick a project manager.', 'error' => 'audit_needed'], 422);
+        }
+        if (! in_array($verification->decision, ['pending', 'audit_requested'], true)) {
             return response()->json([
                 'error' => 'This verification has already been ' . $verification->decision
             ], 422);
@@ -308,9 +363,24 @@ class MilestoneVerificationController extends Controller
             }
             $milestone->save();
 
+            // ISSUE-21: approving the final approval check finishes this milestone and opens the next one, exactly as an
+            // approved completion report does (the app uses this check for final approval)
+            $nextMilestone = $verification->verification_type === 'final_approval'
+                ? $this->unlockNextMilestone($milestone, $owner_id)
+                : null;
             DB::commit();
 
+            // The application may now be in monitoring, or completed (ApplicationCompletion)
+            if ($verification->verification_type === 'final_approval') {
+                \App\Service\Program\ApplicationCompletion::refresh($milestone->application);
+            }
+
             $this->sendVerificationNotification($verification, 'milestone_verification.approved');
+            if ($nextMilestone) {
+                $this->programNotification->send('milestone.unlocked', [$milestone->application->user], [
+                    'milestone_number' => $nextMilestone->sequence_order, 'application_id' => $milestone->app_id,
+                ]);
+            }
 
             return response()->json([
                 'message' => $verification->verification_type === 'mprv'
@@ -344,7 +414,10 @@ class MilestoneVerificationController extends Controller
         }
 
         // Check if already decided
-        if ($verification->decision !== 'pending') {
+        if (\App\Service\Program\RepeatedRejectionAudit::waiting($verification)) {
+            return response()->json(['message' => 'This check was sent back twice, so it needs a project manager audit first. Pick a project manager.', 'error' => 'audit_needed'], 422);
+        }
+        if (! in_array($verification->decision, ['pending', 'audit_requested'], true)) {
             return response()->json([
                 'error' => 'This verification has already been ' . $verification->decision
             ], 422);
@@ -405,7 +478,10 @@ class MilestoneVerificationController extends Controller
         if ($milestone->application->program_owner_id !== auth()->id()) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
-        if ($verification->decision !== 'pending') {
+        if (\App\Service\Program\RepeatedRejectionAudit::waiting($verification)) {
+            return response()->json(['message' => 'This check was sent back twice, so it needs a project manager audit first. Pick a project manager.', 'error' => 'audit_needed'], 422);
+        }
+        if (! in_array($verification->decision, ['pending', 'audit_requested'], true)) {
             return response()->json(['error' => 'This verification has already been ' . $verification->decision], 422);
         }
 
@@ -449,6 +525,38 @@ class MilestoneVerificationController extends Controller
             ErrorLogService::report($e, ['input' => $request->except(['password', 'token'])]);
             return response()->json(['message' => 'Something went wrong, please try again later.'], 500);
         }
+    }
+
+    /**
+     * A milestone's final approval (by completion report, or by the final approval check) opens the next milestone:
+     * its funds become releasable straight away when it needs no MPRV (or its MPRV is already approved), otherwise it
+     * waits for its MPRV. Returns the next milestone, or null when this was the last.
+     */
+    private function unlockNextMilestone(ProgramMilestone $milestone, int $userId): ?ProgramMilestone
+    {
+        $nextMilestone = ProgramMilestone::where('app_id', $milestone->app_id)
+            ->where('is_template', false)
+            ->where('sequence_order', '>', $milestone->sequence_order)
+            ->orderBy('sequence_order')
+            ->first();
+        if (! $nextMilestone) return null;
+
+        if ($nextMilestone->status === 'pending') {
+            // program_milestones has no `notes` column (this assignment made save() fail); the note goes to an existing one
+            $nextMilestone->verification_notes = $nextMilestone->verification_notes ?: 'Unlocked: Previous milestone completed';
+        }
+
+        if ($nextMilestone->fund_release_status === 'locked'
+            && (!$nextMilestone->mprv_required || $nextMilestone->mprv_ready)) {
+            $nextMilestone->fund_release_status = 'approved';
+            $nextMilestone->status = 'approved';
+            $nextMilestone->approved_by = $userId;
+            $nextMilestone->approved_at = now();
+        }
+
+        $nextMilestone->save();
+
+        return $nextMilestone;
     }
 
     private function readyFieldFor(string $verificationType): ?string
@@ -499,9 +607,9 @@ class MilestoneVerificationController extends Controller
      */
     public function requestAudit(Request $request, MilestoneVerification $verification)
     {
-        // Authorization: only program owner can request audit
+        // Authorization: the program's owner team (anyone of them may pick the project manager, DECISION-8)
         $milestone = $verification->milestone;
-        if ($milestone->application->program_owner_id !== auth()->id()) {
+        if (! \App\Service\Program\ProgramAccess::owns($milestone->application->program)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -515,7 +623,8 @@ class MilestoneVerificationController extends Controller
         DB::beginTransaction();
         try {
             $validated = $request->validate([
-                'auditor_id' => 'required|exists:users,id',
+                // A project manager: a service provider, who answers it in Project Manager Audits
+                'auditor_id' => ['required', 'integer', \Illuminate\Validation\Rule::exists('users', 'id')->where('user_type_id', 3)],
                 'decision_notes' => 'nullable|string',
             ]);
 
@@ -526,6 +635,11 @@ class MilestoneVerificationController extends Controller
             $verification->decision_notes = $validated['decision_notes'] ?? null;
             $verification->auditor_id = $validated['auditor_id'];
             $verification->audit_started_at = now();
+            // A fresh audit: the auditor answers it in Project Manager Audits (accept / decline, then a report)
+            $verification->audit_status = 'pending';
+            $verification->audit_recommendation = null;
+            $verification->audit_notes = null;
+            $verification->audit_completed_at = null;
             $verification->save();
 
             // Update milestone
@@ -537,6 +651,7 @@ class MilestoneVerificationController extends Controller
             $this->programNotification->send('mprv.audit_requested', [User::find($validated['auditor_id'])], [
                 'business_name' => $verification->milestone->application->startup_name, 'milestone_number' => $verification->milestone->sequence_order,
                 'application_id' => $verification->milestone->app_id,
+                'audit_stage' => $verification->verification_type === 'mprv' ? 'pre_release' : $verification->verification_type,
             ]);
 
             return response()->json([
@@ -648,7 +763,7 @@ class MilestoneVerificationController extends Controller
 
             DB::commit();
 
-            $this->programNotification->send('completion.submitted', [$milestone->application->program->owner], [
+            $this->programNotification->send('completion.submitted', \App\Service\Program\ProgramTeam::members($milestone->application->program)->all(), [
                 'business_name' => $milestone->application->startup_name, 'milestone_number' => $milestone->sequence_order,
                 'application_id' => $milestone->app_id,
             ]);
@@ -759,31 +874,11 @@ class MilestoneVerificationController extends Controller
 
             // The next milestone may start only after this milestone's completion
             // is approved. It still needs MPRV approval if MPRV is required.
-            $nextMilestone = ProgramMilestone::where('app_id', $milestone->app_id)
-                ->where('is_template', false)
-                ->where('sequence_order', '>', $milestone->sequence_order)
-                ->orderBy('sequence_order')
-                ->first();
-
-            if ($nextMilestone && $nextMilestone->status === 'pending') {
-                // program_milestones has no `notes` column (this assignment made save() fail); the note goes to an existing one
-                $nextMilestone->verification_notes = $nextMilestone->verification_notes ?: 'Unlocked: Previous milestone completed';
-            }
-
-            if ($nextMilestone
-                && $nextMilestone->fund_release_status === 'locked'
-                && (!$nextMilestone->mprv_required || $nextMilestone->mprv_ready)) {
-                $nextMilestone->fund_release_status = 'approved';
-                $nextMilestone->status = 'approved';
-                $nextMilestone->approved_by = $userId;
-                $nextMilestone->approved_at = now();
-            }
-
-            if ($nextMilestone) {
-                $nextMilestone->save();
-            }
+            $nextMilestone = $this->unlockNextMilestone($milestone, $userId);
 
             DB::commit();
+
+            \App\Service\Program\ApplicationCompletion::refresh($milestone->application);
 
             $this->programNotification->send('completion.approved', [$completion->milestone->application->user], [
                 'milestone_number' => $completion->milestone->sequence_order, 'next_milestone' => $nextMilestone ? true : false,

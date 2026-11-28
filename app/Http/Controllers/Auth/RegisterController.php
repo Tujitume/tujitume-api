@@ -15,7 +15,7 @@ class RegisterController extends Controller
     public function register(Request $request)
     {
         $request->validate([
-            'user_type_id' => ['required', 'integer', 'in:1,2,3,4'],
+            'user_type_id' => ['required', 'integer', 'in:1,2,3,4,5'],
         ]);
 
         return match ((int) $request->user_type_id) {
@@ -23,6 +23,7 @@ class RegisterController extends Controller
             2 => $this->registerService->registerInvestor($request),
             3 => $this->registerService->registerServiceProvider($request),
             4 => $this->registerService->registerOrganization($request),
+            5 => $this->registerService->registerCapital($request),
             default => response()->json(['error' => 'Invalid user type'], 422),
         };
     }

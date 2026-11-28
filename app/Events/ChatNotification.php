@@ -4,12 +4,12 @@ namespace App\Events;
 
 use Illuminate\Broadcasting\Channel;
 use Illuminate\Broadcasting\InteractsWithSockets;
-use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
+use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 use Illuminate\Foundation\Events\Dispatchable;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
 
-class ChatNotification implements ShouldBroadcast
+class ChatNotification implements ShouldBroadcastNow
 {
     use Dispatchable, InteractsWithSockets, SerializesModels;
 
@@ -34,7 +34,6 @@ class ChatNotification implements ShouldBroadcast
 //            json_encode($this->payload),
 //            config('services.pusher.app_id')
 //        );
-        Log::info('🟡 ChatNotification constructed');
 
     }
 
@@ -45,19 +44,13 @@ class ChatNotification implements ShouldBroadcast
 
     public function broadcastOn()
     {
-        Log::info('🟡 ChatNotification broadcastOn');
-        return new Channel(
-            'msg-notification.' . $this->payload['user_id']
-        );
+        // Private: only the person the message is for can listen (routes/channels.php)
+        return new \Illuminate\Broadcasting\PrivateChannel('chat.'.$this->payload['user_id']);
     }
 
-//    public function broadcastWith()
-//    {
-//        Log::info('🟡 ChatNotification broadcastWith');
-//        return [
-//            'payload'   => $this->payload,
-//            'signature' => $this->signature,
-//        ];
-//    }
+    public function broadcastWith(): array
+    {
+        return ['payload' => $this->payload];
+    }
 
 }

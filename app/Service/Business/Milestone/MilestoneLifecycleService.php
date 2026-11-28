@@ -37,6 +37,22 @@ class MilestoneLifecycleService
 
         foreach ($milestones as $index => $milestone) {
 
+            // A milestone in a non-compliance case (owner's window, investor vote, platform dispute) is moved by that
+            // case only: unlocking or re-flagging it here would undo a freeze
+            if (\App\Service\Noncompliance\NonCompliantService::heldCase($milestone->id)) {
+                continue;
+            }
+            // Flagged before the escalation was switched on (no case at all): its 72-hour window opens now
+            if ($milestone->status === 'non_compliant'
+                && ! \App\Models\Milestones\NonCompliance\MilestoneNonCompliance::where('milestone_id', $milestone->id)->exists()) {
+                try {
+                    (new \App\Service\Noncompliance\NonCompliantService())->startResponseWindow($milestone);
+                } catch (\Throwable $e) {
+                    \App\Service\Misc\ErrorLogService::report($e, ['milestone_id' => $milestone->id]);
+                }
+                continue;
+            }
+
             //Lock unlock based on start_date
             if (
                 $milestone->start_date &&
@@ -59,7 +75,15 @@ class MilestoneLifecycleService
 
 
             // --- Funding Calculation --- / / PENDING vs REAL
-            if ($milestone->listing->threshold_met
+            // Money really in: accepted investments paid in full (confirmed) and verified / released assets. An accepted
+            // bid that has only paid its 25% deposit does not fund the milestone yet, so its 75% is never released from
+            // money the platform does not hold.
+            $paidIn = (float) \App\Models\Business\AcceptedBids::where('ms_id', $milestone->id)
+                ->whereIn('status', ['confirmed', 'Confirmed', 'verified', 'equipment_released'])->sum('amount');
+            $hasAccepted = \App\Models\Business\AcceptedBids::where('ms_id', $milestone->id)->exists();
+            if ($hasAccepted) {
+                $funds_collected = $paidIn;
+            } elseif ($milestone->listing->threshold_met
                 && ( $milestone->funding_collected > $milestone->pending_collected )) {
                 $funds_collected = $milestone->funding_collected;
             }
@@ -114,15 +138,15 @@ class MilestoneLifecycleService
             //OVERDUE ESCALATION (HIGHEST AUTO PRIORITY)
             if ($isOverdue && $milestone->progress_percentage < 60) {
 
-                if ($milestone->status != 'non_compliant') {
+                // Flagged and the owner's 72-hour window opened; owner and investors are told once (NonCompliantService)
+                try {
+                    (new \App\Service\Noncompliance\NonCompliantService())->trigger($milestone);
+                } catch (\Throwable $e) {
                     $milestone->status = 'non_compliant';
                     $milestone->active = false;
-
-                    // Escalation hooks
-                    //$this->notify('non_compliant', $milestone->listing->owner, $milestone);
+                    $milestone->save();
+                    \App\Service\Misc\ErrorLogService::report($e, ['milestone_id' => $milestone->id]);
                 }
-
-                $milestone->save();
                 continue; // STOP lifecycle here
             }
 
@@ -260,6 +284,12 @@ class MilestoneLifecycleService
                 continue;
             }
 
+            // Frozen by a non-compliance case (platform dispute, sanction): stays locked, and the next stays locked too
+            if (\App\Service\Noncompliance\NonCompliantService::heldCase($milestone->id)) {
+                $previousDone = false;
+                continue;
+            }
+
             // Previous done → this one can be unlocked
             if ($milestone->status == 'locked' &&
                 (!$milestone->start_date || now()->gte($milestone->start_date)) ){
@@ -327,7 +357,7 @@ class MilestoneLifecycleService
                 'milestone_name' => $milestone->title,
                 'days_remaining' => 7,
                 'amount_raised' => $milestone->pending_collected,
-                'reviewUrl' => 'https://beta.tujitume.com/dashboard/milestones',
+                'reviewUrl' => \App\Service\Notification\RecipientUrl::url('dashboard/milestones', $mail_to),
             ];
 
             $this->emailService->send($subject, 'milestone.auto_extension', $data, $mail_to);
@@ -344,29 +374,30 @@ class MilestoneLifecycleService
             $data = [
                 'boName' => $recipient->first_name,
                 'milestoneName' => $milestone->title,
-                'reviewUrl' => 'https://beta.tujitume.com/dashboard/milestones',
+                'reviewUrl' => \App\Service\Notification\RecipientUrl::url('dashboard/milestones', $mail_to),
             ];
             $this->emailService->send($subject, 'milestone.rmep.system_request', $data, $mail_to);
         }
         elseif($type == 'non_compliant'){
             $recipient = $milestone->listing->owner;
 
-            $text = 'Milestone '. $milestone->title. ' was automatically extended by 7 days due to high funding value.';
+            $text = 'Milestone '. $milestone->title. ' passed its deadline before reaching 60% progress and is now marked non-compliant. Update its progress or submit a revised plan (RMEP) to your investors.';
             $this->notification->create(
                 $recipient->id, null, $text, 'milestones', 'milestone'
             );
 
             // E m a i l
-            $subject = 'Milestone Status Non-Compliant';
+            $subject = 'Milestone Non-Compliant: Action Needed';
             $mail_to = $recipient->email;
             $data = [
+                'boName' => $recipient->first_name,
                 'milestone_name' => $milestone->title,
-                'days_remaining' => 7,
-                'amount_raised' => $milestone->pending_collected,
-                'reviewUrl' => 'https://beta.tujitume.com/dashboard/milestones',
+                'business_name' => $milestone->listing->name,
+                'progress' => (int) $milestone->progress_percentage,
+                'reviewUrl' => \App\Service\Notification\RecipientUrl::url('dashboard/milestones', $mail_to),
             ];
 
-            //$this->emailService->send($subject, 'milestone.non_compliant', $data, $mail_to);
+            $this->emailService->send($subject, 'milestone.non_compliant', $data, $mail_to);
 
             //non_compliantStage 0: Normal Completion Flow
                 //Owner uploads milestone proof

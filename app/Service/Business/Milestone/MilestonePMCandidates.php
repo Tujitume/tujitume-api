@@ -19,8 +19,16 @@ class MilestonePMCandidates
             $location = $listing->location;
             $lat = (float)$listing->lat; $lng = (float)$listing->lng;
 
-            $services = $this->findNearestServices($lat,$lng,100);
-            $manager_ids = $services->pluck('user_id')->unique()->values()->toArray();
+            // Nearest project managers first; a business without a map point (lat/lng were never picked) or with nobody
+            // within 100 miles still gets candidates: project managers anywhere, best rated first (it used to get none,
+            // so the investors' audit vote had no one to choose)
+            $services = ($lat || $lng) ? $this->findNearestServices($lat,$lng,100) : collect();
+            if ($services->isEmpty()) {
+                $services = Services::where('category', 'project_management')->where('active', 1)
+                    ->orderByDesc('rating')->limit(20)->get(['id', 'user_id']);
+            }
+            $manager_ids = $services->pluck('user_id')->reject(fn ($id) => (int) $id === (int) $listing->user_id)
+                ->unique()->values()->toArray();
 
             return $manager_ids;
         }

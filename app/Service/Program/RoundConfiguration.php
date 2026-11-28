@@ -2,7 +2,6 @@
 
 namespace App\Service\Program;
 
-use App\Models\ProgramEmailTemplate;
 use App\Models\Programs\Rounds\ProgramRound;
 use App\Models\Programs\Rounds\RoundCustomQuestion;
 
@@ -14,12 +13,14 @@ use App\Models\Programs\Rounds\RoundCustomQuestion;
 class RoundConfiguration
 {
     /** The wizard steps a person confirms themselves; publishing is decided by the round's status. */
-    public const CONFIRMABLE_STEPS = ['setup', 'questions', 'reviewers', 'notifications'];
+    // Scoring comes after the questions and reviewers, so the criteria can be written from the questions asked
+    public const CONFIRMABLE_STEPS = ['setup', 'questions', 'reviewers', 'scoring', 'notifications'];
 
     public const LABELS = [
-        'setup' => 'Round setup (dates and scoring)',
+        'setup' => 'Round setup (dates and rules)',
         'questions' => 'Application questions',
         'reviewers' => 'Reviewers',
+        'scoring' => 'Scoring criteria',
         'notifications' => 'Notification emails',
     ];
 
@@ -49,13 +50,11 @@ class RoundConfiguration
             'reviewers' => ($round->assignment_type === 'owner_only'
                 || $round->reviewers()->count() >= max(1, (int) ($round->min_reviewers_required ?? 1)))
                 && $confirms('reviewers'),
-            'notifications' => ProgramEmailTemplate::where('program_id', $round->program_id)
-                ->whereIn('event', ['round.advanced', 'round.not_selected'])
-                ->whereNotNull('body_html')
-                ->where('body_html', '!=', '')
-                ->pluck('event')
-                ->unique()
-                ->count() === 2 && $confirms('notifications'),
+            // Rounds set up before Scoring was its own step confirmed their criteria with Setup
+            'scoring' => $this->scoringComplete($round)
+                && ($confirms('scoring') || ($requireConfirmation && in_array('setup', $confirmed, true))),
+            // Every email is optional (one not written goes out as the system default): the step only needs a visit
+            'notifications' => $confirms('notifications'),
             'publish' => $isLive,
         ];
 
@@ -85,26 +84,29 @@ class RoundConfiguration
             return false;
         }
 
-        $criteria = $round->scoring_criteria ?? [];
-        if (! empty($criteria)) {
-            foreach ($criteria as $criterion) {
-                if (empty($criterion['name'])) {
-                    return false;
-                }
-            }
-
-            if (($round->rubric_mode ?? 'weighted') === 'weighted') {
-                $totalWeight = collect($criteria)->sum(fn ($criterion) => (int) ($criterion['weight'] ?? 0));
-                if ($totalWeight !== 100) {
-                    return false;
-                }
-            }
-        }
-
         foreach ($round->required_documents ?? [] as $document) {
             if (empty($document['label'])) {
                 return false;
             }
+        }
+
+        return true;
+    }
+
+    /** At least one named criterion; weighted rubrics must add up to exactly 100. */
+    public function scoringComplete(ProgramRound $round): bool
+    {
+        $criteria = $round->scoring_criteria ?? [];
+        if (empty($criteria)) {
+            return false;
+        }
+        foreach ($criteria as $criterion) {
+            if (empty($criterion['name'])) {
+                return false;
+            }
+        }
+        if (($round->rubric_mode ?? 'weighted') === 'weighted') {
+            return collect($criteria)->sum(fn ($criterion) => (int) ($criterion['weight'] ?? 0)) === 100;
         }
 
         return true;
@@ -123,10 +125,10 @@ class RoundConfiguration
         if ($round->status !== 'published') {
             return (string) $round->status;
         }
-        if ($round->open_date && $round->open_date->copy()->startOfDay()->isFuture()) {
+        if (! $round->hasOpened()) {
             return 'scheduled';
         }
-        if ($round->close_date && $round->close_date->copy()->endOfDay()->isPast()) {
+        if ($round->hasClosed()) {
             return 'deadline_passed';
         }
 
@@ -158,6 +160,8 @@ class RoundConfiguration
             'can_publish' => $configured && $round->status === 'draft',
             'opens_on' => $round->open_date?->toDateString(),
             'closes_on' => $round->close_date?->toDateString(),
+            'opens_at' => $round->opensAt()?->format(\App\Support\ProgramSchedule::JSON_FORMAT),
+            'closes_at' => $round->closesAt()?->format(\App\Support\ProgramSchedule::JSON_FORMAT),
         ];
     }
 }

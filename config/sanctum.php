@@ -46,7 +46,16 @@ return [
     |
     */
 
-    'expiration' => 60,
+    // No fixed lifetime: a token stays valid while it is being used (see idle_timeout below).
+    // A token with an earlier expires_at still ends on that date; the idle timeout applies to every token.
+    'expiration' => null,
+
+    /*
+    | Idle Timeout Minutes
+    | A token that has not been used for this many minutes is rejected (401), so a session ends after an hour away,
+    | not an hour after sign-in. Checked in AppServiceProvider against the token's last_used_at.
+    */
+    'idle_timeout' => (int) env('SANCTUM_IDLE_MINUTES', 60),
 
     /*
     |--------------------------------------------------------------------------

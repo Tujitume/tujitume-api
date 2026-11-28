@@ -37,8 +37,24 @@ class MiscController extends Controller
     }
 
     // extra
+    /**
+     * Who may read the server error log: a logged-in admin (admin panel), an admin app account, or a signed-in app user while the API runs
+     * locally (the debug panel), or one whose email is listed in DEBUG_ADMIN_EMAILS (comma separated) elsewhere.
+     */
+    private function canReadErrorLogs(Request $request): bool
+    {
+        if (auth('admin')->check()) return true;
+        $user = $request->user();
+        if (! $user) return false;
+        if ((int) $user->user_type_id === 7) return true; // an admin account (user_types: 7 = admin)
+        if (app()->environment('local')) return true;
+        $allowed = array_filter(array_map(fn ($e) => strtolower(trim($e)), explode(',', (string) config('app.debug_admin_emails'))));
+        return in_array(strtolower((string) $user->email), $allowed, true);
+    }
+
     public function errorLogs(Request $request)
     {
+        abort_unless($this->canReadErrorLogs($request), 403, "You don't have access to the error log.");
         try {
             $query = ErrorLog::query()->latest();
 

@@ -10,8 +10,26 @@ class LiprW2W
      * @param array $options result_url, listing_id (what LIPR echoes back to the callback) and narration, for payments
      *                       that are not milestone payouts, such as a reviewer's fee
      */
+    /**
+     * Where LIPR reports the result: the caller's own callback, else the program payout callback for a program milestone
+     * (it releases the milestone and completes the disbursement), else the plain transfer callback (recorded only).
+     */
+    public static function resultUrl($milestone, array $options = []): string
+    {
+        return $options['result_url'] ?? LiprCallback::url(
+            $milestone instanceof \App\Models\Programs\ProgramMilestone ? '/lipr-callback/transfer-to-supplier' : '/lipr-callback/transfer'
+        );
+    }
+
     public function send($amount, string $receiver_wallet, string $payer_wallet, $milestone = null, array $options = [])
     {
+        // Some callers pass a label ('Unlocking business fee') where the milestone goes: it is the narration, not a milestone
+        // (reading ->amount on it threw before any money moved)
+        if (is_string($milestone)) {
+            $options['narration'] ??= $milestone;
+            $milestone = null;
+        }
+
         if($amount <= 0) {
             return [
                 'success' => false,
@@ -33,10 +51,16 @@ class LiprW2W
             ];
         }
 
-        // A milestone payout is recorded as a disbursement; other payments (a reviewer's fee) are tracked on their own order
+        if ($milestone && !($milestone instanceof \App\Models\Programs\ProgramMilestone)) {
+            $milestone = null;
+        }
+
+        // A program milestone payout is recorded as a disbursement; other payments (a fee, a business milestone) are tracked by their caller
         $disbursement = $milestone ? Disbursement::create([
             'amount' => $milestone->amount,
             'milestone_id' => $milestone->id,
+            // ISSUE-31: on the program's wallet, so the wallet report lists payouts to the applicant too
+            'wallet_id' => $milestone->application?->program?->wallet?->id,
             'recipient_type' => 'business_owner',
             'payment_method' => 'mpesa_mobile',
             'currency' => 'KES',
@@ -53,8 +77,8 @@ class LiprW2W
 
         $fields = [
             "requestId" => 'stk-' . now()->format('YmdHis') . '-' . uniqid(),
-            "resultUrl" => $options['result_url'] ?? (rtrim(config('app.api_url'), '/') . '/lipr-callback-program-supplier'),
-            "timeoutUrl" => rtrim(config('app.api_url'), '/') . '/lipr-callback/timeout',
+            "resultUrl" => self::resultUrl($milestone, $options),
+            "timeoutUrl" => \App\Service\LiprMpesa\LiprCallback::url('/lipr-callback/timeout'),
             "metadata" => [ "listingId" => $options['listing_id'] ?? $milestone?->id ],
 
             "fromWallet" => $payer_wallet,
@@ -136,8 +160,8 @@ class LiprW2W
 
         $fields = [
             "requestId" => 'stk-' . now()->format('YmdHis') . '-' . uniqid(),
-            "resultUrl" => rtrim(config('app.api_url'), '/') . '/lipr-callback/reviewer-payment',
-            "timeoutUrl" => rtrim(config('app.api_url'), '/') . '/lipr-callback/timeout',
+            "resultUrl" => \App\Service\LiprMpesa\LiprCallback::url('/lipr-callback/reviewer-payment'),
+            "timeoutUrl" => \App\Service\LiprMpesa\LiprCallback::url('/lipr-callback/timeout'),
             "metadata" => ["listingId" => $order->id],
 
             "fromWallet" => $payer_wallet,

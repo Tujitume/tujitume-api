@@ -7,7 +7,7 @@
 
         <div style="text-align:center;margin-top:2rem;">
             <a href="{{ config('app.api_url') }}CancelBookingConfirm/{{ $booking_id }}/ok" style="background-color:#9f1239;color:white;display:inline-block;padding:0.85rem 2rem;border-radius:999px;text-decoration:none;font-weight:700;font-size:1rem;box-shadow:0 4px 12px rgba(0,0,0,0.18);margin:0.25rem;">OK, Cancel Booking</a>
-            <a href="{{ config('app.app_url') }}service-milestones/{{ $s_id }}" style="background-color:#14532d;color:white;display:inline-block;padding:0.85rem 2rem;border-radius:999px;text-decoration:none;font-weight:700;font-size:1rem;box-shadow:0 4px 12px rgba(0,0,0,0.18);margin:0.25rem;">Pay Instead</a>
+            <a href="{{ $app_url ?? config('app.app_url') }}service-milestones/{{ $s_id }}" style="background-color:#14532d;color:white;display:inline-block;padding:0.85rem 2rem;border-radius:999px;text-decoration:none;font-weight:700;font-size:1rem;box-shadow:0 4px 12px rgba(0,0,0,0.18);margin:0.25rem;">Pay Instead</a>
         </div>
 
         @include('programs.partials.brand_footer')

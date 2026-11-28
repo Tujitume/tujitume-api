@@ -80,6 +80,15 @@ class PreReleaseRmepController extends Controller
             ]);
 
             $milestone = Milestones::find($milestoneId);
+            if (!$milestone) {
+                return response()->json(['message' => 'Milestone not found.'], 404);
+            }
+            // Only an investor in this milestone sets its pre-release requirements
+            $isInvestor = \App\Models\Business\AcceptedBids::where('ms_id', $milestone->id)->where('investor_id', Auth::id())
+                ->whereIn('status', ['confirmed', 'Confirmed', 'verified', 'equipment_released'])->exists();
+            if (!$isInvestor) {
+                return response()->json(['message' => 'Only an investor in this milestone can request its pre-release documents.'], 403);
+            }
             $owner =$milestone->listing->owner;
 
             if($milestone->progress_percentage < 100 || !$milestone->is_funded){
@@ -107,6 +116,7 @@ class PreReleaseRmepController extends Controller
                 'financial_reasonableness'  => $selected['financial_reasonableness'],
                 'risk_flags'                => $selected['risk_flags'],
                 'media_proof'               => $selected['media_proof'],
+                'weight'                    => 0, // set from the investor's share when they vote
             ]);
             //$selectedItems = array_keys(array_filter($validated, fn($value) => $value === true));
 
@@ -174,7 +184,11 @@ class PreReleaseRmepController extends Controller
     {
         try{
             $fileUpload = new FileUploadService();
-            $req = MilestonePreReleaseRequest::findOrFail($requestId);
+            $req = MilestonePreReleaseRequest::with('milestone.listing')->find($requestId);
+            // Only the business owner answers a pre-release request with documents
+            if (!$req || (int) ($req->milestone?->listing?->user_id) !== (int) Auth::id()) {
+                return response()->json(['message' => 'Pre-release request not found.'], 404);
+            }
 
             $selected = [
                 'proof_of_procurement' => $req->proof_of_procurement ?? [],
@@ -267,6 +281,13 @@ class PreReleaseRmepController extends Controller
 
             $investor = Auth::user();
             $req = MilestonePreReleaseRequest::with('milestone')->find($id);
+            // Each investor reviews the request they made, once the owner has sent its documents
+            if (!$req || (int) $req->investor_id !== (int) $investor->id) {
+                return response()->json(['message' => 'Pre-release request not found.'], 404);
+            }
+            if ($req->status !== 'submitted') {
+                return response()->json(['message' => 'The business owner has not sent the documents for this request yet.'], 422);
+            }
             $window = $req->votingWindow;
 
 //            if (!$window || $window->status !== 'open') {
@@ -333,10 +354,19 @@ class PreReleaseRmepController extends Controller
                 $winner = $this->votingService->result( 'pre_release', $req);
 
                 //$req->vote->update([ 'status' => 'closed', 'ends_at' => now() ]);
-                $this->prResultActions($winner, $req);
+                $outcome = $this->prResultActions($winner, $req);
             }
 
-            return response()->json(['msg' => 'Pre-release '. $validated['action'] .'ed.'], 200);
+            $done = ['approve' => 'approved', 'reject' => 'rejected', 'audit' => 'sent for a project manager audit'][$validated['action']];
+            // The vote is saved either way; when the 75% release it triggered failed, the voter is told (it used to
+            // answer "approved" while nothing was released)
+            if (isset($outcome) && $outcome instanceof \Illuminate\Http\JsonResponse && $outcome->getStatusCode() >= 400) {
+                $why = $outcome->getData(true)['message'] ?? 'the transfer failed';
+
+                return response()->json(['msg' => 'Pre-release '.$done.'.', 'message' => 'Your vote is saved, but the 75% release could not be sent yet: '.$why, 'release_failed' => true], 200);
+            }
+
+            return response()->json(['msg' => 'Pre-release '.$done.'.', 'message' => 'Pre-release '.$done.'.'], 200);
         }
         catch (ValidationException $e) {
             // return actual validation errors
@@ -368,7 +398,7 @@ class PreReleaseRmepController extends Controller
             }
 
             // if $result == true
-            $daysToExec = $req->milestone->no_o_days;
+            $daysToExec = $req->milestone->n_o_days; // the milestone's execution days (the column is n_o_days; no_o_days was always null, so the deadline was today)
             $req->milestone->fund_released_75 = true;
             $req->milestone->status = 'in_progress';
             $req->milestone->mid_milestone_started = true;
@@ -443,6 +473,11 @@ class PreReleaseRmepController extends Controller
             ]);
             $fileUpload = new FileUploadService();
 
+            // Only the business owner proposes a recovery plan (RMEP) for their milestone
+            $ownerId = Milestones::with('listing')->find($validated['milestone_id'])?->listing?->user_id;
+            if ((int) $ownerId !== (int) Auth::id()) {
+                return response()->json(['message' => 'Milestone not found.'], 404);
+            }
             $eligible_voters = BusinessBids::where('ms_id', $validated['milestone_id'])->pluck('investor_id')->unique()->toArray();
             $rmep = MilestoneRmep::create([
                 'milestone_id'    => $validated['milestone_id'],
@@ -587,4 +622,11 @@ class PreReleaseRmepController extends Controller
         $rmep->save();
     }
 
+
+    /** The milestone emails + notifications ("pre-release requested", "documents ready", …): this controller called a
+     *  notify() it did not have, so every request and upload failed after saving and nobody was told. */
+    public function notify($recipient, $type, $milestone, $info = null)
+    {
+        return app(\App\Service\Business\Milestone\MilestoneNotificationService::class)->notify($recipient, $type, $milestone, $info);
+    }
 }

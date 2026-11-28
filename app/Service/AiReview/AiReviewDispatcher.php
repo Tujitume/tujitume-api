@@ -28,8 +28,6 @@ class AiReviewDispatcher
 
     public function dispatchFor(ProgramApplication $application, ?ProgramRound $round = null, bool $force = false, bool $run = true): ?ApplicationAiReview
     {
-        if (class_exists(\App\Modules\ProgramImport\Silent\ImportContext::class) && \App\Modules\ProgramImport\Silent\ImportContext::isSilent()) return null; // program import: no AI work while importing
-
         $round ??= $application->currentRound;
         if (! $round || ! $round->usesAi() || ! config('ai_review.enabled')) return null;
         if (in_array($round->status, ['finalized'], true)) return null;

@@ -10,7 +10,7 @@ class ProgramEmailTemplate extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['program_id', 'event', 'body_html'];
+    protected $fillable = ['program_id', 'event', 'subject', 'body_html'];
 
     // Events that support custom body templates
     public const CUSTOMISABLE_EVENTS = [
@@ -25,10 +25,8 @@ class ProgramEmailTemplate extends Model
         return $this->belongsTo(Program::class);
     }
 
-    /**
-     * Fetch a custom body for a given program + event, or null if none saved.
-     */
-    public static function resolve(int $programId, string $event): ?string
+    /** The template the owner saved for a program + event (subject and body), or null when none is saved. */
+    public static function resolve(int $programId, string $event): ?self
     {
         if (!$programId) {
             return null;
@@ -36,6 +34,8 @@ class ProgramEmailTemplate extends Model
 
         return static::where('program_id', $programId)
             ->where('event', $event)
-            ->value('body_html');
+            ->whereNotNull('body_html')
+            ->where('body_html', '!=', '')
+            ->first();
     }
 }

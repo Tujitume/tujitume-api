@@ -12,7 +12,8 @@ class BroadcastServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        Broadcast::routes();
+        // /api/broadcasting/auth, signed in with the app's API token (the app never uses cookies), so private channels work
+        Broadcast::routes(['prefix' => 'api', 'middleware' => ['auth:sanctum']]);
 
         require base_path('routes/channels.php');
     }

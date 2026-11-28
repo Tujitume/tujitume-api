@@ -33,12 +33,14 @@ Route::post('account/upgrade-to-service-provider', [RegisterController::class, '
     ->middleware('auth:sanctum');
 
 Route::post('organization-invitations/accept', [UserController::class, 'acceptOrgTeamInvitation']);
-Route::post('resetPassword', [UserController::class, 'resetPassword']);
+// Needs the reset_token that verifyEmailOtp hands out once the emailed code is right
+Route::post('resetPassword', [UserController::class, 'resetPassword'])->middleware('throttle:10,1');
 Route::get('logout', [AuthController::class, 'logout']);
 
 // Email Verification
-Route::post('sendEmailOtp', [AuthController::class, 'sendEmailVerification']);
-Route::post('verifyEmailOtp', [AuthController::class, 'verifyEmailCode']);
+// Throttled: a 4-digit code must not be guessable by asking for new codes over and over
+Route::post('sendEmailOtp', [AuthController::class, 'sendEmailVerification'])->middleware('throttle:6,1');
+Route::post('verifyEmailOtp', [AuthController::class, 'verifyEmailCode'])->middleware('throttle:20,1');
 // Route::get('emailVerify/{email}/{code}', [AuthController::class,'emailVerify']);
 
 Route::get('emailExists/{email}', [UserController::class, 'checkEmailExists']);

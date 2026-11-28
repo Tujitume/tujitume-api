@@ -201,7 +201,9 @@ class MidMilestoneController extends Controller
             }
 
             // verify investor
-            $isInvestor = $mid->milestone->accepted_bids()->where('investor_id', $user->id)->exists();
+            // An investor whose money is really in (paid in full, or a verified asset)
+            $isInvestor = $mid->milestone->accepted_bids()->where('investor_id', $user->id)
+                ->whereIn('status', ['confirmed', 'Confirmed', 'verified', 'equipment_released'])->exists();
             if (!$isInvestor) {
                 return response()->json(['message' => 'Only investors can vote'], 403);
             }
@@ -227,7 +229,11 @@ class MidMilestoneController extends Controller
                 $winner = $this->votingService->result( 'mid_milestone', $mid);
 
                 //$req->vote->update([ 'status' => 'closed', 'ends_at' => now() ]);
-                $this->midResultActions($winner, $mid);
+                $outcome = $this->midResultActions($winner, $mid);
+                // The vote is saved; say so plainly when the 25% could not be sent (it used to answer "Vote recorded")
+                if ($outcome instanceof \Illuminate\Http\JsonResponse) {
+                    return response()->json(['message' => 'Vote recorded, but the 25% could not be released yet: '.($outcome->getData(true)['message'] ?? 'please try again')], 502);
+                }
             }
 
 
@@ -256,15 +262,13 @@ class MidMilestoneController extends Controller
         if ($winner == 'approve') {
             if($mid->milestone->fund_released_75){
 
-                $mid->status = 'approved'; $mid->save();
-
                 $fundReleaseService = new MilestoneFundReleaseService($this->Client);
-
                 $result = $fundReleaseService->release($mid->milestone, 25);
-
                 if (!$result->success) {
+                    // Approved by the investors but not paid: stays open so the release can be tried again
                     return response()->json(['message' => $result->message], 422);
                 }
+                $mid->status = 'approved'; $mid->save();
 
                 $mid->milestone->fund_released = true;
                 $mid->milestone->final_approval_started = true;
@@ -278,7 +282,7 @@ class MidMilestoneController extends Controller
             $mid->status = 'rejected';
             $mid->increment('attempt_count',1);
 
-            if($mid->attemp_count >= 2){
+            if($mid->attempt_count >= 2){ // (was a typo, attemp_count, so two rejections never went to an audit)
                 $mid->status = 'pm_audit';
                 $this->notify($mid->milestone->listing->owner, 'pm_audit', $mid);
             }

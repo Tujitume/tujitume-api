@@ -27,7 +27,7 @@ class AnalyticsController extends Controller
     private const PERIODS = ['30_days', '3_months', '6_months', '12_months', 'all_time'];
 
     /** Application statuses in the order the page shows them (drafts are not applications yet) */
-    private const STATUS_ORDER = ['pending', 'under_review', 'approved', 'waitlisted', 'awarded', 'completed', 'rejected', 'withdrawn'];
+    private const STATUS_ORDER = ['pending', 'under_review', 'approved', 'waitlisted', 'awarded', 'in_monitoring', 'completed', 'rejected', 'withdrawn'];
 
     /** Score bands, as a percent of the round's highest possible total */
     private const SCORE_BANDS = ['90_100' => 90, '80_89' => 80, '70_79' => 70, '60_69' => 60, '0_59' => 0];
@@ -60,11 +60,14 @@ class AnalyticsController extends Controller
                 'program_id' => 'nullable|integer',
                 'round_id' => 'nullable|integer',
                 'period' => 'nullable|string|in:' . implode(',', self::PERIODS),
+                // How many top applications: a number (default 10, max 1000) or "all" (the PDF / file export)
+                'top' => ['nullable', 'regex:/^(all|[1-9][0-9]{0,3})$/'],
             ]);
+            $topLimit = ($validated['top'] ?? null) === 'all' ? null : min(1000, (int) ($validated['top'] ?? 10));
             $period = $validated['period'] ?? '12_months';
 
             $allPrograms = Program::query()
-                ->where('user_id', $ownerId)
+                ->ofOrganization($user) // ISSUE-38
                 ->select(['id', 'program_title', 'status', 'currency', 'use_match_score', 'match_score_limit', 'total_program_amount', 'created_at'])
                 ->orderByDesc('created_at')
                 ->get();
@@ -171,7 +174,7 @@ class AnalyticsController extends Controller
 
             // ── Summary ──────────────────────────────────────────────────────────────────────────
             $sum = fn (Collection $rows, ?callable $filter = null) => (int) ($filter ? $rows->filter($filter) : $rows)->sum('total');
-            $isAwarded = fn ($g) => in_array($g->status, ['awarded', 'completed'], true);
+            $isAwarded = fn ($g) => in_array($g->status, ['awarded', 'in_monitoring', 'completed'], true);
             $submitted = $sum($groups);
             $awarded = $sum($groups, $isAwarded);
             $awaiting = $sum($groups, fn ($g) => in_array($g->round_status, ['submitted', ''], true) && !$isAwarded($g) && !in_array($g->status, ['rejected', 'withdrawn'], true));
@@ -223,11 +226,14 @@ class AnalyticsController extends Controller
                 ->when($roundId, fn ($q) => $q->where('round_id', $roundId))
                 ->groupBy('status')->selectRaw('status, COUNT(*) as total')
                 ->pluck('total', 'status');
-            $ai = DB::table('application_ai_reviews')
-                ->whereIn('application_id', $appIds())
-                ->when($roundId, fn ($q) => $q->where('round_id', $roundId))
-                ->groupBy('status')->selectRaw('status, COUNT(*) as total')
-                ->pluck('total', 'status');
+            // ISSUE-39: in a finalized round, a review that never completed counts as "did not run", not as needing a look
+            $ai = DB::table('application_ai_reviews as air')
+                ->join('program_rounds as prr', 'prr.id', '=', 'air.round_id')
+                ->whereIn('air.application_id', $appIds())
+                ->when($roundId, fn ($q) => $q->where('air.round_id', $roundId))
+                ->selectRaw("CASE WHEN prr.status = 'finalized' AND air.status NOT IN ('ready', 'stale') THEN 'not_run' ELSE air.status END as st, COUNT(*) as total")
+                ->groupBy('st')
+                ->pluck('total', 'st');
             $aiCount = fn (array $statuses) => (int) $ai->only($statuses)->sum();
 
             // Coach reviews against each round's minimum number of Business Coaches
@@ -261,6 +267,7 @@ class AnalyticsController extends Controller
                     'needs_attention' => $aiCount(['needs_attention']),
                     'failed' => $aiCount(['failed']),
                     'stale' => $aiCount(['stale']),
+                    'not_run' => $aiCount(['not_run']),
                 ],
                 'awaiting_review' => $awaiting,
                 'in_review' => $inReview,
@@ -376,7 +383,8 @@ class AnalyticsController extends Controller
             })->values();
 
             // ── Top applications (highest scored) ────────────────────────────────────────────────
-            $topIds = $appScores->sortByDesc('percent')->take(10)->keys()->all();
+            $topSorted = $appScores->sortByDesc('percent');
+            $topIds = ($topLimit === null ? $topSorted : $topSorted->take($topLimit))->keys()->all();
             $topApps = $topIds ? ProgramApplication::query()
                 ->whereIn('id', $topIds)
                 ->select(['id', 'uid', 'program_id', 'user_id', 'business_id', 'startup_name', 'status', 'round_status', 'current_round_id', 'match_score', 'awarded_amount', 'created_at'])
@@ -543,7 +551,7 @@ class AnalyticsController extends Controller
         } catch (\Illuminate\Validation\ValidationException $e) {
             throw $e;
         } catch (\Throwable $e) {
-            ErrorLogService::report($e, ['user_id' => Auth::id(), 'input' => $request->only(['program_id', 'round_id', 'period'])]);
+            ErrorLogService::report($e, ['user_id' => Auth::id(), 'input' => $request->only(['program_id', 'round_id', 'period', 'top'])]);
 
             return response()->json(['success' => false, 'message' => 'Something went wrong, please try again later.'], 500);
         }
@@ -583,114 +591,95 @@ class AnalyticsController extends Controller
         ];
     }
 
+    /**
+     * GET capital/analytics: the capital provider's dashboard (owner and team see the owner's numbers).
+     *  offers        {total, live}                 live = visible and open today
+     *  applications  {total, pending, accepted, rejected}
+     *  capital       {total, available, committed, deployed}  committed = requested by accepted applications,
+     *                                                           deployed = milestones released
+     *  avg_score, distribution {90-100, 80-89, 70-79, 60-69, <60}, breakdown {sector, geo, stage, revenue, team, impact,
+     *  milestones, documents, bonus} (average points), performance_month [{month: "2026-06", label: "Jun",
+     *  applications, match (score >= 60), accepted, conversion (% match)}] for the last 6 months, top_startups (10)
+     *  The older keys stay: funded (= accepted), total_match (= applications total).
+     */
     public function index_capital(){
         try {
-            $user_id = Auth::id();
-
-            $user = $this->get_role2();
-            if($user->role == 'editor' || $user->role == 'viewer' || $user->role == 'admin'){
-                $user_id = $user->capital_owner_id;
+            $ownerId = \App\Service\Capital\CapitalAccess::ownerId(Auth::user());
+            if ($ownerId === null) {
+                return response()->json(['message' => 'Only capital providers have capital analytics.'], 403);
             }
 
-            $pitches = StartupPitches::where('capital_owner_id',$user_id)->get();
-            $pitches_funded = $pitches->where('status',1)->count();
-            $pitches_count = $pitches->count();
-            //Top Matching StartUps (10)
-            $topPitches  = $pitches->sortByDesc('score')->take(10)->values();
+            $offers = \App\Models\Capital\CapitalOffer::where('user_id', $ownerId)->get();
+            $live = \App\Models\Capital\CapitalOffer::where('user_id', $ownerId)->openToPublic()->count();
+            $pitches = StartupPitches::where('capital_owner_id', $ownerId)->get();
+            $accepted = $pitches->where('status', StartupPitches::STATUS_ACCEPTED);
+            $count = $pitches->count();
 
-            $score = 0;$avg_score = 0;
-            $break = [
-            'sector' => 0,
-            'geo' => 0,
-            'stage' => 0,
-            'revenue' => 0,
-            'team' => 0,
-            'impact' => 0
-            ];
-            $dist = [
-            '90-100' => 0,
-            '80-89' => 0,
-            '70-79' => 0,
-            '60-69' => 0,
-            '<60' => 0
-            ];
-            $currentMonth = now()->month;$i=0;
-            $monthData = [];
+            $deployed = (float) \App\Models\Capital\CapitalMilestone::whereIn('app_id', $pitches->pluck('id'))->where('fund_released', true)->sum('amount');
 
-            //Performance Last 6 Months
-            $applicationsByMonth = StartupPitches::
-            selectRaw('
-                            MONTH(created_at) as month,
-                            COUNT(*) as total,
-                            SUM(CASE WHEN score >= 60 THEN 1 ELSE 0 END) as passed
-                        ')
-            ->where('user_id', $user_id)
-            ->groupBy('month')->get();
-
-            foreach ($applicationsByMonth as $row) {
-            $monthName = DateTime::createFromFormat('!m', $row->month)->format('M'); // e.g., "Apr"
-            $monthData[$monthName] = [
-            'applications' => $row->total,
-            'match' => $row->passed,
-            'conversion' => round(($row->passed/$row->total) * 100)
-            ];
-            //$matches = ProgramApplication::select('score')->where('score', '>=', 60)->get();
-            }
-
-            foreach ($pitches as $pitch){
-                $score = $pitch->score+$score;
-
-                //Matching Condition
-                if($pitch->score >= 60){
-                    $created = $pitch->created_at;
-                    $createdMonth = (new DateTime($created))->format('M');
-
+            $dist = ['90-100' => 0, '80-89' => 0, '70-79' => 0, '60-69' => 0, '<60' => 0];
+            $breakKeys = ['sector', 'geo', 'stage', 'revenue', 'team', 'impact', 'milestones', 'documents', 'bonus'];
+            $break = array_fill_keys($breakKeys, 0.0);
+            foreach ($pitches as $pitch) {
+                $score = (float) $pitch->score;
+                $bucket = $score >= 90 ? '90-100' : ($score >= 80 ? '80-89' : ($score >= 70 ? '70-79' : ($score >= 60 ? '60-69' : '<60')));
+                $dist[$bucket]++;
+                foreach (\App\Service\Capital\CapitalMatchScore::parseBreakdown($pitch->score_breakdown) as $key => $value) {
+                    if (array_key_exists($key, $break)) {
+                        $break[$key] += $value;
+                    }
                 }
-
-                //Distribution
-                if($pitch->score >= 90)
-                    $dist['90-100'] += 1;
-                else if ($pitch->score >= 80 && $pitch->score < 90)
-                    $dist['80-89'] += 1;
-                else if ($pitch->score >= 70 && $pitch->score < 80)
-                    $dist['70-79'] += 1;
-                else if ($pitch->score >= 60 && $pitch->score < 70)
-                    $dist['60-69'] += 1;
-                else
-                    $dist['<60'] += 1;
-
-                //Score Breakdown
-                if($pitch->score_breakdown && $pitch->score_breakdown != ''){
-                    $breakdown = $pitch->score_breakdown;
-                    $break['sector'] = (float) $breakdown[0] + $break['sector'];
-                    $break['geo'] = (float) $breakdown[1] + $break['geo'];
-                    $break['stage'] = (float) $breakdown[2] + $break['stage'];
-                    $break['revenue'] = (float) $breakdown[3] + $break['revenue'];
-                    $break['team'] = (float) $breakdown[4] + $break['team'];
-                    $break['impact'] = (float) $breakdown[5] + $break['impact'];
-                }
-
             }
+            $breakAvg = array_map(fn ($v) => $count > 0 ? round($v / $count, 2) : 0, $break);
 
-            if($pitches_count > 0)
-                $avg_score = round($score/$pitches_count,2);
+            // The last 6 months, oldest first, every month present (0 when nothing came in)
+            $months = [];
+            for ($i = 5; $i >= 0; $i--) {
+                $m = now()->startOfMonth()->subMonths($i);
+                $months[$m->format('Y-m')] = ['month' => $m->format('Y-m'), 'label' => $m->format('M'), 'applications' => 0, 'match' => 0, 'accepted' => 0, 'conversion' => 0];
+            }
+            foreach ($pitches as $pitch) {
+                $key = $pitch->created_at?->format('Y-m');
+                if (! isset($months[$key])) {
+                    continue;
+                }
+                $months[$key]['applications']++;
+                if ((float) $pitch->score >= 60) {
+                    $months[$key]['match']++;
+                }
+                if ((int) $pitch->status === StartupPitches::STATUS_ACCEPTED) {
+                    $months[$key]['accepted']++;
+                }
+            }
+            foreach ($months as &$row) {
+                $row['conversion'] = $row['applications'] > 0 ? (int) round($row['match'] / $row['applications'] * 100) : 0;
+            }
+            unset($row);
 
-            $break_avg = collect($break)->map(function ($value, $key) use ($pitches_count) {
-                if($pitches_count > 0)
-                    return $value = round($value/$pitches_count,2);
-                else
-                    return $value = 0;
-            })->toArray();
+            $avg = $count > 0 ? round($pitches->avg(fn ($p) => (float) $p->score), 2) : 0;
 
             return response()->json([
-                'avg_score' => $avg_score,
-                'funded' => $pitches_funded,
-                'total_match' => $pitches_count,
+                'offers' => ['total' => $offers->count(), 'live' => $live],
+                'applications' => [
+                    'total' => $count,
+                    'pending' => $pitches->where('status', StartupPitches::STATUS_PENDING)->count(),
+                    'accepted' => $accepted->count(),
+                    'rejected' => $pitches->where('status', StartupPitches::STATUS_REJECTED)->count(),
+                ],
+                'capital' => [
+                    'total' => round((float) $offers->sum(fn ($o) => (float) $o->total_capital_available), 2),
+                    'available' => round((float) $offers->sum(fn ($o) => (float) $o->available_amount), 2),
+                    'committed' => round((float) $accepted->sum(fn ($p) => (float) $p->total_amount_requested), 2),
+                    'deployed' => round($deployed, 2),
+                ],
+                'avg_score' => $avg,
+                'funded' => $accepted->count(),
+                'total_match' => $count,
                 'distribution' => $dist,
-                'breakdown' => $break_avg,
-                'performance_month' => $monthData,
-                'top_startups' => $topPitches
-            ],200);
+                'breakdown' => $breakAvg,
+                'performance_month' => array_values($months),
+                'top_startups' => $pitches->sortByDesc('score')->take(10)->values(),
+            ], 200);
         }
         catch (\Exception $e) {
             ErrorLogService::report($e, [
@@ -701,7 +690,6 @@ class AnalyticsController extends Controller
                 'message' => 'Something went wrong, please try again later.'
             ], 500);
         }
-
     }
 
 
@@ -713,12 +701,5 @@ class AnalyticsController extends Controller
         return $user;
     }
 
-    public function get_role2()
-    {
-        $user = Auth::user()->load('capital_profile.role');
-        $user->role = $user->capital_profile?->role?->name ?? 'super-admin';
-        $user->capital_owner_id = $user->capital_profile?->capital_owner_id;
-        return $user;
-    }
 
 }

@@ -65,6 +65,33 @@ Route::prefix('admin')->group(function () { //->name('admin.')
         Route::get('/bulk-emails', [AdminController::class, 'bulkEmails'])->name('bulk_emails');
         Route::post('/send-bulk-register-mails', [AdminController::class, 'bulkRegisterEmails'])->name('send-bulk-register-mails');
 
+        // Business milestone non-compliance: settle platform disputes (continue or sanction)
+        Route::get('/non-compliance', [\App\Http\Controllers\Admin\NonComplianceAdminController::class, 'index'])->name('admin.non_compliance.index');
+        Route::post('/non-compliance/{case}/resolve', [\App\Http\Controllers\Admin\NonComplianceAdminController::class, 'resolve'])->whereNumber('case')->name('admin.non_compliance.resolve');
+
+        // Demo requests (landing-page form), 7-day demo accounts, proposal templates, one-time sign-up links
+        Route::controller(\App\Http\Controllers\Admin\DemoRequestAdminController::class)->group(function () {
+            Route::get('/demo-requests', 'index')->name('admin.demo_requests.index');
+            Route::get('/demo-requests/templates', 'templates')->name('admin.demo_requests.templates');
+            Route::post('/demo-requests/templates/{type}', 'saveTemplate')->name('admin.demo_requests.templates.save');
+            Route::get('/demo-requests/invites', 'invites')->name('admin.demo_requests.invites');
+            Route::post('/demo-requests/invites', 'createInvite')->name('admin.demo_requests.invites.create');
+            Route::post('/demo-requests/invites/{invite}/revoke', 'revokeInvite')->name('admin.demo_requests.invites.revoke');
+            Route::get('/demo-requests/{demoRequest}', 'show')->whereNumber('demoRequest')->name('admin.demo_requests.show');
+            foreach (['approve', 'reject', 'proposal', 'resendAccess' => 'resend-access', 'extend', 'endTrial' => 'end-trial', 'fullAccess' => 'full-access', 'openAccount' => 'open-account', 'close', 'notes', 'quote'] as $method => $path) {
+                $method = is_int($method) ? $path : $method;
+                Route::post('/demo-requests/{demoRequest}/'.$path, $method)->whereNumber('demoRequest')->name('admin.demo_requests.'.$path);
+            }
+        });
+
+        // Amari usage: who uses the free assistant, how much, daily limits (default and per account)
+        Route::controller(\App\Http\Controllers\Admin\AmariUsageAdminController::class)->group(function () {
+            Route::get('/amari', 'index')->name('admin.amari.index');
+            Route::post('/amari/settings', 'saveSettings')->name('admin.amari.settings');
+            Route::get('/amari/users/{user}', 'user')->whereNumber('user')->name('admin.amari.user');
+            Route::post('/amari/users/{user}/limit', 'saveUserLimit')->whereNumber('user')->name('admin.amari.user.limit');
+        });
+
         // Error logs
         Route::get('/error-logs', [AdminController::class, 'errorLogs'])->name('error_logs');
 

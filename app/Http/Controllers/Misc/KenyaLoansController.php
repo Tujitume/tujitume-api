@@ -28,7 +28,7 @@ class KenyaLoansController extends Controller
     private function loadLenders(): array
     {
         // Try local file first (with status data from cron)
-        $localPath = resource_path('kenya_lenders.json');
+        $localPath = resource_path('bankjsonfiles/kenya_lenders.json');
         if (file_exists($localPath)) {
             $localData = json_decode(file_get_contents($localPath), true);
             if (is_array($localData['lenders'] ?? null)) {
@@ -44,7 +44,7 @@ class KenyaLoansController extends Controller
     private function loadSaccos(): array
     {
         // Try local file first (with status data from cron)
-        $localPath = resource_path('kenya_saccos_expanded_v3.json');
+        $localPath = resource_path('bankjsonfiles/kenya_saccos_expanded_v3.json');
         if (file_exists($localPath)) {
             $localData = json_decode(file_get_contents($localPath), true);
             if (is_array($localData['saccos'] ?? null)) {
@@ -60,7 +60,7 @@ class KenyaLoansController extends Controller
     private function loadCountyCentroids(): array
     {
         // Try local file first (with status data from cron)
-        $localPath = resource_path('kenya_counties_centroids.json');
+        $localPath = resource_path('bankjsonfiles/kenya_counties_centroids.json');
         if (file_exists($localPath)) {
             $localData = json_decode(file_get_contents($localPath), true);
             if (is_array($localData['counties'] ?? null)) {
@@ -76,7 +76,7 @@ class KenyaLoansController extends Controller
     private function loadSasraLive(): array
     {
         // Try local file first (with status data from cron)
-        $localPath = resource_path('sacco_societies_kenya_2025_full.json');
+        $localPath = resource_path('bankjsonfiles/sacco_societies_kenya_2025_full.json');
         if (file_exists($localPath)) {
             $localData = json_decode(file_get_contents($localPath), true);
             if (is_array($localData)) {

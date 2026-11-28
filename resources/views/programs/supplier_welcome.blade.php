@@ -18,11 +18,11 @@
         @if (!empty($onboarded))
             <p>You already have a Tujitume account, so there is nothing more to set up. Log in any time to see your payments and updates from {{ $org_name }}.</p>
 
-            @include('programs.partials.brand_button', ['label' => 'Open Tujitume', 'url' => rtrim((string) config('app.app_url'), '/')])
+            @include('programs.partials.brand_button', ['label' => 'Open Tujitume', 'url' => rtrim((string) ($app_url ?? config('app.app_url')), '/')])
         @else
             <p>Create your free Tujitume account to see your payments, keep your details up to date and receive updates from {{ $org_name }}.</p>
 
-            @include('programs.partials.brand_button', ['label' => 'Join ' . $org_name . ' on Tujitume', 'url' => rtrim((string) config('app.app_url'), '/') . '/auth/create/service'])
+            @include('programs.partials.brand_button', ['label' => 'Join ' . $org_name . ' on Tujitume', 'url' => rtrim((string) ($app_url ?? config('app.app_url')), '/') . '/auth/create/service'])
         @endif
 
         <p style="margin-top:1.5rem;font-size:12px;color:gray;">

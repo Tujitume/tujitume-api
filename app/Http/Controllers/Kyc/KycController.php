@@ -37,6 +37,7 @@ class KycController extends Controller
 
     public function start(Request $request)
     {
+        if ($refusal = $this->demoRefusal($request)) return $refusal;
         $verification = $this->kyc->start($request->user());
 
         return ApiResponseResource::success('KYC draft prepared.', (new KycVerificationResource($verification))->resolve(), 201);
@@ -52,7 +53,7 @@ class KycController extends Controller
 
     public function submit(Request $request)
     {
-        $user = Auth::user();
+        if ($refusal = $this->demoRefusal($request)) return $refusal;
 
         $verification = $this->requireCurrent($request);
         if(!$verification){
@@ -60,6 +61,7 @@ class KycController extends Controller
         }
         
         $verification = $this->kyc->submit($verification);
+        $this->sendSubmittedReceipt($request->user(), $verification);
 
         return ApiResponseResource::success('KYC submitted for review.', (new KycVerificationResource($verification))->resolve());
     }
@@ -106,14 +108,45 @@ class KycController extends Controller
         return ApiResponseResource::success('KYC document deleted.');
     }
 
+    /** The person's KYC record; 404 before it is started (returning false made update/upload/delete fail with a 500) */
     private function requireCurrent(Request $request)
     {
-        
         $verification = $this->kyc->current($request->user());
-        
-        if(! $verification) {
-            return false;
-        }
+        abort_unless($verification, 404, 'KYC has not been started.');
+
         return $verification;
+    }
+
+    /** A 7-day demo account is deleted when it ends, so it is never verified: verification is done on the full account. */
+    private function demoRefusal(Request $request)
+    {
+        $organizationId = $request->user()?->organization_id;
+        if ($organizationId && \App\Models\Organizations\Organization::whereKey($organizationId)->where('is_trial', true)->exists()) {
+            return ApiResponseResource::error('A demo account is not verified. Get full access, then verify your organization there.', null, 403);
+        }
+
+        return null;
+    }
+
+    /** A person (business owner, investor, service provider) gets a receipt by email: what they sent is being reviewed */
+    private function sendSubmittedReceipt($user, $verification): void
+    {
+        if (! $user?->email || $verification->verification_type === 'organization') {
+            return;
+        }
+        $name = trim(($user->first_name ?? '').' '.($user->last_name ?? '')) ?: ($user->display_name ?: 'there');
+        $details = $verification->entrepreneurDetails ?? $verification->serviceProviderDetails;
+        app(\App\Service\Notification\EmailService::class)->send(
+            'We received your Tujitume verification',
+            'kyc.submitted',
+            [
+                'name' => $name,
+                'legalName' => $details?->legal_name ?: $name,
+                'submittedAt' => now()->format('j M Y'),
+                'action_url' => \App\Service\Notification\EmailLink::url(KycService::formLink($user), $user),
+                'action_label' => 'View My Verification',
+            ],
+            $user->email
+        );
     }
 }

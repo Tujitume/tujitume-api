@@ -13,7 +13,8 @@ it('requires Sanctum authentication for every KYC endpoint', function () {
 });
 
 it('rejects user types that are not eligible for KYC', function () {
-    $this->actingAs(User::factory()->create(['user_type_id' => 2]), 'sanctum')
+    // Business Coaches (type 6) have no KYC of their own; investors (type 2) now do
+    $this->actingAs(User::factory()->create(['user_type_id' => 6]), 'sanctum')
         ->postJson('/api/v1/kyc')->assertForbidden();
 });
 

@@ -34,8 +34,8 @@ class NewNotification implements ShouldBroadcast
 
     public function broadcastOn()
     {
-        Log::info('ChatNotification broadcastOn called');
-        return new Channel('notifications.'.$this->userId);
+        // Private: only that person can listen (routes/channels.php)
+        return new \Illuminate\Broadcasting\PrivateChannel('notifications.'.$this->userId);
     }
 
     public function broadcastWith(): array

@@ -56,6 +56,9 @@ return new class extends Migration
                 'rmep_submitted',
                 'pr_approved',
                 'pr_rejected',
+                // Added 27 Nov for fresh databases (tests); existing ones get them from 2026_11_27_001303
+                'pre_release_requested',
+                'mid_milestone_submitted',
             ])->default('to_do');
 
             // Deadline fields

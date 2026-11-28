@@ -5,7 +5,7 @@ namespace App\Service\AI;
 use App\Http\Resources\User\UserResource;
 use App\Models\Auth\OrganizationUserRole;
 use App\Models\Programs\ProgramApplication;
-use App\Models\User;
+use App\Models\Auth\User; // the model Sanctum signs in (App\Models\User does not exist: every signed-in chat failed on this)
 
 /**
  * What Amari may be told about the signed-in user. Built FIELD BY FIELD from the lists below: a field that is not
@@ -166,7 +166,7 @@ class AmariAccountContext
             'targetRegions' => self::names($o['target_regions'] ?? null),
             'operatingCountries' => self::names($o['operating_countries'] ?? null),
             'workspaceName' => self::first($workspace, 'name'),
-            'workspaceUrl' => $subdomain ? "{$subdomain}.tujitume.com" : null,
+            'workspaceUrl' => \App\Service\Notification\RecipientUrl::forSlug(self::first($workspace, 'slug') ?? $subdomain),
             'customDomain' => self::first($workspace, 'custom_domain'),
         ]);
     }

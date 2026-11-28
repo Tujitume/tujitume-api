@@ -116,9 +116,17 @@ class ValidationController extends Controller
             return response()->json(['message' => 'Unsupported availability field.'], 404);
         }
 
-        $data = $request->validate([
-            'value' => $definition['rules'],
-        ]);
+        // The DNS lookup only makes sense against the real internet: local and test runs use
+        // made-up domains (for example name@tujitume.test) that never resolve.
+        $rules = app()->environment('production')
+            ? $definition['rules']
+            : array_map(fn ($rule) => $rule === 'email:rfc,dns' ? 'email:rfc' : $rule, $definition['rules']);
+
+        $data = $request->validate(
+            ['value' => $rules],
+            [],
+            ['value' => str_replace('_', ' ', $field)],
+        );
 
         $value = $this->normalize($data['value'], $definition['normalizer'] ?? null);
         $exists = DB::table($definition['table'])

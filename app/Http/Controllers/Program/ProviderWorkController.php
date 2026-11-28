@@ -51,6 +51,11 @@ class ProviderWorkController extends Controller
                 $rows = $rows->concat($this->supplierOrders($me));
             }
 
+            // page / per_page / search / filters / sort / export: the paged table (the old full list stays for other readers)
+            if (\App\Service\Program\ReviewerLists::wanted($request)) {
+                return \App\Service\Program\ReviewerLists::providerWork($request, $rows->values());
+            }
+
             return response()->json([
                 'data' => $rows->sortByDesc('sort')->values()->map(fn ($row) => collect($row)->except('sort')->all()),
             ], 200);
@@ -100,7 +105,7 @@ class ProviderWorkController extends Controller
             ->get()
             ->map(function (MESiteVisit $visit) {
                 $application = $visit->checkpoint?->application;
-                $order = $visit->reviewerOrder ?: ReviewerOrder::where('site_visit_id', $visit->id)->first();
+                $order = $visit->reviewerOrder; // eager loaded above (the same site_visit_id lookup, never one query per row)
 
                 return [
                     'kind' => 'inspection',
@@ -120,6 +125,8 @@ class ProviderWorkController extends Controller
                     'currency' => $order?->currency,
                     'work_status' => $order?->work_status,
                     'payment_status' => $order?->payment_status,
+                    // whether the officer accepted the assignment decides if they can submit the report
+                    'acceptance_status' => $order?->acceptance_status,
                     'fee_status' => $order?->fee_status,
                     'proposed_fee' => $order?->proposed_fee,
                     'status' => $visit->status,
@@ -226,7 +233,7 @@ class ProviderWorkController extends Controller
                 ->when($search !== '', function ($query) use ($search) {
                     $like = '%' . $search . '%';
                     // By email, by name or username (first, last, full name, display name) and by city
-                    $query->where(function ($q) use ($like) {
+                    $query->where(function ($q) use ($like, $search) {
                         $q->where('email', 'like', $like)
                             ->orWhere('display_name', 'like', $like)
                             ->orWhere('first_name', 'like', $like)

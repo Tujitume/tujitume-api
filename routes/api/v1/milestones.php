@@ -8,6 +8,8 @@
 | Note: Program milestones are in programs.php
 */
 
+use App\Http\Controllers\Audits\ProjectManagerAuditController;
+use App\Service\Audits\ProjectManagerAudits;
 use App\Http\Controllers\Business\InvestmentController;
 use App\Http\Controllers\Business\MidMilestoneController;
 use App\Http\Controllers\Business\MilestoneController;
@@ -17,6 +19,21 @@ use App\Http\Controllers\Business\PreReleaseRmepController;
 use App\Http\Controllers\Business\ResolutionController;
 
 Route::get('milestones', [MilestoneController::class, 'index']);
+
+// Project Manager Audits: business and program audits together, by stage
+Route::prefix('/pm-audits')->group(function () {
+    Route::get('summary', [ProjectManagerAuditController::class, 'summary']);
+    Route::get('project-managers', [ProjectManagerAuditController::class, 'candidates']);
+    Route::get('{stage}', [ProjectManagerAuditController::class, 'index'])->whereIn('stage', ['pre_release', 'mid_milestone', 'final_approval']);
+    Route::post('{source}/{id}/retry-fee', [ProjectManagerAuditController::class, 'retryFee'])->whereIn('source', ProjectManagerAudits::SOURCES)->whereNumber('id');
+    Route::post('program/{verification}/respond', [ProjectManagerAuditController::class, 'programRespond']);
+    Route::post('program/{verification}/report', [ProjectManagerAuditController::class, 'programReport']);
+    Route::post('service/{milestone}/respond', [ProjectManagerAuditController::class, 'serviceRespond']);
+    Route::post('service/{milestone}/report', [ProjectManagerAuditController::class, 'serviceReport']);
+    // DECISION-9: a capital provider asked this PM to audit a capital milestone before releasing it
+    Route::post('capital/{milestone}/respond', [ProjectManagerAuditController::class, 'capitalRespond'])->whereNumber('milestone');
+    Route::post('capital/{milestone}/report', [ProjectManagerAuditController::class, 'capitalReport'])->whereNumber('milestone');
+});
 
 Route::prefix('/milestones')->group(function (){
 
@@ -58,6 +75,8 @@ Route::prefix('/milestones')->group(function (){
 
     //Milestone - Investor
     Route::get('investor/investments', [InvestmentController::class, 'index']);
+    // My Investments table: searched, filtered and paged on the server
+    Route::get('investor/investments/list', [InvestmentController::class, 'list']);
 
     //rmpes
     Route::get('{milestoneId}/rmeps', [PreReleaseRmepController::class, 'rmeps']);

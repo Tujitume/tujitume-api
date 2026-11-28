@@ -92,7 +92,8 @@ abstract class Scenario
 
     protected function ownerPrograms()
     {
-        return DB::table('programs')->where('user_id', $this->ownerId);
+        // ISSUE-38: the organization's programs, whoever on the team created them
+        return DB::table('programs')->whereIn('id', \App\Models\Programs\Program::ofOrganization($this->user)->select('id'));
     }
 
     protected function applications()
@@ -104,6 +105,7 @@ abstract class Scenario
     {
         return match (true) {
             $this->type === 3 => $asProvider ? 'dashboard.serviceProvider.serviceBookings' : 'dashboard.serviceProvider.myBookings',
+            $this->type === 1 => 'dashboard.entrepreneur.bookings',
             $this->type === 2 => 'dashboard.investor.bookings', $this->type === 4 => 'dashboard.grantOrg.bookings', $this->type === 5 => 'dashboard.capitalOrg.bookings',
             default => $this->home(),
         };

@@ -33,8 +33,9 @@ class CalculateUserFunds
     public function calculateCapitalFunds(User $user)
     {
         $user = $user->load('capital_profile.role');
-        $role = $user->capital_profile->role?->name ?? 'super-admin';
-        $ownerId = ($role === 'editor' || $role === 'viewer') ? $user->capital_profile->capital_owner_id : $user->id;
+        $role = $user->capital_profile?->role?->name ?? 'super-admin';
+        // every team member (super admin, editor, viewer) sees the capital owner's offers
+        $ownerId = \App\Service\Capital\CapitalAccess::ownerId($user) ?? $user->id;
 
         $total_capital_available = CapitalOffer::where('user_id', $ownerId)->sum('total_capital_available');
         $available_amount = CapitalOffer::where('user_id', $ownerId)->sum('available_amount');
@@ -65,7 +66,9 @@ class CalculateUserFunds
 
         foreach ($capitalPitches as $pitch) {
             $matchScore += $pitch->score;
-            $availableFunds += $pitch->total_amount_requested;
+            if ((int) $pitch->status !== StartupPitches::STATUS_REJECTED) {
+                $availableFunds += $pitch->total_amount_requested; // a rejected application brings no money
+            }
             foreach ($pitch->capital_milestones as $mile) {
                 if ($mile->status == 1) $totalFunds += $mile->amount;
             }

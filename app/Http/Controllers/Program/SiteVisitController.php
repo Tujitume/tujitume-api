@@ -157,16 +157,18 @@ class SiteVisitController extends Controller
             $available = (float) ($program->wallet?->balance ?? 0);
             if ($available < $required) {
                 $shortfall = $required - $available;
-                $this->programNotification->send('reviewer.accepted_insufficient_funds', [$program->owner], [
+                $this->programNotification->send('reviewer.accepted_insufficient_funds', \App\Service\Program\ProgramTeam::members($program)->all(), [
                     'program_id' => $program->id, 'program_title' => $program->program_title,
                     'round_name' => $visit->checkpoint->checkpoint_name, 'required' => $required,
                     'available' => $available, 'shortfall' => $shortfall, 'currency' => $order->currency,
                 ]);
-                return response()->json(['error' => 'The program wallet cannot cover this visit fee yet. The program owner has been told to top it up.', 'required' => $required, 'available' => $available, 'shortfall' => $shortfall], 422);
+                // Already in the {success, message, errors} shape, so StandardizeProgramMutationResponse keeps the figures
+                $message = 'The program wallet cannot cover this visit fee yet. The program owner has been told to top it up.';
+                return response()->json(['success' => false, 'message' => $message, 'errors' => $message, 'required' => $required, 'available' => $available, 'shortfall' => $shortfall], 422);
             }
         }
         $order->update(['acceptance_status' => 'accepted', 'accepted_at' => now(), 'work_status' => 'in_progress']);
-        $this->programNotification->send('reviewer.site_visit_accepted', [$order->program->owner], [
+        $this->programNotification->send('reviewer.site_visit_accepted', \App\Service\Program\ProgramTeam::members($order->program)->all(), [
             'program_id' => $order->program_id, 'program_title' => $order->program->program_title,
             'order_id' => $order->id, 'site_visit_id' => $visit->id,
             'reviewer_name' => trim(auth()->user()->first_name . ' ' . auth()->user()->last_name),
@@ -188,7 +190,7 @@ class SiteVisitController extends Controller
         }
         $order->update(['acceptance_status' => 'declined', 'work_status' => 'rejected', 'rejection_reason' => $validated['reason'] ?? null]);
         $visit->update(['status' => 'cancelled']);
-        $this->programNotification->send('reviewer.site_visit_declined', [$order->program->owner], [
+        $this->programNotification->send('reviewer.site_visit_declined', \App\Service\Program\ProgramTeam::members($order->program)->all(), [
             'program_id' => $order->program_id, 'program_title' => $order->program->program_title,
             'order_id' => $order->id, 'site_visit_id' => $visit->id,
             'reviewer_name' => trim(auth()->user()->first_name . ' ' . auth()->user()->last_name),
@@ -216,7 +218,7 @@ class SiteVisitController extends Controller
         $this->programNotification->send('reviewer.modification_requested', [$order->reviewer], [
             'program_title' => $order->program->program_title, 'modification_note' => $validated['modification_note'], 'order_id' => $order->id,
         ]);
-        return response()->json(['message' => 'Changes requested. Reviewer notified.', 'data' => $order->fresh()], 200);
+        return response()->json(['message' => 'Changes requested. The Business Coach has been told.', 'data' => $order->fresh()], 200);
     }
 
     public function proposeFee(Request $request, MESiteVisit $visit)
@@ -228,7 +230,7 @@ class SiteVisitController extends Controller
         if (!$order || $order->order_type !== 'site_visit' || $order->acceptance_status !== 'pending') return response()->json(['error' => 'A fee can only be proposed before the visit is accepted.'], 422);
         $order->update(['proposed_fee' => $validated['proposed_fee'], 'fee_status' => 'pending_owner', 'fee_proposal_note' => $validated['note'] ?? null, 'fee_proposed_at' => now()]);
         $program = $order->program;
-        $this->programNotification->send('reviewer.fee_proposed', [$program->owner], [
+        $this->programNotification->send('reviewer.fee_proposed', \App\Service\Program\ProgramTeam::members($program)->all(), [
             'program_id' => $program->id, 'program_title' => $program->program_title, 'order_id' => $order->id,
             'site_visit_id' => $visit->id, 'app_id' => $visit->app_id,
             'checkpoint_name' => $visit->checkpoint->checkpoint_name,
@@ -441,6 +443,9 @@ class SiteVisitController extends Controller
 
         if ($userId != $reviewer_id) {
             return response()->json(['error' => 'Unauthorized'], 403);
+        }
+        if (\App\Service\Program\ReviewerLists::wanted($request)) {
+            return (new \App\Service\Program\ReviewerLists((int) $userId))->siteVisits($request);
         }
 
         $siteVisits = MESiteVisit::sent()->where('reviewer_id', $reviewer_id)

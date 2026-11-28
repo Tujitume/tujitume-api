@@ -7,7 +7,7 @@
 
         <div style="text-align:center;margin-top:2rem;">
             <a href="{{ config('app.api_url') }}CancelAssetBid/{{ $bid_id }}/ok" style="background-color:#9f1239;color:white;display:inline-block;padding:0.85rem 2rem;border-radius:999px;text-decoration:none;font-weight:700;font-size:1rem;box-shadow:0 4px 12px rgba(0,0,0,0.18);margin:0.25rem;">OK, Cancel Release</a>
-            <a href="{{ config('app.app_url') }}equipmentRelease/{{ $business_owner }}/{{ $manager }}/{{ $bid_id }}" style="background-color:#14532d;color:white;display:inline-block;padding:0.85rem 2rem;border-radius:999px;text-decoration:none;font-weight:700;font-size:1rem;box-shadow:0 4px 12px rgba(0,0,0,0.18);margin:0.25rem;">Release Equipment</a>
+            <a href="{{ $app_url ?? config('app.app_url') }}equipmentRelease/{{ $business_owner }}/{{ $manager }}/{{ $bid_id }}" style="background-color:#14532d;color:white;display:inline-block;padding:0.85rem 2rem;border-radius:999px;text-decoration:none;font-weight:700;font-size:1rem;box-shadow:0 4px 12px rgba(0,0,0,0.18);margin:0.25rem;">Release Equipment</a>
         </div>
 
         @include('programs.partials.brand_footer')

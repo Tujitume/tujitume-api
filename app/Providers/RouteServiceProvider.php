@@ -30,9 +30,13 @@ class RouteServiceProvider extends ServiceProvider
             return Limit::perMinute(120)->by($request->user()?->id ?: $request->ip());
         });
 
-        // Amari chat: accepted requests per minute per user (or visitor IP); configurable in config/services.php
+        // Amari chat (every AI request the frontend makes): no app limit for signed-in users, so the frontend never
+        // has to wait on us; only the AI provider's own limit applies. Signed-out visitors keep a per-IP limit so the
+        // public page cannot burn the AI key. AI application review has its own limits (config/ai_review.php), untouched.
         RateLimiter::for('amari', function (Request $request) {
-            return Limit::perMinute(config('services.amari.rate_per_minute'))->by($request->user('sanctum')?->id ?: $request->ip());
+            return $request->user('sanctum')
+                ? Limit::none()
+                : Limit::perMinute(config('services.amari.rate_per_minute'))->by($request->ip());
         });
 
         RateLimiter::for('custom', function ($request) {

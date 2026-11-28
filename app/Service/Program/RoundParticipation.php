@@ -48,19 +48,19 @@ class RoundParticipation
         } elseif (! $submitted) {
             $name = $round->round_name;
             $left = $history && ($history->exited_at || $history->outcome === 'not_selected');
-            $closed = in_array($round->status, ['closed', 'in_review', 'finalized'], true)
-                || ($round->close_date && $round->close_date->copy()->endOfDay()->isPast());
+            $closed = in_array($round->status, ['closed', 'in_review', 'finalized'], true) || $round->hasClosed();
+            $zone = $round->scheduleTimezone();
 
             if ($left) {
                 $state = 'not_submitted';
                 $reason = 'The applicant did not submit ' . $name . ' before they left the program.';
             } elseif ($openReason = $round->notOpenReason()) {
                 $state = 'not_open';
-                $reason = $name . ' has not opened yet' . ($round->open_date ? ' (it opens on ' . $round->open_date->format('j M Y') . ')' : '')
+                $reason = $name . ' has not opened yet' . ($round->opensAt() ? ' (it opens on ' . \App\Support\ProgramSchedule::describe($round->opensAt(), $zone) . ')' : '')
                     . '. The applicant can answer and submit once it opens. Their answers appear here after they submit.';
             } elseif ($closed) {
                 $state = 'missed';
-                $reason = $name . ' closed' . ($round->close_date ? ' on ' . $round->close_date->format('j M Y') : '') . ' and the applicant did not submit it.';
+                $reason = $name . ' closed' . ($round->closesAt() ? ' on ' . \App\Support\ProgramSchedule::describe($round->closesAt(), $zone) : '') . ' and the applicant did not submit it.';
             } else {
                 $state = 'awaiting_submission';
                 $reason = 'The applicant was advanced to ' . $name . ' and has not submitted it yet. Their answers and documents appear here once they submit.';

@@ -15,11 +15,14 @@ class SpamImageChecker
     public function check($image_path)
     {
         //$image_path = '';
+        // Off in tests and wherever it is switched off: nothing is sent and nothing is flagged
+        if (! config('services.sightengine.enabled', true)) return [];
+
         $params = array(
             'media' => new CurlFile($image_path),
             'models' => 'nudity-2.1,weapon,alcohol,recreational_drug,medical,offensive-2.0,scam,text-content,gore-2.0,qr-content,violence',
-            'api_user' => '725115685',
-            'api_secret' => 'AgH2RUSa3FPoq2HexU9b32XqFvQhtSpa',
+            'api_user' => (string) config('services.sightengine.api_user'),
+            'api_secret' => (string) config('services.sightengine.api_secret'),
         );
 
         // this example uses cURL
@@ -30,18 +33,39 @@ class SpamImageChecker
         $response = curl_exec($ch);
 
         if ($response === false) {
-            return array([
-                'error' => true,
-                'message' => curl_error($ch)
-            ]);
+            // Sightengine could not be reached: the upload goes ahead (an outage must not block people) and it is logged
+            \Illuminate\Support\Facades\Log::warning('Image moderation unavailable', ['error' => curl_error($ch)]);
+            curl_close($ch);
+
+            return [];
         }
         curl_close($ch);
 
         $response = json_decode($response, true);
+        if (! is_array($response) || ($response['status'] ?? null) === 'failure') {
+            \Illuminate\Support\Facades\Log::warning('Image moderation failed', ['error' => $response['error']['message'] ?? 'unreadable reply']);
+
+            return [];
+        }
 
         $parameters = (array) $this->getNSFWFlags($response);
         return $parameters;
         //return true; // clean
+    }
+
+    /** Flags that make an image unacceptable (the same list business and service images are refused for) */
+    public const REFUSED = ['violence', 'gore', 'offensive', 'recreational_drug', 'weapon', 'nudity'];
+
+    /** A message refusing this uploaded image, or null when it is fine (or not an image, or moderation is off) */
+    public function refusal(\Illuminate\Http\UploadedFile $file): ?string
+    {
+        if (! str_starts_with(strtolower((string) $file->getMimeType()), 'image/')) return null;
+
+        $flags = $this->check($file->getRealPath());
+
+        return array_intersect(self::REFUSED, $flags)
+            ? '"'.($file->getClientOriginalName() ?: 'The image').'" was refused: it looks inappropriate. Upload a different image.'
+            : null;
     }
 
     function getNSFWFlags(array $response, float $threshold = 0.4): array {

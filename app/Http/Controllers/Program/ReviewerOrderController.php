@@ -23,42 +23,62 @@ class ReviewerOrderController extends Controller
 
     // ─── List reviewer's own orders ──────────────────────────────
     // GET /api/v1/programs/reviewer/orders
-    public function myOrders()
+    public function myOrders(Request $request)
     {
-        $orders = ReviewerOrder::where('reviewer_id', Auth::id())
+        $base = ReviewerOrder::where('reviewer_id', Auth::id())
             // A site visit assigned to them is theirs to see only once the program owner has sent its checkpoint
             ->where(fn ($query) => $query->where('order_type', '!=', 'site_visit')
                 ->orWhereHas('siteVisit.checkpoint', fn ($checkpoint) => $checkpoint->whereNotNull('sent_at')))
-            ->with(['program', 'round', 'siteVisit.checkpoint', 'applicationAssignments.application.business:id,name'])
-            ->latest()
-            ->get()
-            ->map(fn($order) => [
-                ...$order->toArray(),
-                'fee_amount' => $order->fee_amount,
-                'applications' => $this->applicationSummaries($order),
-                'completed_application_count' => $order->applicationAssignments->where('status', 'completed')->count(),
-                'minimum_apps_to_get_paid' => $order->minimumPaidApplications() ?: null,
-                'paid_threshold_met' => $order->minimumPaidApplications()
-                    ? $order->applicationAssignments->where('status', 'completed')->count() >= $order->minimumPaidApplications()
-                    : false,
-                'work_status' => [
-                    'value' => $order->work_status,
-                    'color' => config('status.reviewer_order.' . $order->work_status, 'gray'),
-                ],
-                'payment_status' => [
-                    'value' => $order->payment_status,
-                    'color' => config('status.reviewer_payment.' . $order->payment_status, 'gray'),
-                ],
-            ]);
+            ->with(['program', 'round', 'siteVisit.checkpoint', 'applicationAssignments.application.business:id,name']);
 
-        return response()->json(['data' => $orders], 200);
+        // page / per_page / search / filters / sort / export: the paged Orders table (the old full list stays for the other readers)
+        if (\App\Service\Program\ReviewerLists::wanted($request)) {
+            return (new \App\Service\Program\ReviewerLists((int) Auth::id()))->orders($request, $base, fn ($orders) => $this->orderRows($orders));
+        }
+
+        return response()->json(['data' => $this->orderRows($base->latest()->get())], 200);
+    }
+
+    /** The rows the reviewer's order lists show; the scores of every order's applications are read in one query. */
+    private function orderRows($orders)
+    {
+        $scores = $this->scoresFor($orders);
+
+        return $orders->map(fn ($order) => [
+            ...$order->toArray(),
+            'fee_amount' => $order->fee_amount,
+            'applications' => $this->applicationSummaries($order, $scores),
+            'completed_application_count' => $order->applicationAssignments->where('status', 'completed')->count(),
+            'minimum_apps_to_get_paid' => $order->minimumPaidApplications() ?: null,
+            'paid_threshold_met' => $order->minimumPaidApplications()
+                ? $order->applicationAssignments->where('status', 'completed')->count() >= $order->minimumPaidApplications()
+                : false,
+            'work_status' => \App\Support\ApiContract::statusMeta('reviewer_order', $order->work_status),
+            'payment_status' => \App\Support\ApiContract::statusMeta('reviewer_payment', $order->payment_status),
+        ])->values();
+    }
+
+    /** Scores keyed "reviewer:round:application" for the applications of these orders (one query). */
+    private function scoresFor($orders): \Illuminate\Support\Collection
+    {
+        $assignments = $orders->flatMap(fn ($order) => $order->applicationAssignments);
+        if ($assignments->isEmpty()) {
+            return collect();
+        }
+
+        return ApplicationScore::query()
+            ->whereIn('reviewer_id', $orders->pluck('reviewer_id')->unique())
+            ->whereIn('round_id', $orders->pluck('round_id')->filter()->unique())
+            ->whereIn('application_id', $assignments->pluck('application_id')->unique())
+            ->get(['reviewer_id', 'round_id', 'application_id', 'total_score'])
+            ->mapWithKeys(fn ($score) => [$score->reviewer_id.':'.$score->round_id.':'.$score->application_id => $score->total_score]);
     }
 
     // ─── PO views all orders for a round ─────────────────────────
     // GET /api/v1/programs/rounds/{round}/reviewer-orders
     public function roundOrders(ProgramRound $round)
     {
-        if ($round->program->user_id !== Auth::id()) {
+        if (!\App\Service\Program\ProgramAccess::owns($round->program)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
@@ -79,17 +99,20 @@ class ReviewerOrderController extends Controller
                 'paid_threshold_met' => $order->minimumPaidApplications()
                     ? $order->applicationAssignments->where('status', 'completed')->count() >= $order->minimumPaidApplications()
                     : false,
-                'work_status' => [
-                    'value' => $order->work_status,
-                    'color' => config('status.reviewer_order.' . $order->work_status, 'gray'),
-                ],
-                'payment_status' => [
-                    'value' => $order->payment_status,
-                    'color' => config('status.reviewer_payment.' . $order->payment_status, 'gray'),
-                ],
+                'work_status' => \App\Support\ApiContract::statusMeta('reviewer_order', $order->work_status),
+                'payment_status' => \App\Support\ApiContract::statusMeta('reviewer_payment', $order->payment_status),
             ]);
 
         return response()->json(['data' => $orders], 200);
+    }
+
+    // ─── PO views every Business Coach order of their programs ───
+    // GET /api/v1/programs/owner/reviewer-orders
+    // One server list (search, filters, sort, page, export, facets, stats) for the Orders and Site visits pages;
+    // who sees what is the same as roundOrders (round reviews) and SiteVisitController::ownerOrders (site visits).
+    public function ownerOrders(Request $request)
+    {
+        return (new \App\Service\Program\OwnerOrderList(Auth::user()))->respond($request);
     }
 
     // ─── Reviewer marks work as delivered ────────────────────────
@@ -151,7 +174,7 @@ class ReviewerOrderController extends Controller
     // POST /api/v1/programs/reviewer-orders/{order}/request-modification
     public function requestModification(Request $request, ReviewerOrder $order)
     {
-        if ($order->program->user_id !== Auth::id()) {
+        if (!$this->canDecide($order)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
         if ($order->order_type === 'site_visit') {
@@ -165,6 +188,8 @@ class ReviewerOrderController extends Controller
             ]);
             $order->update(['work_status' => 'modification_requested', 'modification_note' => $validated['modification_note'], 'flagged_items' => $validated['flagged_items'] ?? null]);
             $order->siteVisit?->update(['status' => 'scheduled']);
+            // Same as SiteVisitController::requestChanges: the checkpoint shows the visit was sent back
+            $order->siteVisit?->checkpoint?->update(['status' => 'changes_requested']);
             $this->programNotification->send('reviewer.modification_requested', [$order->reviewer], [
                 'program_title' => $order->program->program_title,
                 'modification_note' => $validated['modification_note'], 'order_id' => $order->id,
@@ -207,7 +232,7 @@ class ReviewerOrderController extends Controller
             ]);
 
             return response()->json([
-                'message' => 'Modification requested. Reviewer notified.',
+                'message' => 'Modification requested. The Business Coach has been told.',
                 'data'    => $order->fresh(),
             ], 200);
 
@@ -223,7 +248,7 @@ class ReviewerOrderController extends Controller
     // POST /api/v1/programs/reviewer-orders/{order}/approve
     public function approve(Request $request, ReviewerOrder $order)
     {
-        if ($order->program->user_id !== Auth::id()) {
+        if (!$this->canDecide($order)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
         if ($order->order_type === 'site_visit') {
@@ -238,12 +263,12 @@ class ReviewerOrderController extends Controller
 
         if ($order->order_type === 'round_review') {
             if (!$this->reviewPeriodHasEnded($order)) {
-                return response()->json(['error' => 'Reviewer work can only be approved after the review period ends.'], 422);
+                return response()->json(['error' => 'Business Coach work can only be approved after the review period ends.'], 422);
             }
 
             $completed = $order->applicationAssignments()->where('status', 'completed')->count();
             if ((float) $order->fee_amount > 0 && (!$order->minimumPaidApplications() || $completed < $order->minimumPaidApplications())) {
-                return response()->json(['error' => 'The reviewer has not reached the minimum paid application count.'], 422);
+                return response()->json(['error' => 'The Business Coach has not reached the minimum paid application count.'], 422);
             }
         }
 
@@ -272,16 +297,16 @@ class ReviewerOrderController extends Controller
     /** Owner rejects submitted reviewer work after the review period has closed. */
     public function reject(Request $request, ReviewerOrder $order)
     {
-        if ($order->program->user_id !== Auth::id()) {
+        if (!$this->canDecide($order)) {
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
         if ($order->order_type !== 'round_review' || !in_array($order->work_status, ['delivered', 'in_progress', 'assigned'], true)) {
-            return response()->json(['error' => 'This reviewer order cannot be rejected from its current status.'], 422);
+            return response()->json(['error' => 'This Business Coach order cannot be rejected from its current status.'], 422);
         }
 
         if (!$this->reviewPeriodHasEnded($order)) {
-            return response()->json(['error' => 'Reviewer work can only be rejected after the review period ends.'], 422);
+            return response()->json(['error' => 'Business Coach work can only be rejected after the review period ends.'], 422);
         }
 
         $validated = $request->validate(['rejection_reason' => 'required|string|max:1000']);
@@ -290,14 +315,14 @@ class ReviewerOrderController extends Controller
             'rejection_reason' => $validated['rejection_reason'],
         ]);
 
-        return response()->json(['message' => 'Reviewer work rejected.', 'data' => $order->fresh()], 200);
+        return response()->json(['message' => 'Business Coach work rejected.', 'data' => $order->fresh()], 200);
     }
 
     /**
      * What the order drawer lists: each application handed to the reviewer, where it stands, when it was assigned,
      * started and finished, and the score the reviewer gave it.
      */
-    private function applicationSummaries(ReviewerOrder $order): array
+    private function applicationSummaries(ReviewerOrder $order, ?\Illuminate\Support\Collection $preloaded = null): array
     {
         $assignments = $order->applicationAssignments;
 
@@ -305,17 +330,20 @@ class ReviewerOrderController extends Controller
             return [];
         }
 
-        $scores = ApplicationScore::query()
-            ->where('reviewer_id', $order->reviewer_id)
-            ->where('round_id', $order->round_id)
-            ->whereIn('application_id', $assignments->pluck('application_id'))
-            ->pluck('total_score', 'application_id');
+        // Scores read once for a whole list of orders, or here for one order
+        $scores = $preloaded
+            ? $assignments->mapWithKeys(fn ($a) => [$a->application_id => $preloaded->get($order->reviewer_id.':'.$order->round_id.':'.$a->application_id)])
+            : ApplicationScore::query()
+                ->where('reviewer_id', $order->reviewer_id)
+                ->where('round_id', $order->round_id)
+                ->whereIn('application_id', $assignments->pluck('application_id'))
+                ->pluck('total_score', 'application_id');
 
         return $assignments
             ->sortBy('assigned_at')
             ->map(fn ($assignment) => [
                 'application_id' => $assignment->application_id,
-                'business_name'  => $assignment->application?->business?->name,
+                'business_name'  => $assignment->application?->business?->name ?? $assignment->application?->startup_name,
                 'status'         => $assignment->status,
                 'assigned_at'    => $assignment->assigned_at,
                 'started_at'     => $assignment->started_at,
@@ -360,5 +388,12 @@ class ReviewerOrderController extends Controller
             },
             'updated_at' => $order->updated_at,
         ], 200);
+    }
+
+    /** The program's owner and program-team members who may edit (OrganizationPermission 'edit') decide on coach work */
+    private function canDecide(ReviewerOrder $order): bool
+    {
+        return \App\Service\Program\ProgramAccess::owns($order->program)
+            && \App\Service\Organization\OrganizationPermission::can(Auth::user(), 'edit');
     }
 }

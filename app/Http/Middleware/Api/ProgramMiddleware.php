@@ -1,6 +1,8 @@
 <?php
 
-namespace App\Http\Middleware\Api;;
+namespace App\Http\Middleware\Api;
+
+use App\Service\Organization\OrganizationPermission;
 
 use Closure;
 use Illuminate\Http\Request;
@@ -41,31 +43,11 @@ class ProgramMiddleware
             ], 403);
         }
 
-    
-        $editorForbidden = ['delete-program', 'create-program', 'update-profile','delete/role-user','delete-user'];
-        $viewerForbidden = [ 'accept', 'reject', 'update-program', 'visibility','store-watchlist','delete/role-user','delete-user'];
 
-        if($user->user_type_id == 4) {
-            if($role == 'editor')
-            {
-                // Editors create and edit records but never delete them
-                if(in_array($route_name, $editorForbidden) || $method == 'DELETE'){
-                    return response()->json(['success' => false, 'code' => 'forbidden', 'message' => "Your role doesn't allow this action.", 'error' => "Your role doesn't allow this action."], 403);
-                }
-            }
-            if($role == 'viewer')
-            {
-                // Viewers read only: every method that changes data is refused
-                if(! in_array($method, ['GET', 'HEAD', 'OPTIONS'])){
-                    return response()->json(['success' => false, 'code' => 'forbidden', 'message' => "Your role doesn't allow this action.", 'error' => "Your role doesn't allow this action."], 403);
-                }
-                else {
-                    if(in_array($route_name, $viewerForbidden)){
-                        return response()->json(['success' => false, 'code' => 'forbidden', 'message' => "Your role doesn't allow this action.", 'error' => "Your role doesn't allow this action."], 403);
-                    }
-                }
-            }
-
+        // What each company role may do (viewer: read only, editor: no deleting, internal reviewer: review work only,
+        // deactivated members: nothing): OrganizationPermission, shared with capital organizations and events
+        if ($denied = OrganizationPermission::check($request, 'programs')) {
+            return $denied;
         }
 
         return $next($request);

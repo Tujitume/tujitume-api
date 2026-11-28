@@ -60,15 +60,19 @@ class ProgramWalletController extends Controller
 
 
     // D E P O S I T / Transfer from main wallet
+    /**
+     * Move money from the organization wallet into this program wallet (DECISION-6): bookkeeping only (no money moves at
+     * LIPR); it leaves the organization's free balance, so it cannot be withdrawn while it is set aside. Super Admins only.
+     */
     public function transferFromMainWallet(Request $request, ProgramWallet $wallet)
     {
         if(!$wallet){
             return response()->json(['message' => 'Program wallet not found.'], 404);
         }
 
-        $user = Auth::user();
-        if($wallet->program->user_id !== $user->id){
-            return response()->json(['message' => 'Unauthorized.'], 403);
+        $organization = \App\Service\Program\OrganizationMainWallet::organizationOf($wallet->program);
+        if (! $organization || ! \App\Service\Program\OrganizationMainWallet::canManage(Auth::user(), $organization)) {
+            return response()->json(['message' => 'Only a Super Admin can move organization money to a program.'], 403);
         }
 
         try {
@@ -76,31 +80,17 @@ class ProgramWalletController extends Controller
                 'amount' => 'required|numeric|min:10', //KES
                 'purpose' => 'nullable|string|max:255',
             ]);
+            $amount = round($request->amount, 2);
 
-            $amount =  round($request->amount, 2);
+            \App\Service\Program\OrganizationMainWallet::moveToProgram($organization, $wallet, $amount);
+            $this->transaction->create(Auth::id(), 'transfer_to_program_wallet', 'lipr', $amount, null);
 
-            // Deduct from main wallet and add to program wallet
-            DB::transaction(function () use ($user, $wallet, $amount) {
-                $this->balance->updateBalanceMinus($user->id, $amount, 'lipr');
-                $wallet->balance += $amount;
-                $wallet->total_deposited += $amount;
-                $wallet->status = 'active';
-                $wallet->save();
-
-                //Transaction
-                $this->transaction->create(
-                    $user->id,
-                    'transfer_to_program_wallet',
-                    'stripe',
-                    $amount,
-                    null
-                );
-            });
-
-            return response()->json(['message' => 'Transfer successful.', 'new_balance' => $wallet->balance], 200);
+            return response()->json(['message' => 'Transfer successful.', 'new_balance' => (float) $wallet->fresh()->balance], 200);
 
         } catch (ValidationException $ve) {
             return response()->json(['message' => $ve->getMessage()], 422);
+        } catch (\RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], $e->getCode() >= 400 && $e->getCode() < 500 ? $e->getCode() : 422);
         } catch (\Exception $e) {
             ErrorLogService::report($e, ['input' => request()->except(['password', 'token']),]);
             return response()->json(['message' => 'Something went wrong, please try again later.'], 500);
@@ -141,8 +131,8 @@ class ProgramWalletController extends Controller
 
             $fields = [
                 "requestId" => 'stk-' . now()->format('YmdHis') . '-' . uniqid(),
-                "resultUrl" => rtrim(config('app.api_url'), '/') . '/lipr-callback',
-                "timeoutUrl" => rtrim(config('app.api_url'), '/') . '/lipr-callback/timeout',
+                "resultUrl" => \App\Service\LiprMpesa\LiprCallback::url('/lipr-callback'),
+                "timeoutUrl" => \App\Service\LiprMpesa\LiprCallback::url('/lipr-callback/timeout'),
                 //"metadata" => ["user_id" => $user->id, "purpose" => $request->purpose, //"customerId" => "CUST-441"],
 
                 "wallet" => $wallet->lipr_wallet,

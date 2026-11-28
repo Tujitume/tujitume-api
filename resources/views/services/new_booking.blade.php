@@ -10,7 +10,7 @@
             <p style="margin:0.5rem 0;">If not accepted and paid by the deadline, the booking will be automatically cancelled.</p>
         </div>
         <div style="text-align:center;margin-top:2rem;">
-            <a href="https://beta.tujitume.com/dashboard/mybookings" style="background-color:#14532d;color:white;display:inline-block;padding:0.85rem 2rem;border-radius:999px;text-decoration:none;font-weight:700;font-size:1rem;box-shadow:0 4px 12px rgba(0,0,0,0.18);">View My Bookings</a>
+            <a href="{{ $app_url ?? config('app.app_url') }}dashboard/mybookings" style="background-color:#14532d;color:white;display:inline-block;padding:0.85rem 2rem;border-radius:999px;text-decoration:none;font-weight:700;font-size:1rem;box-shadow:0 4px 12px rgba(0,0,0,0.18);">View My Bookings</a>
         </div>
 
         @include('programs.partials.brand_footer')

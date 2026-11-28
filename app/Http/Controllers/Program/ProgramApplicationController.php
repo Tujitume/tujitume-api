@@ -2,6 +2,9 @@
 
 namespace App\Http\Controllers\Program;
 
+use App\Support\ApiContract;
+use App\Support\ListShapes;
+
 use App\Http\Controllers\Controller;
 use App\Models\ApplicationRoundHistory;
 use App\Models\Auth\User;
@@ -14,8 +17,12 @@ use App\Models\Programs\Rounds\ProgramRound;
 use App\Models\Programs\Rounds\ReviewerApplicationAssignment;
 use App\Models\Programs\Rounds\RoundCustomQuestion;
 use App\Models\Programs\Rounds\RoundRequiredDocument;
+use App\Service\Program\AwardedApplicationList;
+use App\Service\Program\OwnerAwardedList;
+use App\Service\Program\MyApplicationList;
 use App\Service\Program\ProgramAccess;
 use App\Service\Program\RoundMatchScore;
+use App\Service\Program\KnockoutEvaluator;
 use App\Service\Program\RoundHelperService;
 use App\Service\Program\RoundHistoryService;
 use App\Service\Misc\ErrorLogService;
@@ -54,10 +61,7 @@ class ProgramApplicationController extends Controller
             $pitch->makeVisible('score_breakdown');
             return [
                 ...$pitch->toArray(),
-                'status' => [
-                    'value' => $pitch->status,
-                    'color' => config('status.program_application.' . $pitch->status, 'gray'),
-                ],
+                'status' => \App\Support\ApiContract::statusMeta('program_application', $pitch->status),
             ];
         });
 
@@ -70,7 +74,7 @@ class ProgramApplicationController extends Controller
         try {
             $pitch = ProgramApplication::with([
                 'program_milestones',
-                'program:id,user_id,organization_id,program_title,program_type,status,currency,total_rounds,funding_per_business,mid_milestone_required,use_match_score,match_score_limit',
+                'program:id,user_id,organization_id,program_title,program_type,status,currency,total_rounds,funding_per_business,use_match_score,match_score_limit',
                 'currentRound',
             ])->findOrFail($id);
 
@@ -95,22 +99,10 @@ class ProgramApplicationController extends Controller
                     ...$pitch->toArray(),
                     ...$pitch->applicantProfile(),
                     'my_review_assignment' => $myReviewAssignment,
-                    'status' => [
-                        'value' => $pitch->status,
-                        'color' => config('status.program_application.' . $pitch->status, 'gray'),
-                    ],
-                    'round_status' => [
-                        'value' => $pitch->round_status,
-                        'color' => config('status.program_application_round.' . $pitch->round_status, 'gray'),
-                    ],
-                    'funding_setup_status' => [
-                        'value' => $pitch->funding_setup_status,
-                        'color' => config('status.funding_setup.' . $pitch->funding_setup_status, 'gray'),
-                    ],
-                    'knockout_status' => [
-                        'value' => $pitch->knockout_status,
-                        'color' => config('status.knockout.' . $pitch->knockout_status, 'gray'),
-                    ],
+                    'status' => \App\Support\ApiContract::statusMeta('program_application', $pitch->status),
+                    'round_status' => \App\Support\ApiContract::statusMeta('program_application_round', $pitch->round_status),
+                    'funding_setup_status' => \App\Support\ApiContract::statusMeta('funding_setup', $pitch->funding_setup_status),
+                    'knockout_status' => \App\Support\ApiContract::statusMeta('knockout', $pitch->knockout_status),
                 ],
                 'round_data' => $roundData,
             ]);
@@ -130,22 +122,28 @@ class ProgramApplicationController extends Controller
 
 
     // fetch pitches for all types of user
-    public function myPitches()
+    public function myPitches(Request $request)
     {
         $match_score = 0;
         $user = $this->get_role();
 
+        // My Program Applications table: a page with search / filters / sort / export; no params = the full list below
+        if (ListShapes::wanted($request)) {
+            return (new MyApplicationList($user))->respond($request);
+        }
+
         if (in_array($user->role, ['editor', 'viewer', 'admin', 'super_admin'])) {
             $watchlistPitchIds = ProgramWatchlist::where('program_owner_id', $user->program_owner_id)->pluck('pitch_id')->toArray();
+            // ISSUE-38: applications to any program of the organization, whoever on the team created it
             $pitches = ProgramApplication::with(['program', 'currentRound', 'program_milestones'])
-                ->where('program_owner_id', $user->program_owner_id)
+                ->whereIn('program_id', Program::ofOrganization($user)->select('id'))
                 ->whereNot('status', 'draft')
                 ->latest()->get();
         }
         else if ($user->user_type_id == 4){
             $watchlistPitchIds = ProgramWatchlist::where('program_owner_id', $user->id)->pluck('pitch_id')->toArray();
             $pitches = ProgramApplication::with(['program', 'currentRound', 'program_milestones'])
-                ->where('program_owner_id', $user->id)
+                ->whereIn('program_id', Program::ofOrganization($user)->select('id'))
                 ->whereNot('status', 'draft')
                 ->latest()->get();
         }
@@ -164,7 +162,7 @@ class ProgramApplicationController extends Controller
         $countIn = fn (array $values) => $statuses->filter(fn ($s) => in_array($s, $values, true))->count();
 
         $pitch_count = $submitted->count();
-        $pitch_count_accept = $countIn(['approved', 'awarded', 'completed']);
+        $pitch_count_accept = $countIn(['approved', 'awarded', 'in_monitoring', 'completed']);
         $pitch_count_rejected = $countIn(['rejected']);
         $pitch_count_pending = $countIn(['pending', 'submitted', 'under_review', 'in_review']);
         $pitch_count_draft = $countIn(['draft']);
@@ -179,10 +177,7 @@ class ProgramApplicationController extends Controller
 
             $status = $pitch->status; // store original value first
 
-            $pitch->status = [
-                'value' => $status,
-                'color' => config('status.program_application.' . $status, 'gray'), // fallback
-            ];
+            $pitch->status = \App\Support\ApiContract::statusMeta('program_application', $status);
         }
 
         return response()->json([
@@ -209,8 +204,8 @@ class ProgramApplicationController extends Controller
                 'wallet'
             ])->withCount('liked')->find($program_id);
 
-            //  Handle not found
-            if (!$program) {
+            //  Handle not found: a draft or hidden program answers like a missing one, except to its own team
+            if (!$program || (!\App\Service\Program\ProgramAccess::owns($program) && !$program->isListedForApplicants())) {
                 return response()->json([
                     'message' => 'Program not found'
                 ], 404);
@@ -240,18 +235,12 @@ class ProgramApplicationController extends Controller
                 ...$program->toArray(),
                 'accepting_applications' => $closedReason === null,
                 'applications_closed_reason' => $closedReason,
-                'status' => [
-                    'value' => $program->status,
-                    'color' => config('status.program.' . $program->status, 'gray'),
-                ],
+                'status' => \App\Support\ApiContract::statusMeta('program', $program->status),
             ];
 
             $roundData = $round1 ? [
                 ...$round1->toArray(),
-                'status' => [
-                    'value' => $round1->status,
-                    'color' => config('status.program_round.' . $round1->status, 'gray'),
-                ],
+                'status' => \App\Support\ApiContract::statusMeta('program_round', $round1->status),
             ] : null;
 
             return response()->json([
@@ -273,6 +262,8 @@ class ProgramApplicationController extends Controller
     // all rounds for an application
     public function roundsHistory(ProgramApplication $application)
     {
+        // The applicant, the program's team and its Business Coaches only (outside the try so a refusal stays a 403)
+        (new \App\Service\Program\ProgramAccess())->authorizeApplication(auth()->user(), $application);
         try {
             $history = ApplicationRoundHistory::where('application_id', $application->id)
                 ->with([
@@ -301,6 +292,8 @@ class ProgramApplicationController extends Controller
 
     public function roundsHistoryByRound(ProgramRound  $round)
     {
+        // A round's history is for the program's own team and the Business Coaches assigned to that round
+        (new \App\Service\Program\ProgramAccess())->authorizeRound(auth()->user(), $round);
         try {
             $history = ApplicationRoundHistory::where('round_id', $round->id)
                 ->with([
@@ -342,7 +335,9 @@ class ProgramApplicationController extends Controller
             }
 
             $validated = $request->validate([
-                'startup_name' => 'required|string|max:255',
+                // No business is needed to apply: the name shown for the application falls back to the applicant's own name
+                'startup_name' => 'nullable|string|max:255',
+                'business_id' => 'nullable|integer',
                 'contact_person_name' => 'required|string|max:100',
                 'contact_person_email' => 'required|email|max:100',
                 'sector' => 'nullable|string|max:100',
@@ -366,19 +361,22 @@ class ProgramApplicationController extends Controller
                 'round_documents.*.file' => 'required_with:round_documents|file|max:20480',
             ]);
 
-            // if (! \App\Models\Business\Listing::where('id', $validated['business_id'])
-            //     ->where('user_id', auth()->id())->exists()) {
-            //     return response()->json(['message' => 'Business does not belong to the authenticated user.'], 403);
-            // }
+            // A business is optional. When one is named it must be the applicant's own (a guest cannot name one).
+            if (filled($validated['business_id'] ?? null)) {
+                $ownsBusiness = $applicantId !== null && \App\Models\Business\Listing::whereKey($validated['business_id'])
+                    ->where('user_id', $applicantId)->exists();
+                if (! $ownsBusiness) {
+                    throw ValidationException::withMessages(['business_id' => ['This business does not belong to you.']]);
+                }
+            } else {
+                unset($validated['business_id']);
+            }
 
             // Auto-set fields
-            // Custom fields the owner defined for applicants: validated from the stored definitions (options are never trusted)
-            $fieldValues = app(\App\Service\Program\CustomFields\CustomFieldValueService::class);
-            $customFields = $fieldValues->applicationFields($program);
-            $customAnswers = $customFields->isNotEmpty() ? ($request->validate($fieldValues->rules($customFields))['custom_answers'] ?? []) : [];
             $validated['program_id'] = $program->id;  $validated['program_owner_id'] = $program->user_id;
             $validated['user_id'] = $applicantId; // empty for a guest: no account is needed to apply
             $validated['email'] = $validated['contact_person_email'];
+            $validated['startup_name'] = filled($validated['startup_name'] ?? null) ? trim($validated['startup_name']) : trim($validated['contact_person_name']);
             $validated['status'] = 'pending';
             // This endpoint submits immediately; it is not a draft-saving endpoint.
             // Keep the round state consistent with the successful response and
@@ -481,15 +479,6 @@ class ProgramApplicationController extends Controller
                 ->where('round_id', $application->current_round_id)
                 ->update(['submitted_at' => now()]);
             $scoreResult = app(RoundMatchScore::class)->recalculateApplication($application);
-            if ($customFields->isNotEmpty()) {
-                $fieldValues->storeAnswers($program, 'application', $application->id, $customAnswers, $customFields);
-                $custom = app(\App\Service\Program\MatchScore\MatchScoreEngine::class)->compute($program, $fieldValues->answersFor('application', $application->id, $customFields));
-                if ($custom['score'] !== null) {
-                    // The program scores with its own fields: this replaces the round-question score (server side only)
-                    $application->forceFill(['match_score' => $custom['score'], 'score_breakdown' => ['source' => 'custom_fields', 'breakdown' => $custom['breakdown'], 'bonus' => $custom['bonus']]])->save();
-                    $scoreResult['match_score'] = $custom['score'];
-                }
-            }
 
             // The program's minimum match score is checked here, on the score the server just worked out from the answers
             // (never one sent by the browser), so it cannot be bypassed by calling the API directly. Rolls everything back.
@@ -512,8 +501,16 @@ class ProgramApplicationController extends Controller
                 return response()->json(['message' => 'All knockout questions must be answered.'], 422);
             }
 
+            // Knockout answers decide eligibility now: a "fail" answer marks the application failed (the applicant is told
+            // "An eligibility answer does not qualify"), and it is not sent to a Business Coach or the AI review
+            (new KnockoutEvaluator())->evaluate($application);
+            $knockedOut = $application->fresh()->knockout_status === 'failed';
+
             // Automatically route new applications when the round uses an automatic method.
-            $this->autoAssignNewApplication($application, ProgramRound::find($application->current_round_id));
+            $assignedCoachId = null;
+            if (! $knockedOut) {
+                $assignedCoachId = $this->autoAssignNewApplication($application, ProgramRound::find($application->current_round_id));
+            }
 
             $text = 'You have a new application pitch.';
             // straight to this applicant (multi-round programs open the round they applied in)
@@ -522,22 +519,38 @@ class ProgramApplicationController extends Controller
                 'application_id' => $application->id,
                 'round_id'       => $program->grant_type === 'multi_round' ? $application->current_round_id : null,
             ]);
-            $this->notification->create($program->user_id, $application->user_id ?? $program->user_id, $text, $pitchLink, 'program');
+            // C12: the whole program team (organization owner, creator, team roles), not only who created the program
+            foreach (\App\Service\Program\ProgramTeam::members($program) as $member) {
+                $this->notification->create($member->id, $application->user_id ?? $program->user_id, $text, $pitchLink, 'program');
+            }
 
             // Commit changes
             DB::commit();
 
+            // The Business Coach it was routed to is told, as when the owner assigns applications by hand
+            if ($assignedCoachId) try {
+                $coachRound = ProgramRound::find($application->current_round_id);
+                $this->programNotification->send('round.scoring_assigned', [User::find($assignedCoachId)], [
+                    'program_id' => $program->id, 'program_title' => $program->program_title,
+                    'round_name' => $coachRound?->round_name, 'round_id' => $coachRound?->id,
+                    'max_apps' => 1, 'assignment' => 'applications',
+                ]);
+            } catch (\Throwable $e) {
+                ErrorLogService::report($e, ['application_id' => $application->id]);
+            }
+
             // AI-assisted / AI-only rounds: queue the review (a no-op for manual rounds)
-            \App\Service\AiReview\AiReviewDispatcher::safely($application);
+            if (! $knockedOut) \App\Service\AiReview\AiReviewDispatcher::safely($application);
 
             // E M A I L
-            $sme = Auth::user();
+            // The route is public (guests can apply), so the signed-in applicant comes from the token, not the web guard
+            $sme = auth('sanctum')->user();
             $smeName = $sme ? trim($sme->first_name . ' ' . $sme->last_name) : $application->contact_person_name;
             $go_email = User::where('id', $program->user_id)->value('email');
 
             // The email button opens this exact application, same as the in-app notification
             $info=[ 'program'=>$program->program_title, 'SME'=>$smeName,
-                    'action_url' => \App\Service\Notification\EmailLink::url($pitchLink), 'action_label' => 'Review Pitch' ];
+                    'action_url' => \App\Service\Notification\EmailLink::url($pitchLink, $go_email), 'action_label' => 'Review Pitch' ];
             $this->emailService->send('New Program Pitch', 'opportunities.program_pitch', $info, $go_email);
 
             if (!$application->user_id) {
@@ -613,6 +626,12 @@ class ProgramApplicationController extends Controller
             return response()->json(['message' => 'Unauthorized.'], 403);
         }
 
+        // ISSUE-23: from round 2 on, an applicant who advanced is "approved"; Approve there means the same as the round's
+        // Advance (to the next round, or awarded on the final round), so it is handed to that action
+        if ($pitch->status === 'approved' && (int) ($pitch->currentRound?->round_number ?? 1) > 1) {
+            return app(\App\Http\Controllers\Program\Rounds\ProgramRoundController::class)->advanceManual($request, $pitch);
+        }
+
         // Check application status
         if ($pitch->status !== 'pending') {
             return response()->json([
@@ -627,7 +646,7 @@ class ProgramApplicationController extends Controller
 
             // NEW: Check if max awardees limit reached
             $program = $pitch->program;
-            $awardedCount = ProgramApplication::where('program_id', $program->id)->where('status', 'awarded')->count();
+            $awardedCount = ProgramApplication::where('program_id', $program->id)->whereIn('status', ['awarded', 'in_monitoring', 'completed'])->count();
             $maxAwardees = $program->max_awardees ?? floor($program->total_program_amount / $program->funding_per_business);
 
             if ($awardedCount >= $maxAwardees) {
@@ -643,6 +662,8 @@ class ProgramApplicationController extends Controller
                 // Single round: approve + award immediately
                 $pitch->status = 'awarded'; //$pitch->awarded_at = now();
                 $pitch->round_status = 'advanced';
+                // The round's history says "awarded" too: Finalize Round counts decisions from it
+                $this->roundHistory->update($pitch, 'awarded', 'Approved');
 
 
             } else {
@@ -663,23 +684,27 @@ class ProgramApplicationController extends Controller
 
                 $pitch->current_round_id = $nextRound->id;
                 $pitch->round_status = 'draft';
-
-                $this->programNotification->send('round.advanced', [$pitch->user], [
-                    'program_title' => $pitch->program->program_title, 'round_name' => $nextRound->round_name ?? 'Final Round', 'application_id' => $pitch->id,
-                ]);
             }
 
             $pitch->save();
             DB::commit();
 
-
-            // Notify applicant
-            $this->programNotification->send('application.accepted',
-                [$pitch->user], [
-                    'program_title' => $pitch->program->program_title,
-                    'business_name' => $pitch->business?->name,
-                ]
-            );
+            // One email, sent once the change is saved: moved on to the next round, or accepted (single round)
+            if (isset($nextRound)) {
+                $this->programNotification->send('round.advanced', [$pitch->user], [
+                    'program_title' => $pitch->program->program_title, 'round_name' => $nextRound->round_name ?? 'Final Round',
+                    'program_id' => $pitch->program_id, 'application_id' => $pitch->id,
+                ]);
+            } else {
+                $this->programNotification->send('application.accepted',
+                    [$pitch->user], [
+                        'program_title' => $pitch->program->program_title,
+                        'business_name' => $pitch->business?->name ?? $pitch->startup_name,
+                        'program_id' => $pitch->program_id,
+                        'application_id' => $pitch->id,
+                    ]
+                );
+            }
 
             return response()->json([
                 'message' => 'Pitch Approved.', 'data' => $pitch,
@@ -707,7 +732,9 @@ class ProgramApplicationController extends Controller
             $this->programNotification->send('application.rejected',
                 [$pitch->user], [
                     'program_title' => $pitch->program->program_title,
-                    'business_name' => $pitch->business?->name,
+                    'business_name' => $pitch->business?->name ?? $pitch->startup_name,
+                    'program_id' => $pitch->program_id,
+                    'application_id' => $pitch->id,
                 ]
             );
 
@@ -731,15 +758,17 @@ class ProgramApplicationController extends Controller
             }
             $user = User::select('first_name','last_name')->where('id',$pitch->user_id)->first();
 
-            $text = $user->first_name.' '.$user->last_name. 'Has requested funding to the Program'.$pitch->program->program_title;
+            $text = trim($user->first_name.' '.$user->last_name).' has requested funding from the program '.$pitch->program->program_title.'.';
             $notification = new NotificationService();
-            $notification->create($pitch->program->user_id,$pitch->user_id,$text,
-                $this->programNotification->orgApplicantLink([
-                    'program_id'     => $pitch->program_id,
-                    'application_id' => $pitch->id,
-                    'round_id'       => $pitch->program->grant_type === 'multi_round' ? $pitch->current_round_id : null,
-                ]),
-                'program_fund_request');
+            $link = $this->programNotification->orgApplicantLink([
+                'program_id'     => $pitch->program_id,
+                'application_id' => $pitch->id,
+                'round_id'       => $pitch->program->grant_type === 'multi_round' ? $pitch->current_round_id : null,
+            ]);
+            // C12: the whole program team, not only who created the program
+            foreach (\App\Service\Program\ProgramTeam::members($pitch->program) as $member) {
+                $notification->create($member->id, $pitch->user_id, $text, $link, 'program_fund_request');
+            }
 
             //MAIL
             return response()->json(['message' => 'Fund Requested.'], 200);
@@ -769,6 +798,12 @@ class ProgramApplicationController extends Controller
                 throw new \Exception('Pitch not found.');
             }
 
+            // The planning mode decides whether the applicant may edit their own milestones (hybrid), so only the
+            // program's own team may set it, never the applicant (or anyone else)
+            if (! ProgramAccess::owns($application->program)) {
+                return response()->json(['message' => 'Unauthorized.'], 403);
+            }
+
             $application->update([
                 'planning_mode' => $request->planning_mode,
             ]);
@@ -789,11 +824,10 @@ class ProgramApplicationController extends Controller
 
     public function awarded($program_id)
     {
-        $user_id = Auth::id();
-
         $program = Program::find($program_id);
 
-        if($program->user_id !== $user_id) {
+        // The program's owner and their organization's program team (ProgramAccess::owns), as on the Deal Room list
+        if (! $program || ! ProgramAccess::owns($program)) {
             return response()->json(['message' => 'Unauthorized.'], 403);
         }
 
@@ -802,23 +836,41 @@ class ProgramApplicationController extends Controller
                 'program',
                 'program_milestones'
             ])
-            ->where('status', 'awarded')->get();
+            ->whereIn('status', ['awarded', 'in_monitoring', 'completed'])->get();
 
 
         $pitches = $pitches->map(function ($pitch) {
             return [
                 ...$pitch->toArray(),
-                'status' => [
-                    'value' => $pitch->status,
-                    'color' => config('status.program_application.' . $pitch->status, 'gray'),
-                ],
+                'status' => \App\Support\ApiContract::statusMeta('program_application', $pitch->status),
             ];
         });
 
         return response()->json(['applications' => $pitches]);
     }
 
-    public function smeAwarded()
+    /**
+     * GET programs/owner/awarded-applications: the awarded applications of every program the signed-in account may run
+     * (ProgramAccess::owns: their own and, for a program-team member, the organization's; the programs `awarded` answers
+     * for), searched, filtered, sorted and paged on the server for the Program Deal Room.
+     */
+    public function ownerAwarded(Request $request)
+    {
+        $user = Auth::user();
+        if ((int) $user->user_type_id !== 4) {
+            return response()->json(['message' => 'Unauthorized.'], 403);
+        }
+
+        return (new OwnerAwardedList($user))->respond($request);
+    }
+
+    /**
+     * The signed-in entrepreneur's awarded applications.
+     * GET /programs/my-applications/awarded
+     * Every one of them by default (and with export=1); ?page= / ?per_page= returns one Laravel page under
+     * `applications` instead, as before.
+     */
+    public function smeAwarded(Request $request)
     {
         $user= Auth::user();
 
@@ -826,22 +878,9 @@ class ProgramApplicationController extends Controller
             return response()->json(['message' => 'Unauthorized.'], 403);
         }
 
-        $pitches = $user->myApplications()
-            ->with(['program:id,program_title,currency,program_type'])
-            ->where('status', 'awarded')
-            ->paginate(20);
-
-        $pitches->getCollection()->transform(function ($pitch) {
-            return [
-                ...$pitch->toArray(),
-                'status' => [
-                    'value' => $pitch->status,
-                    'color' => config('status.program_application.' . $pitch->status, 'gray'),
-                ],
-            ];
-        });
-
-        return response()->json(['applications' => $pitches]);
+        // Every awarded application (or Laravel's page of them with page / per_page), searched, filtered and sorted on
+        // the server; `data` carries the list envelope (items, pagination, facets, stats)
+        return (new AwardedApplicationList((int) $user->id))->respond($request);
     }
 
     // H e l p e r s
@@ -954,6 +993,11 @@ class ProgramApplicationController extends Controller
 
                     if (!$file) return null; // skip invalid
 
+                    // The bytes must be what the name says (a photo renamed to .pdf is refused, with its name)
+                    if ($refusal = app(RoundMatchScore::class)->contentMismatch($file) ?? app(\App\Service\Validation\SpamImageChecker::class)->refusal($file)) {
+                        throw ValidationException::withMessages(["round_documents.$index.file" => [$refusal]]);
+                    }
+
                     $path = $this->fileUpload->saveFile($file, $path);
                     $uploadedFiles[] = $path;
 
@@ -984,7 +1028,8 @@ class ProgramApplicationController extends Controller
 
     //_______________ Helper _______________________
 
-    private function autoAssignNewApplication(ProgramApplication $application, ?ProgramRound $round): void
+    /** Routes a new application to a Business Coach; returns the coach's user id when one was chosen. */
+    private function autoAssignNewApplication(ProgramApplication $application, ?ProgramRound $round): ?int
     {
         $context = [
             'application_id' => $application->id,
@@ -997,13 +1042,13 @@ class ProgramApplicationController extends Controller
 
         if (!$round) {
             Log::info('Reviewer auto-assignment: skipped because the application round was not found.', $context);
-            return;
+            return null;
         }
 
         if ($round->assignment_type === 'owner_only'
             || !in_array($round->assignment_method, ['round_robin', 'load_balanced'], true)) {
             Log::info('Reviewer auto-assignment: skipped because round settings do not enable automatic assignment.', $context);
-            return;
+            return null;
         }
 
         $acceptedReviewers = DB::table('round_reviewers')
@@ -1019,7 +1064,16 @@ class ProgramApplicationController extends Controller
 
         if ($acceptedReviewers->isEmpty()) {
             Log::info('Reviewer auto-assignment: skipped because no reviewer has accepted.', $context);
-            return;
+            return null;
+        }
+
+        // "Match Business Coaches by expertise": only the coaches whose expertise fits the application's sector
+        // (everyone when nobody fits), then the least loaded of them as usual
+        if ($round->match_expertise) {
+            $acceptedReviewers = app(\App\Service\Program\ExpertiseMatcher::class)->candidates($acceptedReviewers, $application);
+            Log::info('Reviewer auto-assignment: candidates matched by expertise.', $context + [
+                'candidate_reviewer_ids' => $acceptedReviewers->pluck('user_id')->all(),
+            ]);
         }
 
         // Route each new application to the currently least-loaded accepted reviewer.
@@ -1044,7 +1098,7 @@ class ProgramApplicationController extends Controller
 
         if (!$reviewer) {
             Log::warning('Reviewer auto-assignment: no reviewer was selected.', $context);
-            return;
+            return null;
         }
 
         Log::info('Reviewer auto-assignment: reviewer selected.', $context + [
@@ -1072,6 +1126,8 @@ class ProgramApplicationController extends Controller
                 'selected_reviewer_id' => $reviewer->user_id,
                 'application_round_status' => $application->fresh()->round_status,
             ]);
+
+            return (int) $reviewer->user_id;
         } catch (\Throwable $e) {
             Log::error('Reviewer auto-assignment: assignment persistence failed.', $context + [
                 'selected_reviewer_id' => $reviewer->user_id,

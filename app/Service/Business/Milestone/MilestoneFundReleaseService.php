@@ -31,7 +31,7 @@ class MilestoneFundReleaseService
         $this->transaction          = new TransactionRecord();
         $this->liprW2W              = new LiprW2W();
         $this->balance              = new BalanceService();
-        $this->usdToKes             = (new CurrencyConverter())->UsdToKes();
+        $this->usdToKes             = (float) app(CurrencyConverter::class)->UsdToKes();
         $this->tujitume_lipr_wallet = Setting::where('key', 'platform_lipr_wallet')->first()?->value ?? null;
     }
 
@@ -44,9 +44,19 @@ class MilestoneFundReleaseService
             return FundReleaseResult::failure('Invalid percentage.');
         }
 
+        // Each part is paid once: 75% before the work, 25% at close-out
+        if (($percentage === 75 && $milestone->fund_released_75) || ($percentage === 25 && $milestone->fund_released)) {
+            return FundReleaseResult::failure('This part of the milestone\'s money has already been released.');
+        }
+
         $owner          = $milestone->listing->owner;
-        $transferAmount = round($milestone->amount * ($percentage / 100), 2);
-        $method         = $milestone->payout_method;
+        // Audit fees the investors' money already paid to a project manager come off this release (DECISION-9)
+        $auditFeesUsd   = \App\Service\Audits\AuditFee::businessDeductionUsd((int) $milestone->id);
+        $transferAmount = round(max(0, $milestone->amount * ($percentage / 100) - $auditFeesUsd), 2);
+        // Paid out the way the investors paid in: M-Pesa (LIPR) investments are sent from the platform wallet by LIPR.
+        // payout_method defaults to "stripe" and nothing sets it, so it used to try Stripe for every milestone.
+        $paidByLipr = \App\Models\Business\AcceptedBids::where('ms_id', $milestone->id)->where('method', 'lipr')->exists();
+        $method     = $paidByLipr ? 'lipr' : ($milestone->payout_method ?: 'stripe');
 
         try {
             $transfer = match ($method) {
@@ -58,8 +68,21 @@ class MilestoneFundReleaseService
             return FundReleaseResult::failure($e->getMessage());
         }
 
-        if (!$transfer?->id) {
-            return FundReleaseResult::failure('Transfer could not be completed. Please try again.');
+        // A Stripe transfer is an object with an id; LIPR answers an array (success + reference)
+        $transferId = is_array($transfer)
+            ? (!empty($transfer['success']) ? ($transfer['reference'] ?? 'lipr') : null)
+            : ($transfer->id ?? null);
+        if (!$transferId) {
+            // LIPR's own reason (e.g. the platform wallet's balance) is kept and logged: it used to be dropped, so a
+            // release that failed left no trace
+            $reason = is_array($transfer) ? ($transfer['message'] ?? (is_array($transfer['errors'] ?? null) ? implode(' ', $transfer['errors']) : null)) : null;
+            \Illuminate\Support\Facades\Log::warning('Milestone fund release failed', ['milestone' => $milestone->id, 'percentage' => $percentage, 'amount_kes' => $transferAmount, 'reason' => $reason]);
+
+            return FundReleaseResult::failure('Transfer could not be completed'.($reason ? ': '.(is_string($reason) ? $reason : json_encode($reason)) : '').'. Please try again.');
+        }
+
+        if ($auditFeesUsd > 0) {
+            \App\Service\Audits\AuditFee::markBusinessDeducted((int) $milestone->id);
         }
 
         $this->balance->updateBalance($owner->id, $transferAmount, $method);
@@ -69,14 +92,14 @@ class MilestoneFundReleaseService
             'business_milestone',
             $method,
             $transferAmount,
-            $transfer->id,
+            $transferId,
             $owner->id,
         );
 
         $this->notification->create(
             $owner->id,
             null,
-            "Milestone funds of \${$transferAmount} ({$percentage}%) have been released to your account for milestone: {$milestone->title}",
+            "Milestone funds of KSh ".number_format($transferAmount, 2)." ({$percentage}%) have been released to your account for milestone: {$milestone->title}",
             'dealroom',
             'milestone',
         );
@@ -90,7 +113,7 @@ class MilestoneFundReleaseService
                 'milestoneTitle'  => $milestone->title,
                 'amount'          => $milestone->amount,
                 'released_amount' => $transferAmount,
-                'dashboardUrl'    => 'https://beta.tujitume.com/dashboard/milestones',
+                'dashboardUrl'    => \App\Service\Notification\RecipientUrl::url('dashboard/milestones', $owner),
             ],
             $owner->email,
         );
@@ -111,17 +134,22 @@ class MilestoneFundReleaseService
         ]);
     }
 
-    private function dispatchLipr($owner, float $amount): object
+    private function dispatchLipr($owner, float $amount): array
     {
         if(!$owner->lipr_wallet){
             throw new RuntimeException('Business owner is not onboarded to Lipr.');
         }
+        if (!$this->tujitume_lipr_wallet) {
+            throw new RuntimeException('The platform wallet is not set up.');
+        }
 
-        return $this->liprW2W->send(
-            round($this->usdToKes * $amount, 2),
+        // A business's money (milestones, bids) is in KSh, the currency investors paid it in: sent as it is
+        return app(LiprW2W::class)->send(
+            (int) round($amount),
             $owner->lipr_wallet,
             $this->tujitume_lipr_wallet,
-            'Milestone fund release',
+            null,
+            ['narration' => 'Milestone fund release'],
         );
     }
 }

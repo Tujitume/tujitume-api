@@ -11,6 +11,13 @@ class CapitalTermsAgreement extends Model
     use HasFactory;
     protected $guarded = [];
 
+    protected $appends = ['document_url'];
+
+    public function getDocumentUrlAttribute(): ?string
+    {
+        return \App\Service\Capital\CapitalFiles::url($this->document);
+    }
+
     public function capital()
     {
         return $this->belongsTo(CapitalOffer::class, 'capital_id');
