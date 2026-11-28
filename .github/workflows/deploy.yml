@@ -86,7 +86,10 @@ jobs:
         run: |
           mkdir package
 
-          rsync -av \
+          # package/ sits inside ./, so leave it out or rsync copies its own output while writing it
+          # (files "vanish" mid-copy and rsync stops with code 24)
+          rsync -a \
+            --exclude="/package" \
             --exclude=".git" \
             --exclude=".github" \
             --exclude="node_modules" \
