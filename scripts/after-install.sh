@@ -20,6 +20,12 @@ sudo find "$APP_DIR/bootstrap/cache" -type d -exec chmod g+s {} \;
 
 echo "Clearing Laravel caches..."
 
+# Delete the cached config/routes/providers first, without booting Laravel: a cache from the previous release can name a
+# class this release removed (e.g. a service provider), and then every artisan command, optimize:clear included, fails.
+rm -f "$APP_DIR"/bootstrap/cache/config.php "$APP_DIR"/bootstrap/cache/routes-*.php "$APP_DIR"/bootstrap/cache/events.php \
+      "$APP_DIR"/bootstrap/cache/services.php "$APP_DIR"/bootstrap/cache/packages.php
+
+php artisan package:discover --ansi
 php artisan optimize:clear
 
 echo "Caching configuration..."
