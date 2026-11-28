@@ -6,17 +6,20 @@ use App\Models\Auth\User;
 use App\Models\Services\ServiceBooking;
 use App\Models\Services\ServiceBookingMilestone;
 use App\Models\Services\Services;
-use App\Models\Programs\ProgramMilestone;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
-use Tests\Feature\Programs\ProgramTestCase;
+use Illuminate\Support\Facades\Schema;
+use Tests\TestCase;
 
 /**
  * The project manager's Pending requests list service booking and program audits waiting for them (only business and
  * capital audits were listed, so a service audit to accept never showed there).
  */
-class PmAuditPendingTasksTest extends ProgramTestCase
+class PmAuditPendingTasksTest extends TestCase
 {
+    use RefreshDatabase;
+
     private function pending(User $pm)
     {
         Cache::flush();
@@ -33,9 +36,9 @@ class PmAuditPendingTasksTest extends ProgramTestCase
         $booking = ServiceBooking::create(['service_id' => $service->id, 'booker_id' => $customer->id, 'service_owner_id' => $provider->id, 'date' => now()->addDay()->toDateString(), 'status' => 'paid', 'paid' => 1]);
         $mile = ServiceBookingMilestone::create(['service_id' => $service->id, 'booker_id' => $customer->id, 'booking_id' => $booking->id, 'title' => 'Site delivered', 'amount' => 8000, 'status' => 'Done', 'auditor_id' => $pm->id, 'audit_status' => 'pending', 'audit_requested_at' => now()]);
 
-        // A real program milestone: CI's SQLite enforces foreign keys, and switching them off inside RefreshDatabase's transaction does nothing
-        $programMilestone = ProgramMilestone::factory()->create(['app_id' => $this->application->id, 'sequence_order' => 1, 'amount' => 5000, 'status' => 'submitted']);
-        $verification = DB::table('milestone_verifications')->insertGetId(['milestone_id' => $programMilestone->id, 'submitted_by' => $this->applicantUser->id, 'verification_type' => 'mid_milestone', 'decision' => 'audit_requested', 'auditor_id' => $pm->id, 'created_at' => now(), 'updated_at' => now()]);
+        Schema::disableForeignKeyConstraints();
+        $verification = DB::table('milestone_verifications')->insertGetId(['milestone_id' => 999, 'submitted_by' => $customer->id, 'verification_type' => 'mid_milestone', 'decision' => 'audit_requested', 'auditor_id' => $pm->id, 'created_at' => now(), 'updated_at' => now()]);
+        Schema::enableForeignKeyConstraints();
 
         $items = $this->pending($pm);
         $service = $items->firstWhere('type', 'audit.service');
